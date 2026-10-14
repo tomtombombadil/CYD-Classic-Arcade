@@ -1,23 +1,32 @@
 #!/bin/sh
 # Host tests for the emulator core: tools/host_tests/build.sh [--quick]
 #   1. unit tests (CRC-32, ZIP, ROM sets, WSG, Z80 timing / interrupts,
-#      Pac-Man wiring), -O2 and with -fsanitize=address,undefined
+#      Pac-Man wiring, 8080 timing / flags / interrupts, WAV parser, sample
+#      player, Space Invaders sound models and wiring), -O2 and with
+#      -fsanitize=address,undefined
 #   2. ZEXDOC and ZEXALL (downloaded on first use into build/zex - GPL test
 #      programs, never committed), -O2; the sanitizer build runs ZEXDOC for
 #      a limited number of T-states (the full run takes ~10x longer)
-#   3. throughput benchmark (emulated MHz on this host)
-#   4. the host runner end to end on a synthetic ROM set
-# --quick skips the full ZEXDOC / ZEXALL runs.
+#   3. the 8080 tests 8080PRE, TST8080, CPUTEST and 8080EXM (downloaded on
+#      first use into build/i8080 - not ours, never committed): the short
+#      ones in both builds, 8080EXM in full at -O2 and for a limited number
+#      of states with the sanitizers
+#   4. throughput benchmarks (emulated MHz on this host)
+#   5. the host runner end to end on a synthetic ROM set
+# --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=$ROOT/build/host_tests
 ZEX=$ROOT/build/zex
-mkdir -p "$OUT" "$ZEX"
+I80=$ROOT/build/i8080
+mkdir -p "$OUT" "$ZEX" "$I80"
 QUICK=0
 [ "$1" = "--quick" ] && QUICK=1
 
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp $ROOT/emu/rom/romset.cpp \
-     $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp $ROOT/emu/machines/pacman.cpp"
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
+     $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
+     $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/machines/pacman.cpp \
+     $ROOT/emu/machines/invaders.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -26,6 +35,8 @@ g++ $FLAGS -O2 -o "$OUT/unit_tests" "$ROOT/tools/host_tests/unit_tests.cpp" $EMU
 g++ $FLAGS $SAN -o "$OUT/unit_tests_san" "$ROOT/tools/host_tests/unit_tests.cpp" $EMU
 g++ $FLAGS -O2 -o "$OUT/zex_test" "$ROOT/tools/host_tests/zex_test.cpp" "$ROOT/emu/cpu/z80.cpp"
 g++ $FLAGS $SAN -o "$OUT/zex_test_san" "$ROOT/tools/host_tests/zex_test.cpp" "$ROOT/emu/cpu/z80.cpp"
+g++ $FLAGS -O2 -o "$OUT/i8080_test" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
+g++ $FLAGS $SAN -o "$OUT/i8080_test_san" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
 
 echo "== unit tests"
 python3 "$ROOT/tools/host_tests/make_fixtures.py" "$OUT/fixtures"
@@ -39,7 +50,9 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-"$OUT/arcade_host" pacman "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without ROMs"; exit 1; }
+for game in pacman invaders; do
+    "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
+done
 echo "missing ROMs reported: ok"
 
 echo "== zexdoc / zexall"
@@ -58,5 +71,34 @@ if [ $QUICK = 0 ]; then
     "$OUT/zex_test" "$ZEX/zexall.com"
 fi
 
+echo "== 8080 tests"
+# 8080PRE / 8080EXM (Ian Bartholomew's 8080 ports of the exercisers), TST8080
+# (Microcosm Associates) and CPUTEST (SuperSoft), from a public emulator
+# repository.
+fetch80() {
+    if [ ! -s "$I80/$1" ]; then
+        curl -sSfL -o "$I80/$1" "https://raw.githubusercontent.com/superzazu/8080/master/cpu_tests/$1"
+    fi
+    echo "$2  $I80/$1" | sha256sum -c --quiet -
+}
+fetch80 8080PRE.COM 18eb3c79cba42c0718f160be6a1853cb64cdce7aa47d65780189a57bdd98c4e0
+fetch80 TST8080.COM 9561c6fb6c99efe3de00eb77e4044fd102151058b39ac2d7bce10483838a08e7
+fetch80 CPUTEST.COM e61a9a75348c774486c2207080ea4effbf6c2367fdace31b0731081a4144030b
+fetch80 8080EXM.COM 6e3286e11bb1a8f47b8ee1280b4a067be813193363e3223c99b0d21912f44aeb
+# Prints the result line; the whole output when the test fails.
+run80() {
+    if "$@" > "$OUT/i8080.log" 2>&1; then tail -1 "$OUT/i8080.log"; else cat "$OUT/i8080.log"; exit 1; fi
+}
+for t in "$OUT/i8080_test" "$OUT/i8080_test_san"; do
+    run80 "$t" "$I80/8080PRE.COM" --expect "Preliminary tests complete"
+    run80 "$t" "$I80/TST8080.COM" --expect "CPU IS OPERATIONAL"
+    run80 "$t" "$I80/CPUTEST.COM" --expect "CPU TESTS OK"
+done
+"$OUT/i8080_test_san" "$I80/8080EXM.COM" --bench 300
+if [ $QUICK = 0 ]; then
+    "$OUT/i8080_test" "$I80/8080EXM.COM" --expect "Tests complete"
+fi
+
 echo "== benchmark"
 "$OUT/zex_test" "$ZEX/zexdoc.com" --bench 3000
+"$OUT/i8080_test" "$I80/8080EXM.COM" --bench 2000

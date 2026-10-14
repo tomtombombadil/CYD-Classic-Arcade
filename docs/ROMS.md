@@ -58,7 +58,13 @@ Notes:
   `sc01a.bin`; non-merged sets include it. Keep it in the zip.
 - **Sample zips** are MAME's separate sound-sample sets (WAV files in a zip
   named after the game). They are optional: without them those sounds are
-  made by the firmware's own simple sound models (see SPEC, Sound).
+  made by the firmware's own simple sound models (see SPEC, Sound). Files
+  are found by name; any missing one is modelled instead. WAVs: PCM, 8 or
+  16 bit, mono or stereo, any rate.
+- **Space Invaders samples:** `0.wav` UFO (older sets only - newer ones
+  leave it to the model), `1.wav` shot, `2.wav` player hit, `3.wav` invader
+  hit, `4.wav`-`7.wav` the four fleet notes, `8.wav` UFO hit, `9.wav`
+  extra ship.
 
 ## Getting them onto the board
 

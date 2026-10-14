@@ -1,20 +1,28 @@
 // Unit tests for the emulator modules that can be checked without ROMs:
 // CRC-32, the ZIP reader and ROM set matcher (on fixtures written by
 // make_fixtures.py), the Namco WSG (synthetic waveform PROM), Z80 timing /
-// interrupts, and the Pac-Man machine wiring on a tiny hand-made program
-// and synthetic graphics.
+// interrupts, the Pac-Man machine wiring on a tiny hand-made program and
+// synthetic graphics, 8080 timing / flags / interrupts, the WAV parser and
+// sample player (synthetic WAVs), the Space Invaders sound models, and the
+// Space Invaders machine wiring (shifter, inputs, video, sound) on a tiny
+// hand-made 8080 program.
 //
 //   unit_tests <fixture dir>
+#include "../../emu/cpu/i8080.h"
 #include "../../emu/cpu/z80.h"
+#include "../../emu/machines/invaders.h"
 #include "../../emu/machines/pacman.h"
 #include "../../emu/rom/crc32.h"
 #include "../../emu/rom/romset.h"
 #include "../../emu/rom/zip.h"
+#include "../../emu/sound/invaders_sound.h"
 #include "../../emu/sound/namco_wsg.h"
+#include "../../emu/sound/samples.h"
 
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -551,6 +559,615 @@ void test_pacman()
     CHECK(m.watchdog_resets() >= 2);
 }
 
+// --- 8080 ---------------------------------------------------------------------
+
+struct Bench8 {
+    uint8_t    mem[0x10000] = {};
+    i8080::Cpu cpu;
+    uint16_t   last_port = 0, last_in_port = 0;
+    uint8_t    last_out = 0;
+    int        acks = 0;
+    Bench8()
+    {
+        cpu.map_ram(0, 0x10000, mem);
+        cpu.ctx = this;
+        cpu.port_out = [](void* c, uint16_t p, uint8_t v) {
+            static_cast<Bench8*>(c)->last_port = p;
+            static_cast<Bench8*>(c)->last_out = v;
+        };
+        cpu.port_in = [](void* c, uint16_t p) {
+            static_cast<Bench8*>(c)->last_in_port = p;
+            return uint8_t(0x5a);
+        };
+        cpu.irq_ack = [](void* c) {
+            Bench8& b = *static_cast<Bench8*>(c);
+            ++b.acks;
+            b.cpu.irq(false);
+        };
+        cpu.reset();
+        cpu.sp.w = 0xf000;
+    }
+    void load(uint16_t at, std::initializer_list<uint8_t> bytes)
+    {
+        for (uint8_t b : bytes) mem[at++] = b;
+    }
+    int step() { return cpu.run(1); }
+};
+
+void test_i8080_timing()
+{
+    struct Case { std::initializer_list<uint8_t> code; int t; const char* what; };
+    const Case cases[] = {
+        {{0x00}, 4, "NOP"},
+        {{0x08}, 4, "NOP (08, undocumented)"},
+        {{0x41}, 5, "MOV B,C"},
+        {{0x77}, 7, "MOV M,A"},
+        {{0x7e}, 7, "MOV A,M"},
+        {{0x36, 0x12}, 10, "MVI M,n"},
+        {{0x06, 0x12}, 7, "MVI B,n"},
+        {{0x21, 0, 0}, 10, "LXI H"},
+        {{0x34}, 10, "INR M"},
+        {{0x04}, 5, "INR B"},
+        {{0x03}, 5, "INX B"},
+        {{0x09}, 10, "DAD B"},
+        {{0x2a, 0, 0}, 16, "LHLD"},
+        {{0x32, 0, 0x80}, 13, "STA"},
+        {{0xe3}, 18, "XTHL"},
+        {{0xcd, 0, 0x20}, 17, "CALL"},
+        {{0xdd, 0, 0x20}, 17, "CALL (DD, undocumented)"},
+        {{0xc9}, 10, "RET"},
+        {{0xd9}, 10, "RET (D9, undocumented)"},
+        {{0xcb, 0, 0x20}, 10, "JMP (CB, undocumented)"},
+        {{0xcf}, 11, "RST 1"},
+        {{0xc5}, 11, "PUSH B"},
+        {{0xf1}, 10, "POP PSW"},
+        {{0xdb, 0x01}, 10, "IN"},
+        {{0xd3, 0x01}, 10, "OUT"},
+        {{0xeb}, 4, "XCHG"},
+        {{0xe9}, 5, "PCHL"},
+        {{0xf9}, 5, "SPHL"},
+        {{0x76}, 7, "HLT"},
+        {{0xc6, 1}, 7, "ADI"},
+        {{0x86}, 7, "ADD M"},
+        {{0x80}, 4, "ADD B"},
+        {{0x27}, 4, "DAA"},
+    };
+    for (const Case& c : cases) {
+        Bench8 b;
+        b.cpu.hl.w = 0x8000;
+        b.load(0, c.code);
+        const int t = b.step();
+        if (t != c.t) std::printf("  8080 timing %s\n", c.what);
+        CHECK_EQ(t, c.t);
+    }
+    {
+        Bench8 b;                                 // conditionals: Z clear
+        b.load(0, {0xc4, 0x00, 0x10, 0xcc, 0x00, 0x10, 0xc8, 0xc0, 0xca, 0, 0x30});
+        b.cpu.af.b.l = i8080::F1;
+        b.cpu.pc.w = 3;
+        CHECK_EQ(b.step(), 11);                   // CZ not taken
+        b.cpu.pc.w = 6;
+        CHECK_EQ(b.step(), 5);                    // RZ not taken
+        b.cpu.pc.w = 8;
+        CHECK_EQ(b.step(), 10);                   // JZ not taken: still 10
+        CHECK_EQ(b.cpu.pc.w, 11);
+        b.cpu.pc.w = 0;
+        CHECK_EQ(b.step(), 17);                   // CNZ taken
+        CHECK_EQ(b.cpu.pc.w, 0x1000);
+        b.cpu.pc.w = 7;
+        CHECK_EQ(b.step(), 11);                   // RNZ taken: back to 3
+        CHECK_EQ(b.cpu.pc.w, 3);
+    }
+}
+
+void test_i8080_flags()
+{
+    using namespace i8080;
+    auto run = [](std::initializer_list<uint8_t> code, uint8_t a, uint8_t f, uint8_t bval) {
+        std::unique_ptr<Bench8> b(new Bench8);    // holds its own pointers: not copyable
+        b->cpu.af.b.h = a;
+        b->cpu.af.b.l = uint8_t(f | F1);
+        b->cpu.bc.b.h = bval;
+        b->load(0, code);
+        while (b->cpu.pc.w < code.size()) b->step();
+        return std::make_pair(b->cpu.af.b.h, b->cpu.af.b.l);
+    };
+    // SUB A: the complement add carries out of bit 3, so AC is set.
+    auto r = run({0x97}, 0x3e, 0, 0);
+    CHECK_EQ(r.first, 0);
+    CHECK_EQ(r.second, ZF | PF | AC | F1);
+    // ANA: AC = bit 3 of (A | B).
+    r = run({0xa0}, 0x0f, CF, 0xf0);
+    CHECK_EQ(r.second, ZF | PF | AC | F1);
+    r = run({0xa0}, 0x00, 0, 0x00);
+    CHECK_EQ(r.second, ZF | PF | F1);
+    // ADD: carry, AC, and P = parity (not overflow).
+    r = run({0x80}, 0x3a, 0, 0xc6);
+    CHECK_EQ(r.first, 0);
+    CHECK_EQ(r.second, ZF | PF | AC | CF | F1);
+    r = run({0xc6, 0x02}, 0x01, 0, 0);
+    CHECK_EQ(r.second, PF | F1);
+    // DAA: 15 + 27 = 42; 99 + 01 = 00 carry.
+    r = run({0xc6, 0x27, 0x27}, 0x15, 0, 0);
+    CHECK_EQ(r.first, 0x42);
+    CHECK_EQ(r.second, PF | AC | F1);
+    r = run({0xc6, 0x01, 0x27}, 0x99, 0, 0);
+    CHECK_EQ(r.first, 0x00);
+    CHECK_EQ(r.second, ZF | PF | AC | CF | F1);
+    // INR keeps CY, AC on a low-nibble carry; DCR AC = no borrow from bit 4.
+    r = run({0x3c}, 0x0f, CF, 0);
+    CHECK_EQ(r.first, 0x10);
+    CHECK_EQ(r.second, AC | CF | F1);
+    r = run({0x3d}, 0x10, 0, 0);
+    CHECK_EQ(r.first, 0x0f);
+    CHECK_EQ(r.second, PF | F1);
+    r = run({0x3d}, 0x01, 0, 0);
+    CHECK_EQ(r.second, ZF | PF | AC | F1);
+    // CPI: A kept, borrow sets CY.
+    r = run({0xfe, 0x06}, 0x05, 0, 0);
+    CHECK_EQ(r.first, 0x05);
+    CHECK_EQ(r.second, SF | PF | CF | F1);
+    // RAL: only CY changes.
+    r = run({0x17}, 0x80, ZF, 0);
+    CHECK_EQ(r.first, 0x00);
+    CHECK_EQ(r.second, ZF | CF | F1);
+    // POP PSW / PUSH PSW: bits 3 and 5 read 0, bit 1 reads 1.
+    {
+        Bench8 b;
+        b.mem[0xf000] = 0xff; b.mem[0xf001] = 0x12;
+        b.load(0, {0xf1, 0xf5});
+        b.step();
+        CHECK_EQ(b.cpu.af.w, 0x12d7);
+        b.cpu.af.b.l = 0x00;
+        b.step();
+        CHECK_EQ(b.mem[0xf000], 0x00);            // pushed as stored
+        CHECK_EQ(b.mem[0xf001], 0x12);
+    }
+}
+
+void test_i8080_interrupts()
+{
+    {
+        Bench8 b;                                 // EI delays acceptance by one instruction
+        b.load(0, {0xfb, 0x00, 0x00});
+        b.cpu.irq(true, 0xd7);
+        b.step();
+        CHECK_EQ(b.cpu.pc.w, 1);
+        b.step();                                 // the instruction after EI still runs
+        CHECK_EQ(b.cpu.pc.w, 2);
+        CHECK_EQ(b.step(), 11);                   // RST 2 from the bus
+        CHECK_EQ(b.cpu.pc.w, 0x10);
+        CHECK_EQ(b.acks, 1);
+        CHECK_EQ(b.cpu.inte, 0);
+        CHECK(!b.cpu.irq_line());                 // cleared by the board's ack
+        CHECK_EQ(b.mem[0xeffe], 2);               // return address
+    }
+    {
+        Bench8 b;                                 // HLT until an interrupt
+        b.load(0, {0xfb, 0x76, 0x00});
+        b.step(); b.step();
+        CHECK(b.cpu.halted);
+        const int burnt = b.cpu.run(10);
+        CHECK(burnt >= 10 && burnt % 4 == 0);
+        b.cpu.irq(true, 0xcf);
+        b.step();
+        CHECK(!b.cpu.halted);
+        CHECK_EQ(b.cpu.pc.w, 0x08);
+        CHECK_EQ(b.mem[0xeffe], 2);               // returns after the HLT
+    }
+    {
+        Bench8 b;                                 // DI: the line is ignored; not an RST = RST 7
+        b.load(0, {0xf3, 0x00, 0xfb, 0x00, 0x00});
+        b.cpu.irq(true, 0x00);
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc.w, 2);
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.pc.w, 0x38);
+    }
+    {
+        Bench8 b;                                 // the port number is on both address halves
+        b.cpu.af.b.h = 0x77;
+        b.load(0, {0xd3, 0x34, 0xdb, 0x12});
+        b.step();
+        CHECK_EQ(b.last_port, 0x3434);
+        CHECK_EQ(b.last_out, 0x77);
+        b.step();
+        CHECK_EQ(b.last_in_port, 0x1212);
+        CHECK_EQ(b.cpu.af.b.h, 0x5a);
+    }
+}
+
+// --- WAV parser + sample player -------------------------------------------------
+
+void put_le(std::vector<uint8_t>& v, uint32_t x, int bytes)
+{
+    for (int i = 0; i < bytes; ++i) v.push_back(uint8_t(x >> (8 * i)));
+}
+
+// A WAV file in memory: fmt (16 bytes, or 40 for EXTENSIBLE), an odd-sized
+// LIST chunk before the data to test padding, then the data.
+std::vector<uint8_t> make_wav(int format, int channels, uint32_t rate, int bits,
+                              const std::vector<uint8_t>& data, bool extensible = false)
+{
+    std::vector<uint8_t> v = {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'A', 'V', 'E'};
+    v.insert(v.end(), {'f', 'm', 't', ' '});
+    put_le(v, extensible ? 40 : 16, 4);
+    put_le(v, extensible ? 0xfffe : uint32_t(format), 2);
+    put_le(v, uint32_t(channels), 2);
+    put_le(v, rate, 4);
+    put_le(v, rate * uint32_t(channels * bits / 8), 4);
+    put_le(v, uint32_t(channels * bits / 8), 2);
+    put_le(v, uint32_t(bits), 2);
+    if (extensible) {
+        put_le(v, 22, 2);                         // cbSize
+        put_le(v, uint32_t(bits), 2);
+        put_le(v, 0, 4);                          // channel mask
+        put_le(v, uint32_t(format), 2);           // sub-format GUID (first 2 bytes count)
+        for (int i = 0; i < 14; ++i) v.push_back(0);
+    }
+    v.insert(v.end(), {'L', 'I', 'S', 'T', 3, 0, 0, 0, 'a', 'b', 'c', 0});
+    v.insert(v.end(), {'d', 'a', 't', 'a'});
+    put_le(v, uint32_t(data.size()), 4);
+    v.insert(v.end(), data.begin(), data.end());
+    const uint32_t riff = uint32_t(v.size() - 8);
+    for (int i = 0; i < 4; ++i) v[4 + size_t(i)] = uint8_t(riff >> (8 * i));
+    return v;
+}
+
+std::vector<uint8_t> sine16(double hz, uint32_t rate, int frames, int amp)
+{
+    std::vector<uint8_t> d;
+    for (int i = 0; i < frames; ++i)
+        put_le(d, uint16_t(int16_t(std::lround(amp * std::sin(2 * M_PI * hz * i / rate)))), 2);
+    return d;
+}
+
+void test_wav()
+{
+    samples::Wav w;
+    const auto mono16 = make_wav(1, 1, 11025, 16, sine16(1000, 11025, 500, 20000));
+    CHECK(samples::parse_wav(mono16.data(), mono16.size(), w));
+    CHECK_EQ(w.frames, 500u);
+    CHECK_EQ(w.rate, 11025u);
+    CHECK_EQ(w.bits, 16);
+    CHECK_EQ(w.at(0), 0);
+    CHECK(w.at(3) > 15000);                       // ~1/4 of a 1 kHz period at 11025 Hz
+
+    // 8-bit stereo: unsigned, the two channels averaged.
+    const std::vector<uint8_t> st8 = {192, 128, 64, 64, 128, 255};
+    const auto stereo8 = make_wav(1, 2, 8000, 8, st8);
+    CHECK(samples::parse_wav(stereo8.data(), stereo8.size(), w));
+    CHECK_EQ(w.frames, 3u);
+    CHECK_EQ(w.at(0), 8192);
+    CHECK_EQ(w.at(1), -16384);
+    CHECK_EQ(w.at(2), (0 + 127 * 256) / 2);
+
+    // WAVE_FORMAT_EXTENSIBLE with the PCM sub-format.
+    const auto ext = make_wav(1, 1, 22050, 16, sine16(440, 22050, 100, 1000), true);
+    CHECK(samples::parse_wav(ext.data(), ext.size(), w));
+    CHECK_EQ(w.frames, 100u);
+
+    // A cut-short file plays what it holds; an odd last byte is dropped.
+    auto cut = mono16;
+    cut.resize(cut.size() - 101);
+    CHECK(samples::parse_wav(cut.data(), cut.size(), w));
+    CHECK_EQ(w.frames, 449u);
+
+    // Rejected: float data, 24-bit, not RIFF, empty.
+    const auto flt = make_wav(3, 1, 8000, 32, std::vector<uint8_t>(16, 0));
+    CHECK(!samples::parse_wav(flt.data(), flt.size(), w));
+    const auto b24 = make_wav(1, 1, 8000, 24, std::vector<uint8_t>(12, 0));
+    CHECK(!samples::parse_wav(b24.data(), b24.size(), w));
+    auto junk = mono16;
+    junk[0] = 'X';
+    CHECK(!samples::parse_wav(junk.data(), junk.size(), w));
+    CHECK(!samples::parse_wav(nullptr, 0, w));
+    CHECK_EQ(w.frames, 0u);
+}
+
+void test_sample_player()
+{
+    const int rate = 24000;
+    // 1 kHz recorded at 11025 Hz, 1 s: plays at 1 kHz for 1 s at 24 kHz.
+    const auto file = make_wav(1, 1, 11025, 16, sine16(1000, 11025, 11025, 16000));
+    samples::Wav w;
+    CHECK(samples::parse_wav(file.data(), file.size(), w));
+    samples::Player p;
+    p.init(rate);
+    std::vector<int16_t> out(size_t(rate) * 3 / 2, 0);
+    p.start(0, &w);
+    CHECK(p.playing(0));
+    p.mix(out.data(), int(out.size()));
+    CHECK(!p.playing(0));
+    int last = 0;
+    for (size_t i = 0; i < out.size(); ++i) if (out[i]) last = int(i);
+    std::printf("player: 11025 Hz recording, %d output samples (want 24000)\n", last + 1);
+    CHECK(std::abs(last + 1 - rate) <= 3);
+    const std::vector<int16_t> played(out.begin(), out.begin() + rate);
+    const double hz = measure_hz(played, rate);
+    std::printf("player: 1 kHz at 11025 Hz -> %.2f Hz at 24000\n", hz);
+    CHECK(std::fabs(hz - 1000.0) < 1.0);
+    int peak = 0;
+    for (int16_t v : played) peak = std::max(peak, std::abs(int(v)));
+    CHECK(peak > 15000 && peak <= 16000);         // interpolation doesn't overshoot
+
+    // Looping, volume, stop, and mixing two channels into what is there.
+    std::vector<uint8_t> flat;
+    for (int i = 0; i < 100; ++i) put_le(flat, 8000, 2);
+    const auto ff = make_wav(1, 1, 8000, 16, flat);
+    samples::Wav fw;
+    CHECK(samples::parse_wav(ff.data(), ff.size(), fw));
+    p.start(1, &fw, true);
+    p.set_volume(1, 128);
+    std::vector<int16_t> o(10000, 100);
+    p.mix(o.data(), int(o.size()));
+    CHECK(p.playing(1));
+    CHECK_EQ(o[5000], 100 + 4000);
+    p.start(2, &fw, true);
+    p.mix(o.data(), int(o.size()));
+    CHECK_EQ(o[7000], 100 + 4000 + 4000 + 8000);
+    p.stop(1);
+    p.stop(2);
+    CHECK(!p.playing(1));
+    std::vector<int16_t> z(100, 0);
+    p.mix(z.data(), 100);
+    CHECK_EQ(z[50], 0);
+    p.start(3, &fw, true);                        // saturates instead of wrapping
+    std::vector<int16_t> hi(10, 30000);
+    p.mix(hi.data(), 10);
+    CHECK_EQ(hi[5], 32767);
+}
+
+// --- Space Invaders sound models -----------------------------------------------
+
+double rms(const std::vector<int16_t>& s, size_t from, size_t to)
+{
+    double sum = 0;
+    for (size_t i = from; i < to; ++i) sum += double(s[i]) * s[i];
+    return to > from ? std::sqrt(sum / double(to - from)) : 0;
+}
+
+// Magnitude of the `hz` component (single-bin DFT).
+double tone_level(const std::vector<int16_t>& s, double hz, double rate)
+{
+    double re = 0, im = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        re += s[i] * std::cos(2 * M_PI * hz * double(i) / rate);
+        im += s[i] * std::sin(2 * M_PI * hz * double(i) / rate);
+    }
+    return std::sqrt(re * re + im * im) / double(s.size());
+}
+
+void test_invaders_sound()
+{
+    using namespace invaders_sound;
+    const int rate = 24000;
+    Synth s;
+    s.init(rate);
+    std::vector<int16_t> out(rate);
+
+    // Silence when nothing is switched on.
+    s.render(out.data(), rate);
+    CHECK(rms(out, 0, out.size()) < 1);
+
+    // Fleet notes: the 555 with R1 = 40k (bit 0) and 100k (bit 3).
+    s.write_port5(0x01);
+    s.render(out.data(), rate);
+    const double f1 = measure_hz(std::vector<int16_t>(out.begin() + rate / 4, out.end()), rate);
+    s.write_port5(0x08);
+    s.render(out.data(), rate);
+    const double f4 = measure_hz(std::vector<int16_t>(out.begin() + rate / 4, out.end()), rate);
+    std::printf("invaders sound: fleet notes %.1f / %.1f Hz (want ~75.9 / ~57.7)\n", f1, f4);
+    CHECK(std::fabs(f1 - 75.9) < 1.5);
+    CHECK(std::fabs(f4 - 57.7) < 1.5);
+    CHECK(rms(out, 0, out.size()) > 1000);
+    s.write_port5(0x00);                          // the thump rings out
+    s.render(out.data(), rate);
+    CHECK(rms(out, rate / 2, out.size()) < 50);
+
+    // Extra ship: 480 Hz, switched on and off ~7.4 times a second.
+    s.write_port3(0x10);
+    s.render(out.data(), rate);
+    const double at480 = tone_level(out, 480, rate), at380 = tone_level(out, 380, rate);
+    int bursts = 0;
+    bool on = false;
+    for (int w = 0; w < rate; w += rate / 200) {
+        const bool now = rms(out, size_t(w), size_t(w + rate / 200)) > 500;
+        if (now && !on) ++bursts;
+        on = now;
+    }
+    std::printf("invaders sound: extra ship 480 Hz level %.0f (380 Hz: %.0f), %d bursts a second\n",
+                at480, at380, bursts);
+    CHECK(at480 > 10 * at380);
+    CHECK(bursts >= 7 && bursts <= 8);
+    s.write_port3(0x00);
+    s.render(out.data(), rate / 10);
+
+    // Player hit: a long rumble from one edge, gone after ~2.5 s.
+    s.write_port3(0x04);
+    std::vector<int16_t> bh(size_t(rate) * 3);
+    s.render(bh.data(), int(bh.size()));
+    const double bh_start = rms(bh, 0, rate / 2), bh_end = rms(bh, size_t(rate) * 5 / 2, bh.size());
+    std::printf("invaders sound: player hit rms %.0f, after 2.5 s %.0f\n", bh_start, bh_end);
+    CHECK(bh_start > 1500);
+    CHECK(bh_end < bh_start / 20);
+
+    // Invader hit and shot are one-shots: short even while the bit stays set.
+    s.write_port3(0x08);
+    s.render(out.data(), rate);
+    CHECK(rms(out, 0, rate / 10) > 1000);
+    CHECK(rms(out, rate * 3 / 4, out.size()) < 50);
+    s.write_port3(0x02);
+    s.render(out.data(), rate);
+    const double shot_start = rms(out, 0, rate / 10), shot_end = rms(out, rate * 3 / 4, out.size());
+    std::printf("invaders sound: shot rms %.0f, after 0.75 s %.0f\n", shot_start, shot_end);
+    CHECK(shot_start > 1000);
+    CHECK(shot_end < shot_start / 5);
+    s.write_port3(0x00);
+
+    // UFO: sounds while set; skipped when a sample plays it.
+    s.write_port3(0x01);
+    s.render(out.data(), rate);
+    CHECK(rms(out, 0, out.size()) > 1000);
+    s.set_skip(1 << kUfo);
+    s.render(out.data(), rate);
+    CHECK(rms(out, rate / 10, out.size()) < 1);
+
+    // UFO hit follows its bit.
+    s.write_port5(0x10);
+    s.render(out.data(), rate);
+    const double uh_on = rms(out, rate / 2, out.size());
+    CHECK(uh_on > 1000);
+    s.write_port5(0x00);
+    s.render(out.data(), rate * 3 / 4);
+    s.render(out.data(), rate);
+    CHECK(rms(out, 0, out.size()) < uh_on / 10);
+}
+
+// --- Space Invaders wiring -------------------------------------------------------
+
+void test_invaders()
+{
+    static uint8_t rom[0x2000];
+    std::memset(rom, 0, sizeof rom);
+    const uint8_t prog[] = {
+        0xf3,                   // DI
+        0x31, 0x00, 0x24,       // LXI SP,2400
+        0xc3, 0x40, 0x00,       // JMP 0040
+        0x00,
+        0xf5, 0x21, 0x00, 0x20, 0x34, 0xf1, 0xfb, 0xc9,   // 0008 RST 1: count at 2000
+        0xf5, 0x21, 0x01, 0x20, 0x34, 0xf1, 0xfb, 0xc9,   // 0010 RST 2: count at 2001
+    };
+    std::memcpy(rom, prog, sizeof prog);
+    const uint8_t loop[] = {
+        0xfb,                   // 0040 EI
+        0x3a, 0x10, 0x20,       // 0041 LDA 2010
+        0xd3, 0x03,             //      OUT 3     - sound bits from RAM
+        0xd3, 0x06,             //      OUT 6     - watchdog
+        0xc3, 0x41, 0x00,       //      JMP 0041
+    };
+    std::memcpy(rom + 0x40, loop, sizeof loop);
+
+    static invaders::Machine m;
+    m.init({rom}, 24000);
+    int16_t audio[1024];
+    int samples = 0;
+    for (int f = 0; f < 60; ++f) samples += m.run_frame(audio, 1024);
+    CHECK_EQ(samples, 24184);                     // 24000 Hz / 59.54 Hz x 60
+    auto& c = m.cpu();
+    CHECK_EQ(c.rd(0x2000), 60);                   // one RST 1 and one RST 2 a frame
+    CHECK_EQ(c.rd(0x2001), 60);
+    CHECK_EQ(c.rd(0x6000), 60);                   // RAM mirror
+    CHECK_EQ(c.rd(0xa001), 60);                   // A15 not decoded
+    CHECK_EQ(c.rd(0x0001), 0x31);
+    CHECK_EQ(c.rd(0x8001), 0x31);
+    CHECK_EQ(c.rd(0x4000), 0x00);                 // empty sockets
+    CHECK_EQ(m.watchdog_resets(), 0);
+
+    // Inputs.
+    auto in = [&](int port) { return c.port_in(c.ctx, uint16_t(port | (port << 8))); };
+    CHECK_EQ(in(0), 0x08);
+    CHECK_EQ(in(1), 0x09);
+    CHECK_EQ(in(2), 0x00);                        // default DIPs: 3 ships, 1500, coin info on
+    m.set_inputs(invaders::kCoin | invaders::kStart1 | invaders::kFire | invaders::kLeft);
+    CHECK_EQ(in(1), 0x08 | 0x04 | 0x10 | 0x20);
+    CHECK_EQ(in(5), 0x08 | 0x04 | 0x10 | 0x20);   // mirror
+    CHECK_EQ(in(2), 0x30);                        // upright: the same panel on port 2
+    m.set_inputs(invaders::kStart2 | invaders::kRight2);
+    CHECK_EQ(in(1), 0x09 | 0x02);
+    CHECK_EQ(in(2), 0x40);
+    m.set_inputs(0);
+    m.set_dips(invaders::kDipShips5 | invaders::kDipBonus1000 | invaders::kDipNoCoinInfo);
+    CHECK_EQ(in(6), 0x8a);
+    m.set_dips(invaders::kDipDefault);
+
+    // The shifter: two data bytes, then the result at shifts 0, 5, 7.
+    auto out = [&](int port, uint8_t v) { c.port_out(c.ctx, uint16_t(port | (port << 8)), v); };
+    out(4, 0xab);
+    out(4, 0xcd);
+    out(2, 0);
+    CHECK_EQ(in(3), 0xcd);
+    out(2, 5);                                    // CDAB >> 3
+    CHECK_EQ(in(3), 0xb5);
+    CHECK_EQ(in(7), 0xb5);
+    out(2, 0x0f);                                 // only 3 bits count
+    CHECK_EQ(in(3), 0xd5);
+    invaders::Machine::Shifter sh;
+    sh.data(0x81);
+    sh.data(0x03);                                // 0381
+    sh.count = 7;
+    CHECK_EQ(sh.result(), 0xc0);
+    sh.count = 2;
+    CHECK_EQ(sh.result(), 0x0e);
+
+    // Video: hardware row r, bit b of byte k = display (r, 255 - 8k - b), in
+    // the overlay's colours.
+    const uint16_t white = 0xffff, red = 0xf904, green = 0x27e4, black = 0;
+    c.wr(0x2400 + 20 * 32 + 0, 0x01);             // (20, 255): reserve-cannon strip, green
+    c.wr(0x2400 + 5 * 32 + 0, 0x01);              // (5, 255): left of that strip, white
+    c.wr(0x2400 + 100 * 32 + 26, 0x80);           // (100, 40): UFO strip, red
+    c.wr(0x2400 + 223 * 32 + 19, 0x08);           // (223, 100): white
+    c.wr(0x2400 + 0 * 32 + 8, 0x01);              // (0, 191): bases strip, green
+    uint16_t line[224];
+    m.render_line(255, line);
+    CHECK_EQ(line[20], green);
+    CHECK_EQ(line[5], white);
+    CHECK_EQ(line[6], black);
+    m.render_line(40, line);
+    CHECK_EQ(line[100], red);
+    CHECK_EQ(line[101], black);
+    CHECK_EQ(line[99], black);
+    m.render_line(41, line);
+    CHECK_EQ(line[100], black);
+    m.render_line(100, line);
+    CHECK_EQ(line[223], white);
+    m.render_line(191, line);
+    CHECK_EQ(line[0], green);
+    m.render_line(0, line);
+    for (int x = 0; x < 224; ++x) if (line[x]) { CHECK_EQ(line[x], black); break; }
+
+    // Sound: a recorded shot (a flat 0.1 s at 12 kHz) replaces the model.
+    std::vector<uint8_t> flat;
+    for (int i = 0; i < 1200; ++i) put_le(flat, 10000, 2);
+    const auto file = make_wav(1, 1, 12000, 16, flat);
+    samples::Wav shot;
+    CHECK(samples::parse_wav(file.data(), file.size(), shot));
+    const samples::Wav* wavs[invaders::kSampleCount] = {};
+    wavs[invaders_sound::kShot] = &shot;
+    m.set_samples(wavs);
+    c.wr(0x2010, 0x22);                           // amplifier on + shot
+    int at_level = 0, total = 0;
+    for (int f = 0; f < 10; ++f) {
+        const int n = m.run_frame(audio, 1024);
+        for (int i = 0; i < n; ++i) at_level += audio[i] == 10000 * 160 / 256;
+        total += n;
+    }
+    std::printf("invaders: shot sample held for %d samples (want ~2400)\n", at_level);
+    CHECK(std::abs(at_level - 2400) <= 5);
+    CHECK_EQ(m.sound_port(3), 0x22);
+
+    // The modelled UFO (no sample), then the amplifier off = silence.
+    c.wr(0x2010, 0x21);
+    std::vector<int16_t> ufo;
+    for (int f = 0; f < 30; ++f) {
+        const int n = m.run_frame(audio, 1024);
+        ufo.insert(ufo.end(), audio, audio + n);
+    }
+    CHECK(rms(ufo, 0, ufo.size()) > 1000);
+    c.wr(0x2010, 0x01);
+    m.run_frame(audio, 1024);
+    const int n = m.run_frame(audio, 1024);
+    bool silent = true;
+    for (int i = 0; i < n; ++i) silent = silent && audio[i] == 0;
+    CHECK(silent);
+
+    // Without port 6 writes the board resets after 255 frames.
+    rom[0x46] = 0x00; rom[0x47] = 0x00;           // OUT 6 -> NOPs
+    m.init({rom}, 24000);
+    for (int f = 0; f < 600; ++f) m.run_frame(nullptr, 0);
+    CHECK_EQ(m.watchdog_resets(), 2);
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -564,6 +1181,13 @@ int main(int argc, char** argv)
     test_z80_misc();
     test_z80_interrupts();
     test_pacman();
+    test_i8080_timing();
+    test_i8080_flags();
+    test_i8080_interrupts();
+    test_wav();
+    test_sample_player();
+    test_invaders_sound();
+    test_invaders();
     std::printf("unit tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

@@ -91,9 +91,12 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   don't share -D flags).
 
 ## Testing
-- Host: `tools/host_tests/` (Z80 exerciser etc.) and `tools/host/`
-  (`arcade_host`: runs a game headless with scripted inputs, writes PNG
-  frames and a WAV). Run them after any emulator change.
+- Host: `tools/host_tests/` (Z80 exerciser, 8080 tests 8080PRE / 8080EXM /
+  TST8080 / CPUTEST, unit tests) and `tools/host/` (`arcade_host`: runs a
+  game headless with scripted inputs, writes PNG frames and a WAV; a game
+  table in it, `--samples` for a MAME sample zip). Run them after any
+  emulator change. Test programs that aren't ours (ZEX, the 8080 tests) are
+  downloaded into `build/` with pinned SHA-256s, never committed.
 - Claude's container can't reach the PlatformIO registry, so firmware
   builds are checked by CI (GitHub Actions) on every push.
 - CI pins PlatformIO 6.1.18: 6.2.0 brings SCons 4.11, which breaks
