@@ -146,6 +146,12 @@ void pad_set_swap_ab(bool swap) {
     s_swap_ab = swap;
 }
 
+void pad_forget_all(void) {
+    // Queued on the Bluetooth task, in order (Bluepad32 keeps 8 such calls)
+    for (int i = 0; i < CONFIG_BLUEPAD32_MAX_DEVICES; i++) uni_bt_disconnect_device_safe(i);
+    uni_bt_del_keys_safe();
+}
+
 void pad_get(int idx, pad_state_t* out) {
     if (idx < 0 || idx >= PAD_MAX) {
         memset(out, 0, sizeof(*out));

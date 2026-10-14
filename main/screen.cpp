@@ -23,8 +23,8 @@ void init()
     menu_font();
 }
 
-void apply_rotation() { s_lcd.setRotation(settings::get().usb_top ? 2 : 0); }
-void landscape() { s_lcd.setRotation(settings::get().usb_top ? 3 : 1); }
+void apply_rotation() { s_lcd.setRotation(settings::get().rotate180 ? 0 : 2); }
+void landscape() { s_lcd.setRotation(settings::get().rotate180 ? 1 : 3); }
 
 void menu_font()
 {

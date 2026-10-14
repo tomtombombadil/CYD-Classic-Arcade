@@ -115,8 +115,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   pixel, no blending (224 wide -> 320 on the 320x480 panels; Pac-Man shows
   as 320x411). 240x320 panels stay 1:1.
 - Landscape games (Rally-X first): the panel turns a quarter clockwise
-  from the menu's portrait for the game (USB on the right with USB Port:
-  Top) and back after (`screen::landscape()`); scaling as above.
+  from the menu's portrait for the game and back after (`screen::landscape()`); scaling as above.
 - No room in internal RAM (IRAM) for the CPU cores: v0.3.3 put the Z80 /
   8080 interpreters there (`emu/cpu/hot.h`, EMU_HOT_IRAM) and the link
   overflowed IRAM by 48,428 bytes (Bluetooth uses most of it). EMU_HOT
@@ -131,8 +130,16 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Menu help text at the bottom wraps to the screen (`screen::text_box`),
   in the small font on every panel (Tom: it ran off the right edge).
 - Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by
-  default (the board stands up, cable out the top; rotation 2); menu
-  setting "USB Port: Top / Bottom" (NVS usb_top).
+  default (the board stands up, cable out the top; rotation 2). The 2.8"
+  ILI9341 is the other way up (Tom, v0.5.0), so the menu setting is
+  "Rotate Screen 180: On / Off" (NVS rot180; v0.3-v0.5's "USB Port"
+  usb_top carries over) - Tom: no per-board code for which end is up.
+- 2.8" ILI9341 (Tom, v0.5.0): no sound at all, and his 8BitDo Ultimate
+  only connected after a reboot each time. v0.5.1: sound 4x louder (it
+  was ~a fifth of CYD Classic Games' loudness at the same setting) and a
+  menu item "Forget Controllers" (drops connections and pairing keys - a
+  controller moved between Tom's boards). Both unconfirmed: need Tom's
+  result / a serial log from that board.
 - 4-way games (Pac-Man, Donkey Kong; `games::Info::four_way`): a d-pad
   diagonal counts as the direction pressed last (Tom found Pac-Man hard
   to steer).
@@ -209,7 +216,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Rendering is line by line into small DMA strips; no full frame buffer
   (a 224x288x2 frame is 129 KB - not with Bluetooth on).
 - Sound: `main/audio_out.*`, 24 kHz, 8-bit DAC by DMA, volume
-  (v/100)^2, default 50 %. Machines fill signed 16-bit mono.
+  (v/100)^2, default 50 % (= samples / 256 onto the DAC; clips near 100 %). Machines fill signed 16-bit mono.
 - Flash: 4 MB = app 2.25 MB + `roms` data partition 1.7 MB (ROMs read in
   place, memory-mapped). No OTA - the web flasher is the update path.
 - `version_gen.h` is written by `tools/version.py` (ESP-IDF components

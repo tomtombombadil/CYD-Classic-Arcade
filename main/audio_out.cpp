@@ -20,7 +20,11 @@ constexpr int kChunk = 256;  // samples per write (~10.7 ms)
 dac_continuous_handle_t s_dac = nullptr;
 Fill s_fill = nullptr;
 void* s_ctx = nullptr;
-volatile int s_gain = 64;  // 0..256, from the volume
+// 0..1024, from the volume: (v/100)^2, so 50 % = 256 = a game's samples
+// / 256 onto the 8-bit DAC. v0.1-v0.5 used a quarter of that: about a
+// fifth of CYD Classic Games' loudness at the same setting, and nothing
+// heard on Tom's 2.8" ILI9341. Loud passages clip near 100 %.
+volatile int s_gain = 256;
 
 void audio_task(void*) {
     static int16_t pcm[kChunk];
@@ -29,7 +33,7 @@ void audio_task(void*) {
         s_fill(pcm, kChunk, s_ctx);
         const int g = s_gain;
         for (int i = 0; i < kChunk; i++) {
-            int v = (pcm[i] * g) >> 16;  // -128..127 at full gain
+            int v = (pcm[i] * g) >> 16;
             if (v < -128) v = -128;
             if (v > 127) v = 127;
             out[i] = (uint8_t)(v + 128);
@@ -44,7 +48,7 @@ void audio_task(void*) {
 void set_volume(int percent) {
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
-    s_gain = 256 * percent * percent / 10000;
+    s_gain = 1024 * percent * percent / 10000;
 }
 
 bool start(Fill fill, void* ctx) {

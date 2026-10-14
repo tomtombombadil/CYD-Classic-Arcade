@@ -50,6 +50,10 @@ void pad_get(int idx, pad_state_t* out);
 // players who'd rather follow Nintendo-style printed letters.
 void pad_set_swap_ab(bool swap);
 
+// Drops every connection and forgets every paired controller (their keys in
+// NVS); controllers in pairing mode are found again. Safe from any task.
+void pad_forget_all(void);
+
 #ifdef __cplusplus
 }
 #endif

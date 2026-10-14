@@ -24,11 +24,11 @@ namespace {
 
 using namespace screen;
 
-enum Item : int { kTest = 1000, kSwap, kVolume, kUsb };
+enum Item : int { kTest = 1000, kSwap, kVolume, kRotate, kForget };
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
-int item_count() { return games::kGameCount + 4; }
+int item_count() { return games::kGameCount + 5; }
 int item_id(int i) { return i < games::kGameCount ? i : kTest + (i - games::kGameCount); }
 
 void item_text(int id, char* buf, size_t cap, uint16_t& color)
@@ -44,8 +44,10 @@ void item_text(int id, char* buf, size_t cap, uint16_t& color)
         std::snprintf(buf, cap, "Swap A/B and X/Y: %s", settings::get().swap_ab ? "On" : "Off");
     } else if (id == kVolume) {
         std::snprintf(buf, cap, "Volume: %d %%", settings::get().volume);
+    } else if (id == kRotate) {
+        std::snprintf(buf, cap, "Rotate Screen 180: %s", settings::get().rotate180 ? "On" : "Off");
     } else {
-        std::snprintf(buf, cap, "USB Port: %s", settings::get().usb_top ? "Top" : "Bottom");
+        std::snprintf(buf, cap, "Forget Controllers");
     }
 }
 
@@ -144,10 +146,17 @@ void run(AudioRing& ring)
             audio::set_volume(v);
             settings::save();
             draw_item(sel, sel, top);
-        } else if (id == kUsb && (choose || (p & (PAD_LEFT | PAD_RIGHT)))) {
-            settings::get().usb_top = !settings::get().usb_top;
+        } else if (id == kRotate && (choose || (p & (PAD_LEFT | PAD_RIGHT)))) {
+            settings::get().rotate180 = !settings::get().rotate180;
             settings::save();
             apply_rotation();
+            redraw = true;
+        } else if (choose && id == kForget) {
+            // Pairings this board keeps: a controller paired since with
+            // another board can fail to reconnect here until forgotten
+            pad_forget_all();
+            std::snprintf(status, sizeof status, "Controllers forgotten: pair them again");
+            in.wait_for_release();
             redraw = true;
         } else if (choose && id == kTest) {
             pad_test::run(ring);

@@ -16,12 +16,11 @@ constexpr uint16_t kRed = 0xF8A2;
 
 LGFX& lcd();
 void init();
-// Portrait, USB port at the top (rotation 2) or the bottom (0), from the
-// settings.
+// Portrait: rotation 2 (the USB port at the top on most boards), or 0 with
+// Rotate Screen 180 on.
 void apply_rotation();
 // Landscape for a landscape game: the board turned a quarter clockwise from
-// the menu's portrait (the USB port ends up on the right with "USB Port:
-// Top"). apply_rotation() goes back.
+// the menu's portrait. apply_rotation() goes back.
 void landscape();
 
 // The menu font for this panel size, and its line height.
