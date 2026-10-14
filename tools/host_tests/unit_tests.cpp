@@ -5,18 +5,22 @@
 // synthetic graphics, 8080 timing / flags / interrupts, the WAV parser and
 // sample player (synthetic WAVs), the Space Invaders sound models, and the
 // Space Invaders machine wiring (shifter, inputs, video, sound) on a tiny
-// hand-made 8080 program.
+// hand-made 8080 program, and Rally-X (scroll / radar maths, the crash
+// sound model, the machine's wiring and video on a tiny Z80 program and
+// synthetic graphics).
 //
 //   unit_tests <fixture dir>
 #include "../../emu/cpu/i8080.h"
 #include "../../emu/cpu/z80.h"
 #include "../../emu/machines/invaders.h"
 #include "../../emu/machines/pacman.h"
+#include "../../emu/machines/rallyx.h"
 #include "../../emu/rom/crc32.h"
 #include "../../emu/rom/romset.h"
 #include "../../emu/rom/zip.h"
 #include "../../emu/sound/invaders_sound.h"
 #include "../../emu/sound/namco_wsg.h"
+#include "../../emu/sound/rallyx_bang.h"
 #include "../../emu/sound/samples.h"
 
 #include <cmath>
@@ -1168,6 +1172,253 @@ void test_invaders()
     CHECK_EQ(m.watchdog_resets(), 2);
 }
 
+// --- Rally-X: scroll / radar maths, crash sound, wiring ---------------------------
+
+void test_rallyx_maths()
+{
+    using namespace rallyx;
+    // The playfield starts 3 pixels in: screen x 3 shows tilemap x 0.
+    CHECK_EQ(playfield_x(0, 3), 0);
+    CHECK_EQ(playfield_x(0, 0), 253);
+    CHECK_EQ(playfield_x(250, 10), 1);            // wraps round the 256-pixel map
+    CHECK_EQ(playfield_x(255, 223), 219);
+    // Display line 0 is hardware line 16.
+    CHECK_EQ(playfield_y(0, 0), 16);
+    CHECK_EQ(playfield_y(240, 0), 0);
+    CHECK_EQ(playfield_y(8, 223), 247);
+    // The radar / score area shows tilemap columns 4-7, then 0-3.
+    CHECK_EQ(radar_column(224), 4);
+    CHECK_EQ(radar_column(255), 7);
+    CHECK_EQ(radar_column(256), 0);
+    CHECK_EQ(radar_column(287), 3);
+    // Radar dots: attribute bit 0 clear adds 256 to X; Y counts up from the bottom.
+    CHECK_EQ(dot_position(240, 217, 1).x, 240);
+    CHECK_EQ(dot_position(240, 217, 1).y, 20);
+    CHECK_EQ(dot_position(10, 217, 0).x, 266);
+    CHECK_EQ(dot_position(0, 0, 1).y, 237);
+    CHECK_EQ(dot_shape(0x0e), 0);
+    CHECK_EQ(dot_shape(0x00), 7);
+    CHECK_EQ(dot_shape(0x03), 6);
+    CHECK_EQ(sprite_position(100, 0x80, 175).x, 356);
+    CHECK_EQ(sprite_position(100, 0x3f, 175).x, 100);
+    CHECK_EQ(sprite_position(100, 0, 175).y, 50);
+}
+
+void test_rallyx_bang()
+{
+    using rallyx_bang::Bang;
+    // The noise register runs through all 2^18 - 1 states.
+    uint32_t r = 1;
+    int period = 0;
+    do { r = Bang::lfsr_next(r); ++period; } while (r != 1 && period < (1 << 19));
+    CHECK_EQ(period, (1 << 18) - 1);
+
+    const int rate = 24000;
+    Bang b;
+    b.init(rate);
+    std::vector<int16_t> out(size_t(rate) * 3);
+    b.render(out.data(), rate);
+    CHECK(rms(out, 0, rate) < 1);
+    CHECK(!b.active());
+
+    // A short pulse on BANG: loud at once, then the capacitor runs down.
+    b.set_trigger(true);
+    b.render(out.data(), rate / 20);
+    b.set_trigger(false);
+    b.render(out.data() + rate / 20, int(out.size()) - rate / 20);
+    const double start = rms(out, 0, rate / 5), late = rms(out, size_t(rate) * 3 / 2, size_t(rate) * 2);
+    std::printf("rallyx bang: rms %.0f at the start, %.0f after 1.5 s\n", start, late);
+    CHECK(start > 3000);
+    CHECK(late < start / 20);
+    CHECK(rms(out, size_t(rate) * 5 / 2, out.size()) < start / 200);
+    // A rumble: the 840 Hz low-pass leaves little sample-to-sample change
+    // (white noise would give ~1.4 x the signal).
+    double d = 0, s = 0;
+    for (int i = 1; i < rate / 5; ++i) {
+        const double dv = double(out[size_t(i)]) - out[size_t(i - 1)];
+        d += dv * dv;
+        s += double(out[size_t(i)]) * out[size_t(i)];
+    }
+    CHECK(std::sqrt(d / s) < 0.5);
+    // Quiet again: nothing computed, nothing added.
+    for (int k = 0; k < 3; ++k) b.render(out.data(), rate);
+    CHECK(!b.active());
+    std::vector<int16_t> keep(100, 1234);
+    b.mix(keep.data(), 100);
+    CHECK_EQ(keep[50], 1234);
+
+    // Held on, it keeps sounding at full strength.
+    b.set_trigger(true);
+    b.render(out.data(), int(out.size()));
+    CHECK(rms(out, size_t(rate) * 2, out.size()) > 3000);
+    CHECK(b.charge() > 0.99f);
+}
+
+void test_rallyx()
+{
+    static uint8_t cpu_rom[0x4000];
+    static uint8_t gfx[0x1000];
+    static uint8_t dots[0x100];
+    static uint8_t proms[0x160];
+    static uint8_t sound[0x200];
+    std::memset(cpu_rom, 0, sizeof cpu_rom);
+    std::memset(gfx, 0, sizeof gfx);
+    std::memset(dots, 3, sizeof dots);            // all transparent
+    std::memset(proms, 0, sizeof proms);
+    const uint8_t prog[] = {
+        0xf3,                   // DI
+        0x31, 0xf0, 0x9f,       // LD SP,9FF0
+        0xed, 0x5e,             // IM 2
+        0x3e, 0x3f, 0xed, 0x47, // LD A,3F; LD I,A
+        0x3e, 0x80, 0xd3, 0x00, // LD A,80; OUT (0),A  - vector
+        0x3e, 0x01,             // LD A,1
+        0x32, 0x81, 0xa1,       // LD (A181),A         - IRQ enable
+        0x32, 0x82, 0xa1,       // LD (A182),A         - sound on
+        0xfb,                   // EI
+        0x32, 0x80, 0xa0,       // loop: LD (A080),A   - watchdog
+        0x18, 0xfb,             // JR loop
+    };
+    std::memcpy(cpu_rom, prog, sizeof prog);
+    const uint8_t isr[] = {
+        0xf5, 0xaf, 0x32, 0x81, 0xa1,   // PUSH AF; XOR A; LD (A181),A - acknowledge
+        0x21, 0x00, 0x98, 0x34,         // LD HL,9800; INC (HL)
+        0x3e, 0x01, 0x32, 0x81, 0xa1,   // LD A,1; LD (A181),A
+        0xf1, 0xfb, 0xed, 0x4d,         // POP AF; EI; RETI
+    };
+    std::memcpy(cpu_rom + 0x100, isr, sizeof isr);
+    cpu_rom[0x3f80] = 0x00; cpu_rom[0x3f81] = 0x01;   // vector table -> 0100
+
+    // Palette: 1 red, 2 green, 3 blue (with the pull-down: 222 of 255);
+    // the dots' bank: 17 red, 19 green. Colour 1 = entries 0 1 2 3; colour
+    // 33 (bit 5 = covers sprites) = all 0.
+    proms[1] = 0x07; proms[2] = 0x38; proms[3] = 0xc0;
+    proms[17] = 0x07; proms[19] = 0x38;
+    for (int p = 0; p < 4; ++p) proms[0x20 + 4 + p] = uint8_t(p);
+    // Tile 1: all pixels 3. Tile 2: only the top-left pixel (x 0 is in
+    // byte 8, planes in bits 7 and 3).
+    std::memset(gfx + 16, 0xff, 16);
+    gfx[32 + 8] = 0x88;
+    // Sprite 2 (bytes 128-191): all pixels 3.
+    std::memset(gfx + 128, 0xff, 64);
+    // Dot shape 0, top row: pixel value 1 three times, then transparent.
+    dots[0] = dots[1] = dots[2] = 1;
+
+    static rallyx::Machine m;
+    m.init({cpu_rom, gfx, dots, proms, sound}, 24000);
+    int16_t audio[1024];
+    int samples = 0;
+    for (int f = 0; f < 30; ++f) samples += m.run_frame(audio, 1024);
+    CHECK_EQ(samples, 30 * 396);                  // 24000 Hz / 60.606 Hz
+    CHECK_EQ(m.cpu().rd(0x9800), 30);             // one IRQ per VBLANK
+    CHECK_EQ(m.watchdog_resets(), 0);
+    CHECK_EQ(m.latch(), 0x06);
+    CHECK_EQ(m.cpu().rd(0xa100), rallyx::kDipDefault);
+    CHECK_EQ(m.cpu().rd(0xe100), rallyx::kDipDefault);   // A14 not decoded
+    m.set_inputs(rallyx::kCoin | rallyx::kUp | rallyx::kSmoke | rallyx::kStart2);
+    CHECK_EQ(m.cpu().rd(0xa000), 0xff & ~0xa2);
+    CHECK_EQ(m.cpu().rd(0xa080), 0xff & ~0x40);   // bit 0 high: upright
+    m.set_inputs(0);
+    CHECK_EQ(m.cpu().rd(0x9000), 0xff);           // nothing there
+    m.cpu().wr(0xd800, 0x5a);                     // work RAM mirror
+    CHECK_EQ(m.cpu().rd(0x9800), 0x5a);
+    m.cpu().wr(0x9800, 30);
+
+    auto& c = m.cpu();
+    // Playfield, scrolled 8 right and 8 down: tile 2 at row 3, column 1
+    // shows at screen (3, 0); at column 2 mirrored (attribute bit 6 clear)
+    // its pixel is the tile's last: (18, 0);
+    // tile 1 upside down at row 4, column 3 fills line 8 from x 19.
+    c.wr(0xa130, 8); c.wr(0xa140, 8);
+    c.wr(0x8400 + 3 * 32 + 1, 2); c.wr(0x8c00 + 3 * 32 + 1, 0x41);
+    c.wr(0x8400 + 3 * 32 + 2, 2); c.wr(0x8c00 + 3 * 32 + 2, 0x01);
+    c.wr(0x8400 + 4 * 32 + 3, 2); c.wr(0x8c00 + 4 * 32 + 3, 0xc1);
+    // Radar / score: tile 1 at row 2, column 4 (x 224-231) and column 0 (x 256-263).
+    c.wr(0x8000 + 2 * 32 + 4, 1); c.wr(0x8800 + 2 * 32 + 4, 0x41);
+    c.wr(0x8000 + 2 * 32 + 0, 1); c.wr(0x8800 + 2 * 32 + 0, 0x41);
+    // Sprite slot 0: code 2, colour 1, at (100, 50); a tile that covers
+    // sprites over screen x 99-106 of its rows (row 9, column 13).
+    c.wr(0x8014, 2 << 2); c.wr(0x8015, 100);
+    c.wr(0x8814, 175); c.wr(0x8815, 1);
+    c.wr(0x8c00 + 9 * 32 + 13, 0x21);
+    // Dots: one over the radar at (240, 20), one over the sprite at (110, 50).
+    c.wr(0x8034, 240); c.wr(0x8834, 217); c.wr(0xa004, 0x0f);
+    c.wr(0x8035, 110); c.wr(0x8835, 187); c.wr(0xa005, 0x0f);
+    m.run_frame(nullptr, 0);
+
+    const uint16_t red = 0xf800, green = 0x07e0, blue = 0x001b, black = 0;
+    uint16_t line[rallyx::kScreenW];
+    m.render_line(0, line);
+    CHECK_EQ(line[3], blue);
+    CHECK_EQ(line[2], black);
+    CHECK_EQ(line[4], black);
+    CHECK_EQ(line[18], blue);
+    CHECK_EQ(line[17], black);
+    CHECK_EQ(line[11], black);
+    CHECK_EQ(line[224], blue);
+    CHECK_EQ(line[231], blue);
+    CHECK_EQ(line[232], black);
+    CHECK_EQ(line[256], blue);
+    CHECK_EQ(line[263], blue);
+    CHECK_EQ(line[255], black);
+    m.render_line(1, line);
+    CHECK_EQ(line[3], black);
+    m.render_line(15, line);                      // flipped: bottom row of the tile
+    CHECK_EQ(line[19], blue);
+    CHECK_EQ(line[20], black);
+    m.render_line(8, line);
+    CHECK_EQ(line[19], black);
+    // Sprite rows 50-65, x 100-115, hidden over x 99-106.
+    m.render_line(50, line);
+    CHECK_EQ(line[100], black);
+    CHECK_EQ(line[106], black);
+    CHECK_EQ(line[107], blue);
+    CHECK_EQ(line[115], blue);
+    CHECK_EQ(line[116], black);
+    // The dot over the sprite: the sprite's entry (3) in the dots' bank.
+    CHECK_EQ(line[110], green);
+    CHECK_EQ(line[112], green);
+    CHECK_EQ(line[113], blue);
+    m.render_line(49, line);
+    CHECK_EQ(line[110], black);
+    m.render_line(65, line);
+    CHECK_EQ(line[115], blue);
+    m.render_line(66, line);
+    CHECK_EQ(line[115], black);
+    // The dot over the radar: tile entry 0 with the dot's low bits (1).
+    m.render_line(20, line);
+    CHECK_EQ(line[240], red);
+    CHECK_EQ(line[242], red);
+    CHECK_EQ(line[243], black);
+    m.render_line(21, line);
+    CHECK_EQ(line[240], black);
+    // Mirrored sprite (attribute bit 0) and X bit 8.
+    c.wr(0x8014, (2 << 2) | 1); c.wr(0x8015, 10); c.wr(0x8815, 0x81);
+    m.run_frame(nullptr, 0);
+    m.render_line(50, line);
+    CHECK_EQ(line[265], black);
+    CHECK_EQ(line[266], blue);
+    CHECK_EQ(line[281], blue);
+    CHECK_EQ(line[282], black);
+    CHECK_EQ(line[107], black);
+
+    // The crash sound: BANG (latch bit 0) adds noise to the frame's audio.
+    for (int f = 0; f < 5; ++f) m.run_frame(audio, 1024);
+    std::vector<int16_t> quiet(audio, audio + 396);
+    c.wr(0xa180, 1);
+    m.run_frame(audio, 1024);
+    c.wr(0xa180, 0);
+    std::vector<int16_t> loud(audio, audio + 396);
+    CHECK(rms(quiet, 0, quiet.size()) < 1);
+    CHECK(rms(loud, 0, loud.size()) > 2000);
+    CHECK(m.bang().active());
+
+    // Without watchdog writes the board resets after 16 frames.
+    cpu_rom[0x17] = 0x18; cpu_rom[0x18] = 0xfe;   // loop: JR $
+    m.init({cpu_rom, gfx, dots, proms, sound}, 24000);
+    for (int f = 0; f < 40; ++f) m.run_frame(nullptr, 0);
+    CHECK(m.watchdog_resets() >= 2);
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -1188,6 +1439,9 @@ int main(int argc, char** argv)
     test_sample_player();
     test_invaders_sound();
     test_invaders();
+    test_rallyx_maths();
+    test_rallyx_bang();
+    test_rallyx();
     std::printf("unit tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
