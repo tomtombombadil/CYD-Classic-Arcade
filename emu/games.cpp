@@ -3,6 +3,7 @@
 
 #include "machines/invaders.h"
 #include "machines/pacman.h"
+#include "machines/rallyx.h"
 
 #include <cstring>
 
@@ -75,6 +76,40 @@ const ButtonName kInvadersButtons[] = {
     {"left2", invaders::kLeft2}, {"right2", invaders::kRight2}, {"fire2", invaders::kFire2},
 };
 
+// ---- Rally-X ----------------------------------------------------------------
+
+class Rallyx : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[rallyx::kRegionCpu], r[rallyx::kRegionGfx], r[rallyx::kRegionDots],
+                 r[rallyx::kRegionProms], r[rallyx::kRegionSound]}, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    rallyx::Machine m_;
+};
+
+// A = smoke screen, Select = coin, Start = 1 player, L = 2 players (they
+// take turns).
+const Control kRallyxControls[] = {
+    {kPadUp, rallyx::kUp}, {kPadDown, rallyx::kDown}, {kPadLeft, rallyx::kLeft},
+    {kPadRight, rallyx::kRight}, {kPadA, rallyx::kSmoke}, {kPadSelect, rallyx::kCoin},
+    {kPadStart, rallyx::kStart1}, {kPadL, rallyx::kStart2},
+};
+
+const ButtonName kRallyxButtons[] = {
+    {"up", rallyx::kUp}, {"down", rallyx::kDown}, {"left", rallyx::kLeft},
+    {"right", rallyx::kRight}, {"smoke", rallyx::kSmoke}, {"coin", rallyx::kCoin},
+    {"coin2", rallyx::kCoin2}, {"start1", rallyx::kStart1}, {"start2", rallyx::kStart2},
+    {"service", rallyx::kService},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -89,6 +124,9 @@ const Info kGames[] = {
      Orientation::Portrait, invaders::kCpuClock, invaders::kCyclesPerFrame, kInvadersControls,
      COUNT(kInvadersControls), kInvadersButtons, COUNT(kInvadersButtons), invaders::kSampleNames,
      invaders::kSampleCount, make<Invaders>, false},
+    {"rallyx", "Rally-X", &rallyx::kRomSet, rallyx::kScreenW, rallyx::kScreenH, Orientation::Landscape,
+     rallyx::kCpuClock, rallyx::kCyclesPerFrame, kRallyxControls, COUNT(kRallyxControls),
+     kRallyxButtons, COUNT(kRallyxButtons), nullptr, 0, make<Rallyx>, true},
 };
 
 const int kGameCount = COUNT(kGames);

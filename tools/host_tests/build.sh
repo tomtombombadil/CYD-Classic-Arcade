@@ -2,7 +2,8 @@
 # Host tests for the emulator core: tools/host_tests/build.sh [--quick]
 #   1. unit tests (CRC-32, ZIP, ROM sets, WSG, Z80 timing / interrupts,
 #      Pac-Man wiring, 8080 timing / flags / interrupts, WAV parser, sample
-#      player, Space Invaders sound models and wiring), -O2 and with
+#      player, Space Invaders sound models and wiring, Rally-X scroll / radar
+#      maths, crash sound model and wiring), -O2 and with
 #      -fsanitize=address,undefined
 #   2. ZEXDOC and ZEXALL (downloaded on first use into build/zex - GPL test
 #      programs, never committed), -O2; the sanitizer build runs ZEXDOC for
@@ -27,8 +28,8 @@ QUICK=0
 
 EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
-     $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/machines/pacman.cpp \
-     $ROOT/emu/machines/invaders.cpp"
+     $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/samples.cpp \
+     $ROOT/emu/machines/pacman.cpp $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -59,7 +60,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders; do
+for game in pacman invaders rallyx; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"
