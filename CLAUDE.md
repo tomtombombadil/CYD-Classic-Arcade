@@ -62,6 +62,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Buttons by POSITION (Tom, 2026-10-14): bottom face button = the main
   one (fire / jump), right = second. A setting "Swap A/B and X/Y" in the
   menu for players who want the printed letters (`pad_set_swap_ab()`).
+- SD card layout (Tom, 2026-10-14): ROM zips as they are in
+  `/CYD-Classic-Arcade/` at the card's root; sample zips in
+  `/CYD-Classic-Arcade/samples/` (same names as the ROM zips). 2.8"
+  boards: the same zips over USB from the web page.
 - Home isn't on every controller (Q36): the emulator menu must also open
   some other way - Start + Select held together.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
