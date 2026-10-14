@@ -13,6 +13,9 @@
 #      of states with the sanitizers
 #   4. throughput benchmarks (emulated MHz on this host)
 #   5. the host runner end to end on a synthetic ROM set
+#   6. the Namco Galaga-family parts (06XX / 51XX / 53XX, starfield, 54XX
+#      model, the three-CPU board and idle skipping on hand-made programs,
+#      Galaga / Dig Dug video), -O2 and with the sanitizers
 # and the ROM store / USB protocol (core/), with the web page's loader
 # (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
@@ -54,6 +57,12 @@ python3 "$ROOT/tools/host_tests/make_fixtures.py" "$OUT/fixtures"
 "$OUT/unit_tests" "$OUT/fixtures"
 "$OUT/unit_tests_san" "$OUT/fixtures"
 
+echo "== Namco board tests"
+g++ $FLAGS -O2 -o "$OUT/namco_tests" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
+g++ $FLAGS $SAN -o "$OUT/namco_tests_san" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
+"$OUT/namco_tests"
+"$OUT/namco_tests_san"
+
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" > /dev/null
 python3 "$ROOT/tools/host_tests/make_fake_romset.py" "$OUT/fake"
@@ -61,7 +70,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders; do
+for game in pacman invaders galaga digdug; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

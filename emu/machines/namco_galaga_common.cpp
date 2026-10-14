@@ -14,6 +14,8 @@
 //   A000-...   per game (video latch, Dig Dug's EAROM)
 #include "namco_galaga_common.h"
 
+#include <cstring>
+
 namespace namco_galaga {
 
 namespace {
@@ -74,6 +76,8 @@ void Board::board_init(const BoardRoms& roms, uint32_t audio_rate, const Speedup
         c.map_ram(0x9800, 0x400, ram_[2]);
     }
     wsg_.init(roms.wave, 3, kWsgClock, audio_rate);
+    std::memset(vram_, 0, sizeof vram_);        // power on
+    std::memset(ram_, 0, sizeof ram_);
     board_reset();
 }
 

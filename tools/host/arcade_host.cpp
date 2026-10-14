@@ -1,7 +1,7 @@
 // Headless runner for the emulated machines (host only, MIT).
 //
 //   arcade_host <game> <zip | rom file | dir>... [options]
-//     games: the table in emu/games.cpp (pacman, invaders, ...)
+//     games: the table in emu/games.cpp (pacman, invaders, galaga, digdug, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -15,7 +15,9 @@
 //                         F+N:btns press btns at frame F for N frames
 //                         buttons: per game (pacman: up down left right coin
 //                         coin2 start1 start2 service test; invaders: coin
-//                         start1 start2 left right fire left2 right2 fire2)
+//                         start1 start2 left right fire left2 right2 fire2;
+//                         galaga, digdug: up down left right fire coin coin2
+//                         start1 start2 service test)
 //     --verbose           one timing line per frame
 //
 //   arcade_host --list-json
