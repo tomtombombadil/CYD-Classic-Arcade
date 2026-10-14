@@ -158,7 +158,10 @@ void ui_task(void*) {
     lcd.init();
     lcd.setRotation(0);
     lcd.setBrightness(200);
-    lcd.setFont(lcd.width() >= 320 ? &fonts::Font2 : &fonts::Font0);
+    if (lcd.width() >= 320)
+        lcd.setFont(&fonts::Font2);
+    else
+        lcd.setFont(&fonts::Font0);
     lcd.fillScreen(kBg);
     s_frame_ms10 = measure_frame_push();
     ESP_LOGI(kTag, "frame push %d.%d ms", s_frame_ms10 / 10, s_frame_ms10 % 10);
