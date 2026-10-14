@@ -43,6 +43,17 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Clean-room emulators: MAME, Galagino and other GPL / non-commercial
   emulators are read for hardware facts only, never copied.
 - Firmware file prefix `TTB-CYD-CA_` (Classic Arcade).
+- Orientation (Tom, 2026-10-14): each game runs in its cabinet's own
+  orientation and fills the screen; the player turns the CYD on its side
+  for landscape games (Asteroids, Rally-X, Star Wars, Defender). The
+  firmware rotates the panel when a game starts and back for the menus.
+  A game is shown as large as fits with its shape kept (borders only
+  where the shapes differ).
+- Pac-Man's sound and screens confirmed right by Tom (2026-10-14, PC run).
+- Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
+  boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
+  PlayStation / Switch Pro controllers don't work there - Xbox and BLE
+  pads do.
 
 ## Board naming (Tom's rule, same as CYD Classic Games)
 - Name boards by what a user can identify: **screen size, display driver,
