@@ -53,6 +53,20 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - New games (Tom, 2026-10-14): send him the PC screenshots (and a sound
   clip), then push the game straight into a build - no waiting for his OK
   on the shots; he tests on the boards when the shots look good.
+- Rally-X (`emu/machines/rallyx.*`, landscape 288x224). Emulated: Z80,
+  the 32x32-tile playfield with its scroll X / Y registers (3 pixels left
+  of the registers, as on the board), the fixed 8x32-tile score / radar
+  area right of it (its 64 pixels show tile columns 4-7 then 0-3), 6
+  sprites, tiles that cover sprites (attribute bit 5), the radar dots from
+  the dots PROM (in the palette's second bank), the WSG (this set uses the
+  sound-on latch bit, so it's honoured), the watchdog (16 frames, assumed
+  as on Pac-Man). Modelled: the crash "BANG" (`emu/sound/rallyx_bang.*`:
+  2 kHz shift-register noise chopping a 1 uF capacitor's charge, 840 Hz
+  low-pass + 34 Hz high-pass, part values from the board). Flip screen
+  (cocktail) isn't drawn: the cabinet DIP reads upright. Costs about what
+  Pac-Man does (PC: emu 0.05, render 0.08 ms a frame), but the scrolling
+  playfield changes nearly every line, so the changed-lines-only push
+  saves little in play.
 - Controller test v0.1.0 on Tom's 2.8" ST7789 (2026-10-14): 8BitDo
   Ultimate Bluetooth and Vilcorn D8 pair and work (two at once), every
   button, both sticks' directions, DAC tones OK. ShanWan Q36 (two units)

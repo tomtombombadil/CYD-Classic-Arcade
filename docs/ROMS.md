@@ -54,6 +54,9 @@ Notes:
   own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). They are optional:
   without them the chips are modelled from their known behaviour (Galaga's
   explosions then come from our own noise model).
+- **Rally-X:** older sets name the PROMs `im5623.*` / `m3-7603.11n`
+  (same contents). The video layout and timing PROMs (`rx1-2.4n`,
+  `rx1-3.7k`) aren't needed, and aren't in every set.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.
