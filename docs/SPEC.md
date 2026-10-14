@@ -22,6 +22,8 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Donkey Kong | Z80 3.072 MHz | i8035 sound CPU + DAC, analog effects | 224x256 portrait | medium |
 | Q\*bert | 8088 5 MHz | 6502 sound CPU + DAC, Votrax SC-01 speech | 240x256 portrait | medium-hard |
 | Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound | 4:3 landscape | medium |
+| Rally-X | Z80 3.072 MHz | Namco wavetable sound (as Pac-Man), analog crash "bang", scrolling + radar | 288x224 landscape | easy (after Pac-Man) |
+| Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM) | 240x256 portrait | medium: light CPUs, but 64 KB of RAM |
 | Defender (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |

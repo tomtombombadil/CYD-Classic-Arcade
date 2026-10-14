@@ -29,7 +29,9 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Donkey Kong | `dkong` (or `dkongo`, US set 2) | Donkey Kong (US set 1) | `dkong` for `dkongo` | `dkong` samples |
 | Q\*bert | `qbert` | Q\*bert (US set 1) | - | `qbert` samples (the knocker) |
 | Asteroids | `asteroid` (or `asteroid2`, rev 2) | Asteroids (rev 4) | - | `asteroid` samples |
-| Defender (stretch) | `defender` | Defender (Red label) | - | - |
+| Rally-X | `rallyx` | Rally-X (32k Ver.?) | - | - |
+| Qix | `qix` | Qix (Rev 2) | - | - |
+| Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` | - |
 | Stargate (stretch) | `stargate` | Stargate | - | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - | - |
 

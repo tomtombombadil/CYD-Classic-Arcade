@@ -17,7 +17,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 
 ## Decisions (Tom, 2026-10-14)
 - Games: Space Invaders, Asteroids, Pac-Man, Donkey Kong, Galaga, Dig Dug,
-  Q*bert. Stretch: Defender, Stargate, Spy Hunter.
+  Q*bert, Rally-X and Qix (Tom added the last two, 2026-10-14). Stretch:
+  Defender, Stargate, Spy Hunter.
+- Tom's ROM zips (in roms/, never committed): pacman, invaders, galaga,
+  digdug (rev 2), dkongo (Donkey Kong US set 2), asteroid (= today's
+  asteroid2, rev 2, no DVG PROM), qbert (no sc01a.bin - no Votrax ROM),
+  defendg (= defenderg, Green label), qix (Rev 2), rallyx. No Namco MCU
+  ROMs (51xx/53xx/54xx) and no sample zips yet. Support these revisions.
 - **No ROMs in the repo, ever** (nor sample WAVs, nor ROM-derived data such
   as converted headers). Users add their own standard MAME sets. `roms/`
   and `samples/` are git-ignored for local testing; never commit from them.
