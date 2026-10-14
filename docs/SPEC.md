@@ -81,8 +81,8 @@ turn the panel at game start.
 ROMs are read in place from flash, never copied into RAM: the `roms`
 partition (1.7 MB, `partitions.csv`) holds the recognised ROM chips,
 memory-mapped. Getting them there: from the SD card's `CYD-Classic-Arcade`
-folder on boards with a usable slot; over USB from the web page (Web
-Serial) on the 2.8" boards.
+folder at power-on, or over USB from the web page (Web Serial), on every
+board.
 
 ## 7. Milestones
 

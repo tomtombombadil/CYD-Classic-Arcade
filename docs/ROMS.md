@@ -62,12 +62,14 @@ Notes:
 
 ## Getting them onto the board
 
-(Planned - see SPEC.) Boards with a working SD slot (the ESP32-32E boards:
-3.2", 3.5", 4.0"): put the zips, as they are, in a `CYD-Classic-Arcade`
-folder at the root of the card:
+Two ways, on every board:
+
+- **SD card:** put the zips, as they are, in a `CYD-Classic-Arcade` folder
+  at the root of the card:
 
     CYD-Classic-Arcade/pacman.zip
     CYD-Classic-Arcade/invaders.zip
 
-The firmware copies what it recognises into its own flash. The 2.8" boards
-(no usable SD slot) get the same zips over USB from the web page.
+  At power-on the firmware copies new zips it recognises into its own flash.
+- **USB:** the install site's Load ROMs page (Chrome or Edge) sends them
+  over the USB cable.

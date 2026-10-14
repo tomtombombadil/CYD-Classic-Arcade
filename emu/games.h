@@ -70,6 +70,9 @@ struct Info {
     const char* const* sample_names;    // PC tool: the MAME sample set's files (no .wav), or null
     int                sample_count;
     Machine* (*make)();                 // new machine (delete when done)
+    // The cabinet had a 4-way joystick (Pac-Man): never two directions at
+    // once - a d-pad's diagonal counts as the direction pressed last.
+    bool               four_way;
 };
 
 extern const Info kGames[];
@@ -80,6 +83,15 @@ const Info* find(const char* id);
 
 // The cabinet buttons pressed by these controller buttons.
 uint16_t map_pad(const Info& game, uint32_t pad);
+
+// Makes a d-pad act like a 4-way joystick: of the directions held, only
+// the one pressed last (see Info::four_way). Keep one per player.
+class FourWay {
+public:
+    uint32_t filter(uint32_t pad);
+private:
+    uint32_t prev_ = 0, last_ = 0;
+};
 
 // Frames per second, e.g. 60.606 for Pac-Man.
 inline double frame_rate(const Info& g) { return double(g.cpu_clock) / g.cycles_per_frame; }

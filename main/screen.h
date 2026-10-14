@@ -16,6 +16,9 @@ constexpr uint16_t kRed = 0xF8A2;
 
 LGFX& lcd();
 void init();
+// Portrait, USB port at the top (rotation 2) or the bottom (0), from the
+// settings.
+void apply_rotation();
 
 // The menu font for this panel size, and its line height.
 void menu_font();

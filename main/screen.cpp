@@ -1,6 +1,8 @@
 // Panel + text helpers (see screen.h).
 #include "screen.h"
 
+#include "settings.h"
+
 namespace screen {
 namespace {
 
@@ -13,11 +15,13 @@ LGFX& lcd() { return s_lcd; }
 void init()
 {
     s_lcd.init();
-    s_lcd.setRotation(0);
+    apply_rotation();
     s_lcd.setBrightness(200);
     s_lcd.fillScreen(kBg);
     menu_font();
 }
+
+void apply_rotation() { s_lcd.setRotation(settings::get().usb_top ? 2 : 0); }
 
 void menu_font()
 {

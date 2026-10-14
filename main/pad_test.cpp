@@ -39,7 +39,7 @@ void text(int y, uint16_t color, const char* s)
     lcd().drawString(s, 6, y + 2);
 }
 
-// Sends a 224x288 frame in 16-line strips by DMA, as a game does, and
+// Sends a 224x288 frame in 16-line strips, as a game does, and
 // returns the time per frame in 1/10 ms.
 int measure_frame_push()
 {
@@ -54,10 +54,9 @@ int measure_frame_push()
         for (int y = 0; y < kH; y += kStrip) {
             uint16_t* s = strips[(y / kStrip) & 1];
             for (int i = 0; i < kW * kStrip; i++) s[i] = uint16_t((i + y + f * 8) * 37);
-            l.pushImageDMA(x0, y0 + y, kW, kStrip, reinterpret_cast<lgfx::swap565_t*>(s));
+            l.pushImage(x0, y0 + y, kW, kStrip, reinterpret_cast<const lgfx::swap565_t*>(s));
         }
     }
-    l.waitDMA();
     const int64_t t1 = esp_timer_get_time();
     l.endWrite();
     l.fillRect(x0, y0, kW, kH, kBg);
@@ -123,7 +122,7 @@ void run(AudioRing& ring)
     const int band = h * 2 + 2 * (h + 6) + 6;
     const int pad_y = h * 5;
     text(pad_y + band * PAD_MAX, kMuted, "Hold A for a tone, B for a higher one");
-    text(pad_y + band * PAD_MAX + h, kMuted, "Hold Start + Select to go back");
+    text(pad_y + band * PAD_MAX + h, kMuted, "Hold Select, press Start twice: back");
 
     pad_state_t was[PAD_MAX] = {};
     bool first = true;

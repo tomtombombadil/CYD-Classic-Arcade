@@ -7,7 +7,11 @@
 //   Display on HSPI : SCLK 14, MOSI 13, MISO 12, CS 15, DC 2, RST = EN
 //   Backlight       : GPIO 21 (PWM)
 //   Touch XPT2046   : own pins on VSPI: SCLK 25, MOSI 32, MISO 39, CS 33, IRQ 36
-//   SD card (VSPI)  : SCK 18, MISO 19, MOSI 23, CS 5   (conflicts with touch's VSPI use)
+//   SD card (VSPI)  : SCK 18, MISO 19, MOSI 23, CS 5
+//   Touch is not attached in this firmware (no touch screens yet), so the SD
+//   card has VSPI. CYD-BYOG-PoolRadSeries reads this touch chip in software
+//   (touch_xpt2046_soft.hpp) for the same reason - port that when touch is
+//   needed here.
 //   RGB LED (active low) : R 4, G 16, B 17
 //   LDR 34, speaker amp 26, BOOT button 0
 //
@@ -30,10 +34,10 @@
 #define BOARD_PIN_LDR         34
 #define BOARD_PIN_SPEAKER     26   // speaker connector (through the amp)
 #define BOARD_PIN_SD_CS       5
-// The SD slot (VSPI pins 18/19/23/5) can't be used yet: touch also runs on
-// the VSPI controller (pins 25/32/39/33) and LovyanGFX's XPT2046 driver has
-// no software-SPI option. Needs a bit-banged touch driver first.
-#define BOARD_SD_USABLE       0
+#define BOARD_PIN_SD_SCK      18
+#define BOARD_PIN_SD_MISO     19
+#define BOARD_PIN_SD_MOSI     23
+#define BOARD_SD_USABLE       1    // touch isn't attached, VSPI belongs to SD
 
 template <class PanelT, bool kInvert>
 class LGFX_Esp32_2432S028 : public lgfx::LGFX_Device
@@ -41,7 +45,6 @@ class LGFX_Esp32_2432S028 : public lgfx::LGFX_Device
     PanelT              _panel;
     lgfx::Bus_SPI       _bus;
     lgfx::Light_PWM     _light;
-    lgfx::Touch_XPT2046 _touch;
 
 public:
     LGFX_Esp32_2432S028()
@@ -89,25 +92,6 @@ public:
             cfg.pwm_channel = 7;
             _light.config(cfg);
             _panel.setLight(&_light);
-        }
-        {   // Touch on its own pins (VSPI). Raw limits are only a starting
-            // point; the saved calibration replaces them.
-            auto cfg = _touch.config();
-            cfg.x_min           = 300;
-            cfg.x_max           = 3900;
-            cfg.y_min           = 200;
-            cfg.y_max           = 3750;
-            cfg.pin_int         = 36;
-            cfg.bus_shared      = false;
-            cfg.offset_rotation = 0;
-            cfg.spi_host        = VSPI_HOST;
-            cfg.freq            = 1000000;
-            cfg.pin_sclk        = 25;
-            cfg.pin_mosi        = 32;
-            cfg.pin_miso        = 39;
-            cfg.pin_cs          = 33;
-            _touch.config(cfg);
-            _panel.setTouch(&_touch);
         }
         setPanel(&_panel);
     }

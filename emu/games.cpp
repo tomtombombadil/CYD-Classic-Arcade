@@ -84,11 +84,11 @@ template <class M> Machine* make() { return new M; }
 const Info kGames[] = {
     {"pacman", "Pac-Man", &pacman::kRomSet, pacman::kScreenW, pacman::kScreenH, Orientation::Portrait,
      pacman::kCpuClock, pacman::kCyclesPerFrame, kPacmanControls, COUNT(kPacmanControls),
-     kPacmanButtons, COUNT(kPacmanButtons), nullptr, 0, make<Pacman>},
+     kPacmanButtons, COUNT(kPacmanButtons), nullptr, 0, make<Pacman>, true},
     {"invaders", "Space Invaders", &invaders::kRomSet, invaders::kScreenW, invaders::kScreenH,
      Orientation::Portrait, invaders::kCpuClock, invaders::kCyclesPerFrame, kInvadersControls,
      COUNT(kInvadersControls), kInvadersButtons, COUNT(kInvadersButtons), invaders::kSampleNames,
-     invaders::kSampleCount, make<Invaders>},
+     invaders::kSampleCount, make<Invaders>, false},
 };
 
 const int kGameCount = COUNT(kGames);
@@ -98,6 +98,19 @@ const Info* find(const char* id)
     for (int i = 0; i < kGameCount; ++i)
         if (std::strcmp(kGames[i].id, id) == 0) return &kGames[i];
     return nullptr;
+}
+
+uint32_t FourWay::filter(uint32_t pad)
+{
+    constexpr uint32_t kDirs = kPadUp | kPadDown | kPadLeft | kPadRight;
+    const uint32_t dirs = pad & kDirs;
+    const uint32_t fresh = dirs & ~prev_;
+    prev_ = dirs;
+    if (fresh) last_ = fresh & (0u - fresh);        // newest press (lowest bit if several)
+    uint32_t keep = dirs & last_;
+    if (!keep && dirs) keep = dirs & (0u - dirs);   // the newest was let go: one still held
+    if (!dirs) last_ = 0;
+    return (pad & ~kDirs) | keep;
 }
 
 uint16_t map_pad(const Info& game, uint32_t pad)

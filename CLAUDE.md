@@ -70,14 +70,34 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   one (fire / jump), right = second. A setting "Swap A/B and X/Y" in the
   menu for players who want the printed letters (`pad_set_swap_ab()`).
 - SD card layout (Tom, 2026-10-14): ROM zips as they are in
-  `/CYD-Classic-Arcade/` at the card's root. 2.8" boards: the same zips
-  over USB from the web page.
+  `/CYD-Classic-Arcade/` at the card's root, on every board (the 2.8"
+  too, v0.3.0: touch isn't attached there, so VSPI is the SD card's - port
+  CYD-BYOG-PoolRadSeries' software touch driver when touch is needed).
+  Or over USB from the web page.
+- v0.2.0 on the ESP32-32E boards (Tom): no picture in games, then none in
+  the menu - the display's DMA broke once the SD card's SPI bus (IDF
+  sdspi, DMA) had run. Fix (v0.3.0): the SD card is read and its bus
+  freed BEFORE the display starts, and the screen is drawn with blocking
+  pushImage, never DMA - as Tom's CYD-BYOG-PoolRadSeries does on every
+  board. Don't bring display DMA back without testing on a 32E board.
+- Exit a game (Tom, 2026-10-14): hold Select and press Start twice, like
+  most retro handhelds - or Home. While Select is held, Start goes to the
+  gesture, not the game; the coin drops when Select is let go unused
+  (`main/input.*`). Replaces v0.2.0's Start + Select held 1 s.
+- Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by
+  default (the board stands up, cable out the top; rotation 2); menu
+  setting "USB Port: Top / Bottom" (NVS usb_top).
+- 4-way games (Pac-Man; `games::Info::four_way`): a d-pad diagonal counts
+  as the direction pressed last (Tom found Pac-Man hard to steer).
+- Tom, v0.2.0 on the 2.8" ST7789: ROMs over USB worked, Pac-Man and Space
+  Invaders "played perfectly". 4.0" log: Pac-Man emu ~5.7 ms + draw ~6-8
+  ms a frame (of 16.5), every frame drawn.
 - **ROM zips only, no sample files** (Tom, 2026-10-14: on handhelds the
   zip is all a player ever needs). Analog sounds are always our own
   models in the firmware. `emu/sound/samples.*` stays for the PC tool
   only (`arcade_host --samples`, to compare a model with a recording).
-- Home isn't on every controller (Q36): the emulator menu must also open
-  some other way - Start + Select held together.
+- Home isn't on every controller (Q36): leaving a game also works with
+  Select + Start twice.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
@@ -119,7 +139,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   lines on UART0 at 115200). `components/arcade_core` builds emu/ + core/.
 - Firmware (`main/`): `menu` (controller-driven; no touch yet), `game_runner`
   (sound ring paces the game; changed lines only; skips drawing when
-  behind; back = Start + Select held 1 s or Home), `catalog` (which games
+  behind; back = hold Select + Start twice, or Home), `catalog` (which games
   the stored zips complete; ROM regions unpacked into RAM at game start),
   `sd_import` (new zips from /CYD-Classic-Arcade/ at boot, 32E boards),
   `serial_link`, `settings` (NVS: swap_ab, volume), `pad_test`.

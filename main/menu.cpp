@@ -24,11 +24,11 @@ namespace {
 
 using namespace screen;
 
-enum Item : int { kTest = 1000, kSwap, kVolume };
+enum Item : int { kTest = 1000, kSwap, kVolume, kUsb };
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
-int item_count() { return games::kGameCount + 3; }
+int item_count() { return games::kGameCount + 4; }
 int item_id(int i) { return i < games::kGameCount ? i : kTest + (i - games::kGameCount); }
 
 void item_text(int id, char* buf, size_t cap, uint16_t& color)
@@ -42,8 +42,10 @@ void item_text(int id, char* buf, size_t cap, uint16_t& color)
         std::snprintf(buf, cap, "Controller Test");
     } else if (id == kSwap) {
         std::snprintf(buf, cap, "Swap A/B and X/Y: %s", settings::get().swap_ab ? "On" : "Off");
-    } else {
+    } else if (id == kVolume) {
         std::snprintf(buf, cap, "Volume: %d %%", settings::get().volume);
+    } else {
+        std::snprintf(buf, cap, "USB Port: %s", settings::get().usb_top ? "Top" : "Bottom");
     }
 }
 
@@ -73,7 +75,8 @@ void draw_all(int sel, int top, const char* status)
         line(y + h, kMuted, "CYD-Classic-Arcade, or over USB");
         line(y + 2 * h, kMuted, "from the install web page.");
     } else {
-        line(y + h, kMuted, "A: play   Start + Select held: back");
+        line(y, kMuted, "A: play.  In a game, hold Select");
+        line(y + h, kMuted, "and press Start twice: back here.");
     }
 }
 
@@ -129,6 +132,11 @@ void run(AudioRing& ring)
             audio::set_volume(v);
             settings::save();
             draw_item(sel, sel, top);
+        } else if (id == kUsb && (choose || (p & (PAD_LEFT | PAD_RIGHT)))) {
+            settings::get().usb_top = !settings::get().usb_top;
+            settings::save();
+            apply_rotation();
+            redraw = true;
         } else if (choose && id == kTest) {
             pad_test::run(ring);
             redraw = true;

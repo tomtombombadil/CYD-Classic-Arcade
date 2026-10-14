@@ -1,6 +1,8 @@
 // CYD Classic Arcade: start-up and the two cores' jobs.
 // Core 0: Bluetooth (app_main ends in BTstack's run loop) and the USB ROM
 // loader. Core 1: screen, sound and the emulators (the menu task).
+#include <cstdio>
+
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
@@ -28,20 +30,25 @@ AudioRing s_ring;
 
 void audio_fill(int16_t* out, int n, void*) { s_ring.pop(out, uint32_t(n)); }
 
-void sd_status(const char* text)
-{
-    screen::line(screen::line_h() * 3, screen::kText, text);
-}
+void sd_status(const char* text) { ESP_LOGI(kTag, "%s", text); }
 
 void ui_task(void*)
 {
+    // The SD card first, finished and its bus released before the display
+    // starts: the two SPI buses mustn't be busy with DMA at the same time.
+    const bool store = flash_store::open();
+    const int copied = store ? sd_import::run(sd_status) : 0;
+
     screen::init();
     screen::line(0, screen::kGold, "CYD Classic Arcade");
     screen::line(screen::line_h(), screen::kMuted, CYD_ARCADE_VERSION);
-
-    if (flash_store::open()) {
-        // New zips on the SD card go into the store first (ESP32-32E boards)
-        if (sd_import::run(sd_status) > 0) sd_status("ROMs copied from the SD card");
+    if (store) {
+        if (copied > 0) {
+            char buf[48];
+            std::snprintf(buf, sizeof buf, "%d zip%s copied from the SD card", copied, copied == 1 ? "" : "s");
+            screen::line(screen::line_h() * 3, screen::kText, buf);
+            vTaskDelay(pdMS_TO_TICKS(1500));
+        }
         catalog::refresh();
         serial_link::start();
     } else {

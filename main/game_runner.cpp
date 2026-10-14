@@ -6,8 +6,11 @@
 // behind (the ring is nearly empty), it skips drawing that frame.
 //
 // Drawing: each line is rendered, hashed and only sent to the panel if it
-// differs from the line already there; changed lines go out in strips by
-// DMA while the next strip is rendered.
+// differs from the line already there; changed lines go out in strips.
+// Plain blocking writes, no DMA: on the ESP32-32E boards the display's DMA
+// stopped working once the SD card's bus had been used (v0.2.0: no picture
+// in games, then none in the menu either), and Tom's other CYD projects
+// (CYD-BYOG-PoolRadSeries) draw this way on every board.
 #include "game_runner.h"
 
 #include "catalog.h"
@@ -27,7 +30,7 @@ namespace game_runner {
 namespace {
 
 constexpr const char* kTag = "game";
-constexpr int kStrip = 16;              // lines per DMA strip
+constexpr int kStrip = 16;              // lines per strip sent
 constexpr int kMaxLines = 512;
 constexpr int kAudioCap = 1024;         // samples per frame, at most
 
@@ -64,18 +67,14 @@ void run(int index, AudioRing& ring)
     }
     games::Machine* m = g.make();
     const size_t strip_bytes = size_t(g.width) * kStrip * sizeof(uint16_t);
-    uint16_t* strips[2] = {
-        static_cast<uint16_t*>(heap_caps_malloc(strip_bytes, MALLOC_CAP_DMA)),
-        static_cast<uint16_t*>(heap_caps_malloc(strip_bytes, MALLOC_CAP_DMA)),
-    };
+    uint16_t* strip = static_cast<uint16_t*>(heap_caps_malloc(strip_bytes, MALLOC_CAP_8BIT));
     uint32_t* line_hash = static_cast<uint32_t*>(heap_caps_malloc(kMaxLines * sizeof(uint32_t), MALLOC_CAP_8BIT));
     int16_t* audio = static_cast<int16_t*>(heap_caps_malloc(kAudioCap * sizeof(int16_t), MALLOC_CAP_8BIT));
-    if (!m || !strips[0] || !strips[1] || !line_hash || !audio || g.height > kMaxLines) {
+    if (!m || !strip || !line_hash || !audio || g.height > kMaxLines) {
         ESP_LOGE(kTag, "%s: out of memory (largest block %u)", g.id,
                  unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
         delete m;
-        heap_caps_free(strips[0]);
-        heap_caps_free(strips[1]);
+        heap_caps_free(strip);
         heap_caps_free(line_hash);
         heap_caps_free(audio);
         catalog::unload(roms);
@@ -99,12 +98,14 @@ void run(int index, AudioRing& ring)
     const uint32_t queue_target = frame_samples * 3;
 
     Input in;
+    games::FourWay four_way;
     uint32_t stat_t = now_ms(), frames = 0, drawn = 0, lines_sent = 0;
     int64_t emu_us = 0, draw_us = 0;
     for (;;) {
         in.update(now_ms());
         if (in.back()) break;
-        m->set_inputs(games::map_pad(g, in.held()));
+        const uint32_t pad = g.four_way ? four_way.filter(in.game()) : in.game();
+        m->set_inputs(games::map_pad(g, pad));
 
         while (ring.count() > queue_target) vTaskDelay(1);
         const int64_t t0 = esp_timer_get_time();
@@ -118,15 +119,11 @@ void run(int index, AudioRing& ring)
         if (ring.count() < frame_samples) continue;
 
         lcd.startWrite();
-        int buf = 0, rows = 0, start = 0;
-        uint16_t* strip = strips[0];
+        int rows = 0, start = 0;
         auto flush = [&]() {
             if (!rows) return;
-            lcd.waitDMA();
-            lcd.pushImageDMA(x0, y0 + start, g.width, rows, reinterpret_cast<lgfx::swap565_t*>(strip));
+            lcd.pushImage(x0, y0 + start, g.width, rows, reinterpret_cast<const lgfx::swap565_t*>(strip));
             lines_sent += uint32_t(rows);
-            buf ^= 1;
-            strip = strips[buf];
             rows = 0;
         };
         for (int y = 0; y < g.height; ++y) {
@@ -143,7 +140,6 @@ void run(int index, AudioRing& ring)
             if (rows == kStrip) flush();
         }
         flush();
-        lcd.waitDMA();
         lcd.endWrite();
         draw_us += esp_timer_get_time() - t1;
         ++drawn;
@@ -161,8 +157,7 @@ void run(int index, AudioRing& ring)
 
     ring.clear();
     delete m;
-    heap_caps_free(strips[0]);
-    heap_caps_free(strips[1]);
+    heap_caps_free(strip);
     heap_caps_free(line_hash);
     heap_caps_free(audio);
     catalog::unload(roms);

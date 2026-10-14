@@ -4,8 +4,9 @@
 namespace {
 
 constexpr uint32_t kDpad = PAD_UP | PAD_DOWN | PAD_LEFT | PAD_RIGHT;
-constexpr uint32_t kBackHoldMs = 1000;
 constexpr uint32_t kRepeatFirstMs = 400, kRepeatMs = 120;
+constexpr uint32_t kDoublePressMs = 2000;   // both Start presses within this
+constexpr int      kCoinUpdates = 6;        // ~0.1 s in a game
 
 }  // namespace
 
@@ -22,21 +23,40 @@ void Input::update(uint32_t now)
     prev_ = held_;
     held_ = h;
     pressed_ = held_ & ~prev_;
-    // d-pad repeat
+    const uint32_t released = prev_ & ~held_;
+
+    // d-pad repeat (menus)
     if (pressed_ & kDpad) {
         repeat_at_ = now + kRepeatFirstMs;
     } else if ((held_ & kDpad) && int32_t(now - repeat_at_) >= 0) {
         pressed_ |= held_ & kDpad;
         repeat_at_ = now + kRepeatMs;
     }
-    // back: Home, or Start + Select held for a second
+
+    // back: Home, or Select held + Start pressed twice
     back_ = (pressed_ & PAD_HOME) != 0;
-    const bool combo = (held_ & (PAD_START | PAD_SELECT)) == (PAD_START | PAD_SELECT);
-    if (!combo) {
-        combo_since_ = now;
-        combo_done_ = false;
-    } else if (!combo_done_ && now - combo_since_ >= kBackHoldMs) {
-        combo_done_ = true;
-        back_ = true;
+    if (held_ & PAD_SELECT) {
+        if (pressed_ & PAD_START) {
+            hotkey_used_ = true;
+            if (start_presses_ == 0 || now - first_start_ > kDoublePressMs) {
+                start_presses_ = 1;
+                first_start_ = now;
+            } else {
+                start_presses_ = 0;
+                back_ = true;
+            }
+        }
+    } else {
+        // Select let go: a coin, unless it was used as the hotkey
+        if ((released & PAD_SELECT) && !hotkey_used_) coin_left_ = kCoinUpdates;
+        hotkey_used_ = false;
+        start_presses_ = 0;
+    }
+
+    game_ = held_ & ~(PAD_SELECT | PAD_HOME);
+    if (held_ & PAD_SELECT) game_ &= ~PAD_START;
+    if (coin_left_ > 0) {
+        game_ |= PAD_SELECT;
+        --coin_left_;
     }
 }
