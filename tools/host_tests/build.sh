@@ -13,6 +13,8 @@
 #      of states with the sanitizers
 #   4. throughput benchmarks (emulated MHz on this host)
 #   5. the host runner end to end on a synthetic ROM set
+# and the ROM store / USB protocol (core/), with the web page's loader
+# (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -61,6 +63,19 @@ for game in pacman invaders; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"
+
+echo "== the web page's ROM loader (web/roms/loader.js) against a fake board"
+g++ $FLAGS -O2 -o "$OUT/fake_board" "$ROOT/tools/host_tests/fake_board.cpp" \
+    "$ROOT/core/rom_store.cpp" "$ROOT/core/usb_import.cpp" $EMU "$ROOT/emu/games.cpp"
+if command -v node > /dev/null 2>&1; then
+    "$OUT/arcade_host" --list-json > "$OUT/games.json"
+    node --check "$ROOT/web/roms/loader.js"
+    # Real MAME sets in roms/ (local runs only, git-ignored) are used when present.
+    node "$ROOT/tools/host_tests/loader_test.mjs" --board "$OUT/fake_board" --games "$OUT/games.json" \
+        --fake "$OUT/fake/pacman.zip" --roms "$ROOT/roms"
+else
+    echo "node not found - skipping the loader test"
+fi
 
 echo "== zexdoc / zexall"
 # Frank D. Cringle's exercisers (GPL), from a public emulator repository.

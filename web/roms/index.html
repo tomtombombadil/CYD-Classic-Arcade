@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Load ROMs - CYD Classic Arcade</title>
+<meta name="description" content="Send your MAME ROM zips to a CYD Classic Arcade board over USB, straight from your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  /* The same colors as the install page (from the splash art) */
+  :root {
+    --navy:    #13213D;
+    --navy-2:  #1D2F4F;
+    --hat:     #1F62A6;
+    --gold:    #F0C04A;
+    --gold-d:  #C99A2E;
+    --ink:     #1D2F4F;
+    --muted:   #566078;
+    --paper:   #F6F1E2;
+    --card:    #FFFCF2;
+    --line:    #D9D1BA;
+    --warn-bg: #FCE9B8;
+    --link:    #1F62A6;
+    --focus:   #1F62A6;
+    --ok:      #2F7A4B;
+    --ok-bg:   #DCEFD9;
+    --bad:     #A8321F;
+    --bad-bg:  #F7DCD3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:     #F3EAD3;
+      --muted:   #A9B5CB;
+      --paper:   #0E1A33;
+      --card:    #172642;
+      --line:    #2F4268;
+      --warn-bg: #3A3120;
+      --link:    #8CC6EA;
+      --focus:   #8CC6EA;
+      --ok:      #8FD3A3;
+      --ok-bg:   #1E3A2E;
+      --bad:     #F2A08C;
+      --bad-bg:  #43231E;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 17px/1.55 "Barlow", system-ui, sans-serif;
+  }
+  a { color: var(--link); text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible, input:focus-visible + label, summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 0 16px; }
+
+  header.hero {
+    background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 100%);
+    color: #F3EAD3;
+    border-bottom: 6px solid var(--gold);
+  }
+  .hero .wrap { padding-top: 36px; padding-bottom: 36px; }
+  .hero h1 {
+    font: 700 clamp(2.3rem, 7vw, 3.5rem)/0.98 "Barlow Condensed", sans-serif;
+    margin: 0 0 14px;
+    color: var(--gold);
+    letter-spacing: -0.01em;
+  }
+  .hero p { margin: 0; max-width: 44ch; font-size: 1.08rem; }
+  .hero .back { margin-top: 14px; font-size: 0.95rem; }
+  .hero .back a { color: #F3EAD3; }
+  @media (max-width: 600px) {
+    .hero .wrap { padding-top: 22px; padding-bottom: 22px; }
+    .hero p { font-size: 1rem; }
+  }
+
+  main { padding: 32px 0 56px; }
+  h2 { font: 700 1.9rem/1.1 "Barlow Condensed", sans-serif; margin: 48px 0 14px; }
+  h3 { font: 600 1.15rem/1.3 "Barlow", sans-serif; margin: 22px 0 6px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-top: 6px solid var(--gold);
+    border-radius: 10px;
+    padding: 24px 22px 12px;
+  }
+  .card h2 { margin-top: 0; }
+  ol.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+  ol.steps > li {
+    counter-increment: s;
+    position: relative;
+    padding: 0 0 22px 44px;
+  }
+  ol.steps > li::before {
+    content: counter(s);
+    position: absolute; left: 0; top: 0;
+    width: 30px; height: 30px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--hat); color: #fff;
+    font: 700 1rem "Barlow Condensed", sans-serif;
+  }
+  ol.steps > li.off::before { background: var(--line); color: var(--muted); }
+  ol.steps strong { font-weight: 600; }
+  .muted { color: var(--muted); font-size: 0.95rem; }
+  .step-body { margin-top: 10px; }
+
+  .notice {
+    background: var(--warn-bg);
+    border-left: 4px solid var(--gold-d);
+    padding: 12px 16px;
+    margin: 0 0 18px;
+  }
+  .notice[hidden], [hidden] { display: none !important; }
+
+  .buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button, .pick {
+    appearance: none;
+    font: 600 1rem "Barlow", sans-serif;
+    border-radius: 8px;
+    min-height: 46px;
+    padding: 10px 20px;
+    cursor: pointer;
+  }
+  .pick {
+    display: inline-flex; align-items: center;
+    background: var(--paper); color: var(--ink);
+    border: 2px solid var(--navy-2);
+  }
+  @media (prefers-color-scheme: dark) { .pick { border-color: var(--line); } }
+  .pick:hover { border-color: var(--hat); }
+  input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  input[type=file]:focus-visible + label { outline: 3px solid var(--focus); outline-offset: 2px; }
+  button.plain { background: none; border: 0; color: var(--link); text-decoration: underline; padding: 10px 6px; min-height: 0; font-weight: 500; }
+  button.go {
+    border: 0;
+    background: var(--gold);
+    color: #1E1B12;
+    font: 700 1.15rem "Barlow", sans-serif;
+    padding: 12px 34px;
+    min-height: 50px;
+    box-shadow: inset 0 -4px 0 var(--gold-d);
+  }
+  button.go:hover { background: #F5CC63; }
+  button:disabled, .pick.disabled { opacity: 0.45; cursor: not-allowed; }
+  .check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 14px; cursor: pointer; }
+  .check input { width: 20px; height: 20px; margin: 3px 0 0; accent-color: var(--hat); flex: none; }
+
+  /* games and files */
+  ul.list { list-style: none; padding: 0; margin: 0; border-top: 2px solid var(--ink); }
+  ul.list > li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  ul.list .name { font: 700 1.2rem/1.2 "Barlow Condensed", sans-serif; }
+  ul.list .detail { grid-column: 1 / -1; color: var(--muted); font-size: 0.95rem; }
+  ul.list .detail b { color: var(--ink); font-weight: 600; }
+  code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.9em; }
+  .tag {
+    align-self: start;
+    font: 600 0.88rem "Barlow", sans-serif;
+    padding: 2px 10px; border-radius: 4px;
+    white-space: nowrap;
+  }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); }
+  .tag.part { background: var(--warn-bg); color: var(--ink); }
+  .tag.none { color: var(--muted); border: 1px solid var(--line); }
+  .tag.bad { background: var(--bad-bg); color: var(--bad); }
+  ul.list li.none .name { color: var(--muted); font-weight: 500; }
+  progress { grid-column: 1 / -1; width: 100%; height: 8px; accent-color: var(--hat); }
+
+  .status { margin: 14px 0 0; min-height: 1.5em; font-weight: 600; }
+  .status.bad { color: var(--bad); }
+  .status.ok { color: var(--ok); }
+  .result {
+    border: 2px solid var(--ok);
+    border-radius: 10px;
+    padding: 12px 16px;
+    background: var(--ok-bg);
+  }
+  .result h3 { margin: 0 0 4px; }
+  .result ul { margin: 4px 0 0; padding-left: 22px; }
+
+  details { margin-top: 14px; }
+  summary { cursor: pointer; color: var(--muted); }
+  details pre {
+    background: var(--paper); border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px; margin: 8px 0 0; max-height: 260px; overflow: auto;
+    font: 0.82rem/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all;
+  }
+  .unused { margin-top: 12px; }
+  .unused ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); font-size: 0.95rem; }
+
+  .good li { margin-bottom: 8px; }
+  footer { color: var(--muted); font-size: 0.92rem; padding: 0 0 40px; }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <h1>Load ROMs</h1>
+    <p>Send your MAME ROM zips to a CYD Classic Arcade board over its USB cable. Works on every board, and is the way to do it on the 2.8" boards, which have no usable SD card slot.</p>
+    <p class="back"><a href="../">&larr; Back to the install page</a></p>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="notice" id="no-serial" hidden>
+    This browser can't talk to USB devices. Open this page in <strong>Chrome</strong> or <strong>Edge</strong> on a computer.
+  </p>
+
+  <section class="card" aria-labelledby="load-h">
+    <h2 id="load-h">Load your ROMs</h2>
+    <ol class="steps">
+      <li><strong>Use Chrome or Edge on a computer</strong> (Windows, Mac, Linux or a Chromebook). Sending to the board needs the browser to reach USB.</li>
+
+      <li><strong>Plug in the board</strong> with CYD Classic Arcade running on it, using a USB cable that carries data.
+        Close anything else using the board's port first: a serial monitor, the installer, or this page in another tab.</li>
+
+      <li><strong>Pick your ROM zips:</strong> the zips as MAME has them, no unzipping.
+        <div class="step-body">
+          <div class="buttons">
+            <input type="file" id="pick-files" accept=".zip,application/zip" multiple>
+            <label class="pick" for="pick-files">Choose zip files</label>
+            <input type="file" id="pick-folder" webkitdirectory>
+            <label class="pick" for="pick-folder">Choose a folder</label>
+            <button type="button" class="plain" id="clear" hidden>Start over</button>
+          </div>
+          <p class="muted" id="pick-note">Nothing is sent yet. This page first reads the list inside each zip to see what is there.</p>
+          <p class="muted">Your files never go to the internet, only down the USB cable. (For a folder, Chrome asks whether to "upload" it: that only lets this page read it.)</p>
+        </div>
+      </li>
+
+      <li class="off" id="step-games"><strong>See which games they make.</strong>
+        <div class="step-body" id="games-box" hidden>
+          <ul class="list" id="games"></ul>
+          <div class="unused" id="unused"></div>
+        </div>
+      </li>
+
+      <li class="off" id="step-send"><strong>Send them to the board.</strong>
+        <div class="step-body" id="send-box" hidden>
+          <label class="check"><input type="checkbox" id="replace">
+            <span>Replace the ROMs already on the board<br><span class="muted">Leave this off to add to what is there. Zips the board already has are skipped.</span></span></label>
+          <div class="buttons"><button type="button" class="go" id="send">Send to board</button></div>
+          <p class="muted" id="send-note"></p>
+          <p class="status" id="status" role="status" aria-live="polite"></p>
+          <ul class="list" id="files" hidden></ul>
+          <details id="log-box" hidden>
+            <summary>Board log</summary>
+            <pre id="log"></pre>
+          </details>
+        </div>
+      </li>
+
+      <li class="off" id="step-done"><strong>Play.</strong>
+        <div class="step-body" id="done-box" hidden></div>
+      </li>
+    </ol>
+  </section>
+
+  <h2>Good to know</h2>
+  <ul class="good">
+    <li><strong>Which zips?</strong> The standard MAME sets of the games you own. The chips inside are recognised by their checksums, so any MAME version's zips work. The <a href="https://github.com/tomtombombadil/CYD-Classic-Arcade/blob/main/docs/ROMS.md">list of sets</a> says which ones.</li>
+    <li><strong>Pac-Man needs Puck Man's zip</strong> when your collection is "split": <code>pacman.zip</code> then only holds what differs from <code>puckman.zip</code>. Pick both; this page tells you when a game is missing chips.</li>
+    <li><strong>Room on the board:</strong> about 1.7 MB of zips. Sending the same zips again uses no extra room: they are skipped. To start fresh, tick "Replace the ROMs already on the board".</li>
+    <li><strong>Boards with an SD card slot</strong> (3.2", 3.5" and 4.0") can also take the zips from a <code>CYD-Classic-Arcade</code> folder on the card.</li>
+    <li><strong>No answer from the board?</strong> Check that CYD Classic Arcade v0.2.0 or newer is on it (<a href="../">install page</a>), that nothing else has the port open, and on Windows that the <a href="https://www.wch-ic.com/downloads/CH341SER_EXE.html" target="_blank" rel="noopener">CH340 USB driver</a> is installed.</li>
+  </ul>
+</main>
+
+<footer class="wrap">
+  <p>CYD Classic Arcade includes no game ROMs. Our code is MIT; <a href="https://github.com/tomtombombadil/CYD-Classic-Arcade">source code on GitHub</a>.</p>
+</footer>
+
+<script type="module">
+import * as L from "./loader.js";
+
+const $ = (id) => document.getElementById(id);
+const hasSerial = "serial" in navigator;
+if (!hasSerial) $("no-serial").hidden = false;
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k !== null && k !== undefined && k !== false) e.append(k);
+  return e;
+}
+const kb = (n) => n >= 1024 * 1024 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+function shortList(names, max = 4) {
+  return names.length <= max ? names.join(", ") : `${names.slice(0, max).join(", ")} and ${names.length - max} more`;
+}
+
+let games = null;          // games.json
+let picked = [];           // {file, name, size, entries}
+let found = null;          // recognise() result
+let busy = false;
+const firstNote = $("pick-note").textContent;
+
+const gamesReady = fetch("games.json", { cache: "no-store" })
+  .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then((g) => { games = g; })
+  .catch(() => { $("pick-note").textContent = "The game list didn't load. Refresh the page to try again."; });
+
+// ---- 3. picking -------------------------------------------------------------
+
+async function addFiles(list) {
+  await gamesReady;
+  if (!games) return;
+  const all = [...list];
+  const zips = all.filter((f) => /\.zip$/i.test(f.name));
+  if (!zips.length) {
+    $("pick-note").textContent = all.length ? "No .zip files there. Pick the zips themselves, as MAME has them." : "";
+    return;
+  }
+  const seen = new Set(picked.map((p) => `${p.name}|${p.size}|${p.file.lastModified}`));
+  let done = 0;
+  for (const f of zips) {
+    if (++done % 25 === 0) $("pick-note").textContent = `Reading zip ${done} of ${zips.length}…`;
+    const id = `${f.name}|${f.size}|${f.lastModified}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    let entries = null;
+    try { entries = await L.readZipDirectory(f); } catch (e) { entries = null; }
+    picked.push({ file: f, name: f.name, size: f.size, entries });
+  }
+  $("pick-note").textContent = `${plural(picked.length, "zip", "zips")} picked. Pick more to add them, or start over.`;
+  update();
+}
+
+$("pick-files").addEventListener("change", (e) => { addFiles([...e.target.files]); e.target.value = ""; });
+$("pick-folder").addEventListener("change", (e) => { addFiles([...e.target.files]); e.target.value = ""; });
+$("clear").addEventListener("click", () => {
+  picked = [];
+  $("pick-note").textContent = firstNote;
+  $("done-box").hidden = true;
+  $("step-done").classList.add("off");
+  update();
+});
+
+// ---- 4. what they make ----------------------------------------------------------
+
+function update() {
+  $("clear").hidden = !picked.length;
+  found = picked.length ? L.recognise(games, picked) : null;
+  $("games-box").hidden = !found;
+  $("step-games").classList.toggle("off", !found);
+  const sending = found ? found.zips.filter((z) => z.use) : [];
+  $("send-box").hidden = !found;
+  $("step-send").classList.toggle("off", !sending.length);
+  $("files").hidden = true;
+  $("status").textContent = "";
+  $("status").className = "status";
+  if (!found) return;
+
+  const order = { complete: 0, incomplete: 1, none: 2 };
+  const rows = [...found.games].sort((a, b) => order[a.state] - order[b.state]);
+  $("games").replaceChildren(...rows.map((g) => {
+    if (g.state === "complete") {
+      return el("li", {}, el("span", { class: "name" }, g.title), el("span", { class: "tag ok" }, "Complete"),
+        el("span", { class: "detail" }, "From ", el("span", { class: "mono" }, g.from.join(", "))));
+    }
+    if (g.state === "incomplete") {
+      return el("li", {}, el("span", { class: "name" }, g.title),
+        el("span", { class: "tag part" }, `Missing ${plural(g.missing.length, "chip", "chips")}`),
+        el("span", { class: "detail" }, "Missing ", el("span", { class: "mono" }, shortList(g.missing)), ".",
+          g.needParent ? el("span", {}, " Also pick ", el("b", { class: "mono" }, `${g.parent}.zip`), ` (${g.title}'s parent set).`) : null));
+    }
+    return el("li", { class: "none" }, el("span", { class: "name" }, g.title), el("span", { class: "tag none" }, "Not picked"));
+  }));
+
+  const unused = found.zips.filter((z) => !z.use);
+  const why = { "not a zip": "not a zip this page can read", "nothing known": "no chips of these games",
+                "too big": "over 1.5 MB", "not needed": "its chips are already in the other zips" };
+  $("unused").replaceChildren(...(unused.length ? [
+    el("details", {}, el("summary", {}, `${plural(unused.length, "zip", "zips")} not used (won't be sent)`),
+      el("ul", {}, ...unused.slice(0, 200).map((z) => el("li", {}, el("span", { class: "mono" }, z.name), ` - ${why[z.why]}`)),
+        unused.length > 200 ? el("li", {}, `and ${unused.length - 200} more`) : null)),
+  ] : []));
+
+  const total = sending.reduce((s, z) => s + z.size, 0);
+  $("send").disabled = !hasSerial || !sending.length || busy;
+  $("send-note").textContent = !sending.length
+    ? "None of these zips holds a whole game's chips yet, so there is nothing to send."
+    : `${plural(sending.length, "zip", "zips")} to send, ${kb(total)} in all (about ${Math.max(1, Math.round(total / 9000))} s).` +
+      (hasSerial ? "" : " Sending needs Chrome or Edge on a computer.");
+}
+
+// ---- 5. sending -------------------------------------------------------------------
+
+const logLines = [];
+function log(line) {
+  logLines.push(line);
+  if (logLines.length > 50) logLines.shift();
+  $("log").textContent = logLines.join("\n");
+  $("log-box").hidden = false;
+}
+
+function status(text, kind = "") {
+  $("status").textContent = text;
+  $("status").className = "status" + (kind ? " " + kind : "");
+}
+
+// Board names: 1..31 of A-Z a-z 0-9 . _ - ; two zips with the same name get -2, -3...
+function boardNames(zips) {
+  const used = new Set();
+  return zips.map((z) => {
+    let name = L.sanitizeName(z.name);
+    for (let n = 2; used.has(name.toLowerCase()); n++) name = L.sanitizeName(z.name.replace(/\.zip$/i, "").slice(0, 24) + `-${n}`);
+    used.add(name.toLowerCase());
+    return { name, blob: z.file };
+  });
+}
+
+function setBusy(b) {
+  busy = b;
+  for (const id of ["pick-files", "pick-folder", "replace"]) $(id).disabled = b;
+  for (const l of document.querySelectorAll(".pick")) l.classList.toggle("disabled", b);
+  $("clear").disabled = b;
+  $("send").disabled = b || !hasSerial || !found || !found.zips.some((z) => z.use);
+}
+
+$("send").addEventListener("click", async () => {
+  if (busy || !found) return;
+  const files = boardNames(found.zips.filter((z) => z.use));
+  if (!files.length) return;
+
+  let port;
+  try {
+    port = await navigator.serial.requestPort();
+  } catch (e) {
+    status("No port was chosen. Click Send to board again and pick the board's port.", "bad");
+    return;
+  }
+  setBusy(true);
+  $("done-box").hidden = true;
+  $("step-done").classList.add("off");
+  try {
+    await port.open({ baudRate: L.BAUD, bufferSize: 16384 });
+  } catch (e) {
+    status("Couldn't open the port: " + e.message + " Is something else using it?", "bad");
+    setBusy(false);
+    return;
+  }
+  // Both lines released = the board runs normally (they drive reset / boot mode)
+  try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) { /* not supported */ }
+
+  const writer = port.writable.getWriter();
+  const reader = port.readable.getReader();
+  const queue = new L.LineQueue();
+  const pump = (async () => {
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) queue.push(value);
+      }
+    } catch (e) { /* port gone or cancelled */ }
+    queue.close();
+  })();
+  const enc = new TextEncoder();
+  const link = {
+    sendLine: (text) => writer.write(enc.encode(text + "\n")),
+    sendBytes: (bytes) => writer.write(bytes),
+    readLine: (ms) => queue.readLine(ms),
+    get closed() { return queue.closed; },
+  };
+
+  // One row per file, with a progress bar
+  const rows = files.map((f) => {
+    const state = el("span", { class: "tag none" }, "Waiting");
+    const bar = el("progress", { max: "1", value: "0" });
+    const detail = el("span", { class: "detail" });
+    const li = el("li", {}, el("span", { class: "name mono" }, f.name), state, bar, detail);
+    return { li, state, bar, detail };
+  });
+  $("files").replaceChildren(...rows.map((r) => r.li));
+  $("files").hidden = false;
+
+  try {
+    const result = await L.transfer(link, files, {
+      replace: $("replace").checked,
+      onLog: log,
+      onStatus: (t) => status(t),
+      onBoard: (b) => status(`Board found: CYD Classic Arcade ${b.version}, ${kb(b.free)} free.`),
+      onFile: (i, s) => {
+        const r = rows[i];
+        r.bar.max = Math.max(1, s.size);
+        r.bar.value = s.sent;
+        if (s.state === "checking") { r.state.textContent = "Waiting"; }
+        else if (s.state === "sending") { r.state.className = "tag part"; r.state.textContent = `Sending ${Math.floor(100 * s.sent / Math.max(1, s.size))} %`; }
+        else if (s.state === "ok") { r.state.className = "tag ok"; r.state.textContent = "Stored"; r.bar.hidden = true; }
+        else if (s.state === "skipped") { r.state.className = "tag ok"; r.state.textContent = "Already there"; r.bar.hidden = true; }
+        else if (s.state === "error") {
+          r.state.className = "tag bad"; r.state.textContent = "Failed"; r.bar.hidden = true;
+          r.detail.textContent = s.error === "crc" ? "It arrived damaged (checksum). Send again."
+            : s.error.startsWith("no room") ? "No room left on the board." : `The board said: ${s.error}`;
+        }
+      },
+    });
+    const failed = result.results.filter((r) => r.state === "error").length;
+    status(failed ? `Done, but ${plural(failed, "zip", "zips")} failed - see below. You can send again.`
+                  : "Done. You can unplug the board.", failed ? "bad" : "ok");
+    showGames(result.games);
+  } catch (e) {
+    for (const r of rows) if (r.state.textContent === "Waiting" || r.state.textContent.startsWith("Sending")) {
+      r.state.className = "tag none"; r.state.textContent = "Not sent"; r.bar.hidden = true;
+    }
+    if (e.code === "no-room") {
+      status(`The board has ${kb(e.free)} free, but these zips need ${kb(e.need)}. ` +
+             `Tick "Replace the ROMs already on the board" to make room, or pick fewer zips. Nothing was sent.`, "bad");
+    } else if (e.code) {
+      status(e.message, "bad");
+    } else {
+      status("The connection to the board was lost (" + e.message + "). Plug it back in and try again.", "bad");
+    }
+  } finally {
+    // Release everything so the port can be opened again (here or by the installer)
+    try { await reader.cancel(); } catch (e) { /* ignore */ }
+    await pump;
+    try { reader.releaseLock(); } catch (e) { /* ignore */ }
+    try { writer.releaseLock(); } catch (e) { /* ignore */ }
+    try { await port.close(); } catch (e) { /* ignore */ }
+    setBusy(false);
+  }
+});
+
+// ---- 6. the result ------------------------------------------------------------------
+
+function showGames(ids) {
+  const title = (id) => (games.find((g) => g.id === id) || { title: id }).title;
+  const box = $("done-box");
+  box.replaceChildren(ids.length
+    ? el("div", { class: "result" }, el("h3", {}, "The board now has:"),
+        el("ul", {}, ...ids.map((id) => el("li", {}, title(id)))),
+        el("p", { class: "muted" }, "Pick a game from the board's menu and play with your controller."))
+    : el("p", {}, "The board has no complete game yet. Check the list above for missing chips."));
+  box.hidden = false;
+  $("step-done").classList.remove("off");
+}
+</script>
+</body>
+</html>

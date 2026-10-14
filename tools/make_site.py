@@ -5,8 +5,13 @@ platformio.ini (envs that set custom_firmware_name), copies each board's
 merged firmware into the site, and writes one ESP Web Tools manifest per
 board plus boards.json for the page. Adapted from CYD Classic Games.
 
+The ROM page (web/roms/) needs roms/games.json, every game's ROM set: it is
+`arcade_host --list-json`, built here with tools/host/build.sh (g++), or
+taken from --games-json.
+
 Usage:
     python tools/make_site.py --bins <dir with TTB-CYD-CA_*.bin> --version <v> --out <site dir>
+                              [--games-json <file>]
 """
 import argparse
 import configparser
@@ -14,6 +19,8 @@ import datetime
 import json
 import pathlib
 import shutil
+import subprocess
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -40,11 +47,23 @@ def boards_from_ini():
     return boards
 
 
+def games_json():
+    """The game list with ROM sets, from the host runner (emu/games.cpp)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["sh", str(ROOT / "tools" / "host" / "build.sh"), tmp], check=True,
+                       stdout=subprocess.DEVNULL)
+        out = subprocess.run([str(pathlib.Path(tmp) / "arcade_host"), "--list-json"], check=True,
+                             capture_output=True, text=True).stdout
+    json.loads(out)     # must be valid
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bins", required=True, type=pathlib.Path)
     ap.add_argument("--version", required=True)
     ap.add_argument("--out", required=True, type=pathlib.Path)
+    ap.add_argument("--games-json", type=pathlib.Path, help="arcade_host --list-json output (else built here)")
     args = ap.parse_args()
 
     out = args.out
@@ -53,6 +72,9 @@ def main():
     (out / "firmware").mkdir(parents=True)
     (out / "manifests").mkdir()
     shutil.copytree(ROOT / "web", out, dirs_exist_ok=True)
+    games = args.games_json.read_text(encoding="utf-8") if args.games_json else games_json()
+    (out / "roms" / "games.json").write_text(games, encoding="utf-8")
+    print(f"added roms/games.json ({len(json.loads(games))} games)")
 
     published = []
     for b in boards_from_ini():
