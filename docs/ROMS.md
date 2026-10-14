@@ -51,9 +51,11 @@ AVG PROM - our emulator needs neither.
 
 Notes:
 - **Galaga, Dig Dug:** non-merged sets also hold the Namco custom chips'
-  own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). They are optional:
-  without them the chips are modelled from their known behaviour (Galaga's
-  explosions then come from our own noise model).
+  own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). They aren't needed or
+  used: the chips are modelled from their known behaviour (Galaga's
+  explosions come from our own noise model). Older sets name Galaga's files
+  `gg1-1b.3p` etc. and Dig Dug's partly `136007.1xx`; matching by CRC finds
+  them all.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

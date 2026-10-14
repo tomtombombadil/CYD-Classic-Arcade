@@ -17,8 +17,8 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 |---|---|---|---|---|
 | Pac-Man | Z80 3.072 MHz | Namco 3-voice wavetable sound | 224x288 portrait | first |
 | Space Invaders | 8080 2 MHz | analog sound boards | 224x256 portrait | easy |
-| Galaga | 3x Z80 3.072 MHz | Namco 51xx/54xx customs, wavetable sound | 224x288 portrait | medium-hard |
-| Dig Dug | 3x Z80 3.072 MHz | Namco 51xx/53xx customs, wavetable sound, playfield | 224x288 portrait | medium (after Galaga) |
+| Galaga | 3x Z80 3.072 MHz | Namco 51xx (modelled), 54xx (our noise model), 05xx stars, wavetable sound | 224x288 portrait | done: idle-loop skipping brings 152K CPU cycles a frame to ~55K in play |
+| Dig Dug | 3x Z80 3.072 MHz | Namco 51xx/53xx (modelled), wavetable sound, playfield from a map ROM, EAROM | 224x288 portrait | done: ~52K cycles a frame in play |
 | Donkey Kong | Z80 3.072 MHz | i8035 sound CPU + DAC, analog effects | 224x256 portrait | medium |
 | Q\*bert | 8088 5 MHz | 6502 sound CPU + DAC, Votrax SC-01 speech | 240x256 portrait | medium-hard |
 | Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound | 4:3 landscape | medium |
