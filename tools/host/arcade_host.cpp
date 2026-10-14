@@ -1,7 +1,7 @@
 // Headless runner for the emulated machines (host only, MIT).
 //
 //   arcade_host <game> <zip | rom file | dir>... [options]
-//     games: pacman, invaders (the table `kGames` below)
+//     games: the table in emu/games.cpp (pacman, invaders, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -18,10 +18,13 @@
 //                         start1 start2 left right fire left2 right2 fire2)
 //     --verbose           one timing line per frame
 //
+//   arcade_host --list-json
+//     prints every game's ROM set as JSON (the web page's ROM loader reads
+//     it to pick out the zips worth sending to the board)
+//
 // Prints per-second timing (emulation and line rendering, ms per frame) and
 // a summary, so the cost on the device can be estimated.
-#include "../../emu/machines/invaders.h"
-#include "../../emu/machines/pacman.h"
+#include "../../emu/games.h"
 #include "../../emu/rom/romset.h"
 #include "../../emu/rom/zip.h"
 #include "../../emu/sound/samples.h"
@@ -73,93 +76,7 @@ std::string lower(std::string s)
     return s;
 }
 
-// --- the games ---------------------------------------------------------------
-
-struct ButtonName {
-    const char* name;
-    uint16_t    bit;
-};
-
-// One emulated machine behind a common face, so the runner below works for
-// every game in kGames.
-class Game {
-public:
-    virtual ~Game() = default;
-    virtual void init(uint8_t* const* regions, uint32_t rate) = 0;
-    virtual void set_dips(uint8_t dips) = 0;
-    virtual void set_inputs(uint16_t buttons) = 0;
-    virtual void set_samples(const samples::Wav* const*) {}
-    virtual int  run_frame(int16_t* audio, int cap) = 0;
-    virtual void render_line(int y, uint16_t* out) = 0;
-    virtual int  watchdog_resets() const = 0;
-};
-
-struct GameInfo {
-    const char*        name;
-    const romset::Set* set;
-    int                width, height;
-    uint32_t           cpu_clock;
-    int                cycles_per_frame;
-    const ButtonName*  buttons;
-    int                button_count;
-    const char* const* sample_names;    // the MAME sample set's files (without .wav), or null
-    int                sample_count;
-    std::unique_ptr<Game> (*make)();
-};
-
-class PacmanGame : public Game {
-public:
-    void init(uint8_t* const* r, uint32_t rate) override
-    {
-        m_.init({r[pacman::kRegionCpu], r[pacman::kRegionGfx], r[pacman::kRegionProms], r[pacman::kRegionSound]}, rate);
-    }
-    void set_dips(uint8_t d) override { m_.set_dips(d); }
-    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
-    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
-    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
-    int  watchdog_resets() const override { return m_.watchdog_resets(); }
-
-private:
-    pacman::Machine m_;
-};
-
-class InvadersGame : public Game {
-public:
-    void init(uint8_t* const* r, uint32_t rate) override { m_.init({r[invaders::kRegionCpu]}, rate); }
-    void set_dips(uint8_t d) override { m_.set_dips(d); }
-    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
-    void set_samples(const samples::Wav* const* w) override { m_.set_samples(w); }
-    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
-    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
-    int  watchdog_resets() const override { return m_.watchdog_resets(); }
-
-private:
-    invaders::Machine m_;
-};
-
-const ButtonName kPacmanButtons[] = {
-    {"up", pacman::kUp}, {"down", pacman::kDown}, {"left", pacman::kLeft},
-    {"right", pacman::kRight}, {"coin", pacman::kCoin}, {"coin2", pacman::kCoin2},
-    {"start1", pacman::kStart1}, {"start2", pacman::kStart2},
-    {"service", pacman::kService}, {"test", pacman::kTest},
-};
-
-const ButtonName kInvadersButtons[] = {
-    {"coin", invaders::kCoin}, {"start1", invaders::kStart1}, {"start2", invaders::kStart2},
-    {"left", invaders::kLeft}, {"right", invaders::kRight}, {"fire", invaders::kFire},
-    {"left2", invaders::kLeft2}, {"right2", invaders::kRight2}, {"fire2", invaders::kFire2},
-};
-
-template <class G> std::unique_ptr<Game> make_game() { return std::unique_ptr<Game>(new G); }
-
-const GameInfo kGames[] = {
-    {"pacman", &pacman::kRomSet, pacman::kScreenW, pacman::kScreenH, pacman::kCpuClock,
-     pacman::kCyclesPerFrame, kPacmanButtons, int(sizeof kPacmanButtons / sizeof kPacmanButtons[0]),
-     nullptr, 0, make_game<PacmanGame>},
-    {"invaders", &invaders::kRomSet, invaders::kScreenW, invaders::kScreenH, invaders::kCpuClock,
-     invaders::kCyclesPerFrame, kInvadersButtons, int(sizeof kInvadersButtons / sizeof kInvadersButtons[0]),
-     invaders::kSampleNames, invaders::kSampleCount, make_game<InvadersGame>},
-};
+using GameInfo = games::Info;
 
 // The last path component equals `name`, ignoring case.
 bool same_name(const char* path, size_t len, const std::string& name)
@@ -295,7 +212,7 @@ void usage()
                  "                   [--wav FILE] [--rate HZ] [--dips HEX] [--samples ZIP|DIR]\n"
                  "                   [--input SCRIPT] [--verbose]\n"
                  "games:");
-    for (const GameInfo& g : kGames) std::fprintf(stderr, " %s", g.name);
+    for (int i = 0; i < games::kGameCount; ++i) std::fprintf(stderr, " %s", games::kGames[i].id);
     std::fprintf(stderr, "\n");
 }
 
@@ -306,13 +223,34 @@ double ms_since(Clock::time_point t0)
 
 } // namespace
 
+// Every game's ROM set as JSON, for web/roms/.
+int list_json()
+{
+    std::printf("[\n");
+    for (int g = 0; g < games::kGameCount; ++g) {
+        const games::Info& gi = games::kGames[g];
+        const romset::Set& set = *gi.set;
+        std::printf("  {\"id\": \"%s\", \"title\": \"%s\", \"parent\": %s%s%s, \"roms\": [\n", gi.id, gi.title,
+                    set.parent ? "\"" : "", set.parent ? set.parent : "null", set.parent ? "\"" : "");
+        for (int r = 0; r < set.rom_count; ++r) {
+            const romset::Rom& rom = set.roms[r];
+            std::printf("    {\"name\": \"%s\", \"size\": %u, \"crc\": \"%08x\", \"optional\": %s}%s\n", rom.name,
+                        unsigned(rom.size), unsigned(rom.crc), rom.optional ? "true" : "false",
+                        r + 1 < set.rom_count ? "," : "");
+        }
+        std::printf("  ]}%s\n", g + 1 < games::kGameCount ? "," : "");
+    }
+    std::printf("]\n");
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::strcmp(argv[1], "--list-json") == 0) return list_json();
     if (argc < 3) { usage(); return 2; }
     const std::string game = argv[1];
     const GameInfo* info = nullptr;
-    for (const GameInfo& g : kGames)
-        if (game == g.name) info = &g;
+    info = games::find(game.c_str());
     if (!info) {
         std::fprintf(stderr, "unknown game '%s'\n", game.c_str());
         usage();
@@ -381,15 +319,16 @@ int main(int argc, char** argv)
     std::printf("%s: all ROMs found (%zu files searched)\n", set.title, files.size());
 
     // --- run ---
-    std::unique_ptr<Game> m = gi.make();
-    m->init(region_ptrs.data(), rate);
+    std::unique_ptr<games::Machine> m(gi.make());
+    std::vector<const uint8_t*> rom_ptrs(region_ptrs.begin(), region_ptrs.end());
+    m->init(rom_ptrs.data(), rate, false);
     if (dips >= 0) m->set_dips(uint8_t(dips));
 
     std::vector<std::vector<uint8_t>> sample_bufs;
     std::vector<samples::Wav> wavs;
     if (!samples_path.empty()) {
         if (!gi.sample_count) {
-            std::fprintf(stderr, "%s has no sample set\n", gi.name);
+            std::fprintf(stderr, "%s has no sample set\n", gi.id);
             return 2;
         }
         const int found = load_samples(samples_path, gi, sample_bufs, wavs);

@@ -83,6 +83,28 @@ bool load(const Set& set, const Source* sources, int source_count, uint8_t* cons
     return true;
 }
 
+bool available(const Set& set, const Source* sources, int source_count)
+{
+    for (int i = 0; i < set.rom_count; ++i) {
+        const Rom& rom = set.roms[i];
+        if (rom.optional) continue;
+        bool found = false;
+        for (int s = 0; s < source_count && !found; ++s) {
+            const Source& src = sources[s];
+            zip::Reader z;
+            if (zip::looks_like_zip(src.data, src.len) && z.open(src.data, src.len)) {
+                uint32_t it = z.begin();
+                zip::Entry e;
+                while (!found && z.next(it, e)) found = e.size == rom.size && e.crc == rom.crc;
+            } else {
+                found = src.len == rom.size && crc32::of(src.data, src.len) == rom.crc;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
 const char* status_name(Status s)
 {
     switch (s) {

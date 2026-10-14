@@ -59,6 +59,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   stick is unused. ShanWan Q36 works with its switch on "D" (shows as
   "Q36 for Android"; two of them pair as P1 and P2) - except its Home
   button, which never arrives.
+- Measured on Tom's 2.8" ST7789 (v0.1.0, Bluetooth on): RAM 142 KB free,
+  biggest block 108 KB, lowest 142 KB. A 224x288 frame takes 25.9 ms at
+  40 MHz SPI (38 fps max) - too slow for 60 fps, so: SPI at 80 MHz where the
+  panel takes it (HSPI's own IOMUX pins allow it) and send only the lines
+  that changed since the last frame (a hash per line).
 - Buttons by POSITION (Tom, 2026-10-14): bottom face button = the main
   one (fire / jump), right = second. A setting "Swap A/B and X/Y" in the
   menu for players who want the printed letters (`pad_set_swap_ab()`).

@@ -1,0 +1,268 @@
+// Host tests for core/: the ROM store on a fake NOR flash, and the USB
+// loading protocol driven the way the web page drives it.
+#include "../../core/rom_store.h"
+#include "../../core/usb_import.h"
+#include "../../emu/rom/crc32.h"
+
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+namespace {
+
+int g_pass = 0, g_fail = 0;
+
+void check(bool ok, const char* what)
+{
+    if (ok) ++g_pass;
+    else { ++g_fail; std::printf("FAIL: %s\n", what); }
+}
+
+// NOR flash: erase sets a sector to 0xFF, a write can only clear bits.
+class FakeFlash : public rom_store::Flash {
+public:
+    explicit FakeFlash(uint32_t size) : mem(size, 0x5A) {}     // starts dirty, like used flash
+    uint32_t size() const override { return uint32_t(mem.size()); }
+    bool read(uint32_t off, void* out, uint32_t len) override
+    {
+        if (off + uint64_t(len) > mem.size()) return false;
+        std::memcpy(out, mem.data() + off, len);
+        return true;
+    }
+    bool erase_sector(uint32_t off) override
+    {
+        if (off % rom_store::kSector || off + rom_store::kSector > mem.size()) return false;
+        std::memset(mem.data() + off, 0xFF, rom_store::kSector);
+        ++erases;
+        return true;
+    }
+    bool write(uint32_t off, const void* data, uint32_t len) override
+    {
+        if (fail_writes_after >= 0 && writes++ >= fail_writes_after) return false;
+        if (off + uint64_t(len) > mem.size()) return false;
+        const uint8_t* d = static_cast<const uint8_t*>(data);
+        for (uint32_t i = 0; i < len; ++i) mem[off + i] &= d[i];
+        return true;
+    }
+    const uint8_t* map() override { return mem.data(); }
+
+    std::vector<uint8_t> mem;
+    int erases = 0;
+    int writes = 0;
+    int fail_writes_after = -1;
+};
+
+std::vector<uint8_t> pattern(uint32_t n, uint32_t seed)
+{
+    std::vector<uint8_t> v(n);
+    for (uint32_t i = 0; i < n; ++i) { seed = seed * 1103515245u + 12345u; v[i] = uint8_t(seed >> 16); }
+    return v;
+}
+
+bool store_file(rom_store::Store& s, const char* name, const std::vector<uint8_t>& d, uint32_t piece = 1000)
+{
+    if (!s.begin(name, uint32_t(d.size()), crc32::of(d.data(), d.size()))) return false;
+    for (uint32_t at = 0; at < d.size(); at += piece) {
+        const uint32_t n = uint32_t(d.size()) - at < piece ? uint32_t(d.size()) - at : piece;
+        if (!s.add(d.data() + at, n)) return false;
+    }
+    return s.finish();
+}
+
+int find(rom_store::Store& s, const char* name)
+{
+    for (int i = 0; i < s.count(); ++i)
+        if (s.live(i) && std::strcmp(s.entry(i).name, name) == 0) return i;
+    return -1;
+}
+
+bool same(rom_store::Store& s, const char* name, const std::vector<uint8_t>& d)
+{
+    const int i = find(s, name);
+    return i >= 0 && s.entry(i).size == d.size() && std::memcmp(s.data(i), d.data(), d.size()) == 0;
+}
+
+void test_store()
+{
+    FakeFlash f(64 * 1024);
+    rom_store::Store s;
+    s.open(f);
+    check(s.count() == 0, "blank flash = empty store");
+    check(s.free_bytes() == 60 * 1024, "free space after the directory");
+
+    const auto a = pattern(5000, 1), b = pattern(7001, 2), c = pattern(3, 3);
+    check(store_file(s, "pacman.zip", a), "store a file");
+    check(store_file(s, "invaders.zip", b, 7001), "store in one piece");
+    check(store_file(s, "x.zip", c, 1), "store byte by byte");
+    check(same(s, "pacman.zip", a) && same(s, "invaders.zip", b) && same(s, "x.zip", c), "files read back");
+
+    rom_store::Store s2;
+    s2.open(f);
+    check(s2.count() == 3 && same(s2, "invaders.zip", b), "the directory survives a restart");
+
+    // Storing a name again hides the old copy.
+    const auto a2 = pattern(4000, 9);
+    check(store_file(s2, "pacman.zip", a2), "store again");
+    check(same(s2, "pacman.zip", a2), "the new copy wins");
+    int live = 0;
+    for (int i = 0; i < s2.count(); ++i) live += s2.live(i);
+    check(live == 3, "one live copy per name");
+
+    // A bad CRC or a short file leaves the store as it was.
+    const uint32_t free_before = s2.free_bytes();
+    check(s2.begin("bad.zip", 100, 0x12345678), "begin a file");
+    const auto junk = pattern(100, 4);
+    check(s2.add(junk.data(), 100), "add its bytes");
+    check(!s2.finish(), "a wrong CRC is refused");
+    check(find(s2, "bad.zip") < 0 && s2.free_bytes() == free_before, "nothing kept");
+    check(s2.begin("short.zip", 100, crc32::of(junk.data(), 100)) && s2.add(junk.data(), 50) && !s2.finish(),
+          "a short file is refused");
+    check(!s2.begin("bad name.zip", 10, 0) && !s2.begin("", 10, 0), "bad names are refused");
+    check(!s2.begin("huge.zip", 1 << 20, 0), "too big is refused");
+
+    // A file cut off half way (power loss) mustn't spoil the next one.
+    const auto d = pattern(3000, 5);
+    check(s2.begin("cut.zip", 3000, crc32::of(d.data(), 3000)) && s2.add(d.data(), 1500), "half a file");
+    rom_store::Store s3;
+    s3.open(f);
+    const auto e = pattern(6000, 6);
+    check(store_file(s3, "after.zip", e), "store after a cut-off file");
+    check(same(s3, "after.zip", e) && find(s3, "cut.zip") < 0, "the cut-off file is gone, the next is whole");
+
+    // Clear, then the old bytes everywhere must be erased again as needed.
+    check(s3.clear(), "clear");
+    check(s3.count() == 0, "clear empties the store");
+    const auto big = pattern(40000, 7);
+    check(store_file(s3, "big.zip", big, 2048), "store over the old data");
+    check(same(s3, "big.zip", big), "it reads back after clear");
+    rom_store::Store s4;
+    s4.open(f);
+    check(s4.count() == 1 && same(s4, "big.zip", big), "and after a restart");
+
+    // A failing write ends the file without changing the directory.
+    f.fail_writes_after = f.writes;
+    const auto g = pattern(500, 8);
+    check(!store_file(s4, "fail.zip", g), "a failing write is reported");
+    f.fail_writes_after = -1;
+    rom_store::Store s5;
+    s5.open(f);
+    check(s5.count() == 1 && same(s5, "big.zip", big), "the store is unchanged");
+
+    // A damaged directory = an empty store.
+    f.mem[0] = 'X';
+    rom_store::Store s6;
+    s6.open(f);
+    check(s6.count() == 0, "a damaged directory reads as empty");
+}
+
+// ---- protocol ---------------------------------------------------------------
+
+struct Board {
+    FakeFlash flash{256 * 1024};
+    rom_store::Store store;
+    usb_import::Session session;
+    std::vector<std::string> out;
+    uint32_t now = 0;
+
+    Board()
+    {
+        store.open(flash);
+        session.init(store, &Board::send, &Board::games, this, "v9.9.9");
+    }
+    static void send(void* ctx, const char* line) { static_cast<Board*>(ctx)->out.push_back(line); }
+    static void games(void* ctx, char* buf, size_t cap)
+    {
+        Board* b = static_cast<Board*>(ctx);
+        std::snprintf(buf, cap, "%d", b->store.count());
+    }
+    void say(const std::string& s) { feed(s + "\n"); }
+    void feed(const std::string& s) { session.feed(reinterpret_cast<const uint8_t*>(s.data()), s.size(), now); }
+    void bytes(const uint8_t* d, size_t n) { session.feed(d, n, now); }
+    std::string last() const { return out.empty() ? "" : out.back(); }
+};
+
+// The page's way of sending a file: PUT, wait for READY, chunks with ACKs.
+bool page_put(Board& b, const char* name, const std::vector<uint8_t>& d, uint32_t crc, size_t feed_piece = 300)
+{
+    char line[128];
+    std::snprintf(line, sizeof line, "CYDA PUT %s %u %08x", name, unsigned(d.size()), unsigned(crc));
+    b.say(line);
+    if (b.last().rfind("CYDA READY ", 0) != 0) return false;
+    const size_t chunk = std::strtoul(b.last().c_str() + 11, nullptr, 10);
+    for (size_t at = 0; at < d.size(); at += chunk) {
+        const size_t n = d.size() - at < chunk ? d.size() - at : chunk;
+        for (size_t k = 0; k < n; k += feed_piece)          // serial arrives in bits
+            b.bytes(d.data() + at + k, n - k < feed_piece ? n - k : feed_piece);
+        char want[32];
+        std::snprintf(want, sizeof want, "CYDA ACK %u", unsigned(at + n));
+        bool acked = false;
+        for (const std::string& o : b.out) acked |= o == want;
+        if (!acked) return false;
+    }
+    return true;
+}
+
+void test_protocol()
+{
+    Board b;
+    b.say("log");                                   // not ours: ignored
+    check(b.out.empty(), "other lines are ignored");
+    b.say("CYDA HELLO");
+    check(b.last().rfind("CYDA HELLO v9.9.9 ", 0) == 0 && b.last().size() > 20, "HELLO answers");
+
+    const auto z = pattern(5000, 11);
+    const uint32_t crc = crc32::of(z.data(), z.size());
+    check(page_put(b, "pacman.zip", z, crc), "PUT with chunks and ACKs");
+    check(b.last() == "CYDA OK pacman.zip", "PUT ends OK");
+    check(same(b.store, "pacman.zip", z), "the file is in the store");
+
+    b.out.clear();
+    check(page_put(b, "bad.zip", z, crc ^ 1, 4096) && b.last() == "CYDA ERR crc", "a wrong CRC is reported");
+    check(find(b.store, "bad.zip") < 0, "and not kept");
+
+    b.say("CYDA PUT nope 10");
+    check(b.last() == "CYDA ERR bad request", "a PUT without a CRC is refused");
+    b.say("CYDA PUT big.zip 99999999 0");
+    check(b.last().rfind("CYDA ERR no room", 0) == 0, "too big is refused");
+
+    // Bytes that stop coming: dropped after the timeout, lines work again.
+    b.say("CYDA PUT slow.zip 100 0");
+    check(b.last().rfind("CYDA READY", 0) == 0, "slow PUT starts");
+    b.bytes(z.data(), 10);
+    b.now += usb_import::kTimeoutMs - 1;
+    b.session.tick(b.now);
+    check(b.session.receiving(), "still waiting just before the timeout");
+    b.now += 2;
+    b.session.tick(b.now);
+    check(!b.session.receiving() && b.last() == "CYDA ERR timeout", "timeout ends the PUT");
+    b.say("CYDA LIST");
+    const size_t n = b.out.size();
+    check(n >= 2 && b.out[n - 1] == "CYDA END" && b.out[n - 2].rfind("CYDA FILE pacman.zip 5000 ", 0) == 0,
+          "LIST shows the stored file");
+
+    b.say("CYDA DONE");
+    check(b.last() == "CYDA GAMES 1" && b.session.take_done() && !b.session.take_done(), "DONE reports once");
+
+    b.say("CYDA CLEAR");
+    check(b.last() == "CYDA OK" && b.store.count() == 0, "CLEAR empties the store");
+
+    b.say("CYDA HELLO\r");                          // Windows line ends
+    check(b.last().rfind("CYDA HELLO", 0) == 0, "CR LF works");
+    b.say(std::string(500, 'x'));
+    b.say("CYDA HELLO");
+    check(b.last().rfind("CYDA HELLO", 0) == 0, "an overlong line is skipped");
+    b.say("CYDA FOO");
+    check(b.last() == "CYDA ERR unknown", "unknown commands are answered");
+}
+
+} // namespace
+
+int main()
+{
+    test_store();
+    test_protocol();
+    std::printf("core tests: %d passed, %d failed\n", g_pass, g_fail);
+    return g_fail ? 1 : 0;
+}

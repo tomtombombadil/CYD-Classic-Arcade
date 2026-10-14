@@ -38,6 +38,13 @@ g++ $FLAGS $SAN -o "$OUT/zex_test_san" "$ROOT/tools/host_tests/zex_test.cpp" "$R
 g++ $FLAGS -O2 -o "$OUT/i8080_test" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
 g++ $FLAGS $SAN -o "$OUT/i8080_test_san" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
 
+echo "== ROM store and USB loading (core/)"
+CORE="$ROOT/core/rom_store.cpp $ROOT/core/usb_import.cpp $ROOT/emu/rom/crc32.cpp"
+g++ $FLAGS -O2 -o "$OUT/core_tests" "$ROOT/tools/host_tests/core_tests.cpp" $CORE
+g++ $FLAGS $SAN -o "$OUT/core_tests_san" "$ROOT/tools/host_tests/core_tests.cpp" $CORE
+"$OUT/core_tests"
+"$OUT/core_tests_san"
+
 echo "== unit tests"
 python3 "$ROOT/tools/host_tests/make_fixtures.py" "$OUT/fixtures"
 "$OUT/unit_tests" "$OUT/fixtures"

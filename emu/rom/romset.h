@@ -57,6 +57,10 @@ enum class Status : uint8_t {
 bool load(const Set& set, const Source* sources, int source_count, uint8_t* const* regions,
           Status* status);
 
+// True when every ROM that isn't optional is in the sources, by size and
+// CRC (from ZIP directories - nothing is unpacked). For game lists.
+bool available(const Set& set, const Source* sources, int source_count);
+
 // Writes one line per ROM that isn't Ok into `out` ("missing ROM pacman.6e
 // crc c1e6ab10 (4096 bytes)"), NUL-terminated, cut to `cap`. Returns the
 // count of required ROMs that aren't Ok (optional ones are listed, not
