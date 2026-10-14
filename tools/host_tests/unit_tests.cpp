@@ -1,17 +1,23 @@
 // Unit tests for the emulator modules that can be checked without ROMs:
-// CRC-32, the ZIP reader and ROM set matcher (on fixtures written by
-// make_fixtures.py), the Namco WSG (synthetic waveform PROM), Z80 timing /
-// interrupts, the Pac-Man machine wiring on a tiny hand-made program and
-// synthetic graphics, 8080 timing / flags / interrupts, the WAV parser and
-// sample player (synthetic WAVs), the Space Invaders sound models, and the
-// Space Invaders machine wiring (shifter, inputs, video, sound) on a tiny
-// hand-made 8080 program, and Rally-X (scroll / radar maths, the crash
-// sound model, the machine's wiring and video on a tiny Z80 program and
-// synthetic graphics).
+// CRC-32, the ZIP reader and ROM set matcher with variants (on fixtures
+// written by make_fixtures.py), the Namco WSG (synthetic waveform PROM),
+// Z80 timing / interrupts, the Pac-Man machine wiring on a tiny hand-made
+// program and synthetic graphics, 8080 timing / flags / interrupts, 8035
+// timing / flags / stack / banks / timer, counter and interrupts / ports,
+// the WAV parser and sample player (synthetic WAVs), the Space Invaders
+// sound models, the Space Invaders machine wiring (shifter, inputs, video,
+// sound) on a tiny hand-made 8080 program, and the Donkey Kong wiring
+// (NMI, sprite DMA, inputs, tiles / sprites / flip / palette bank, the
+// 8035's latch and DAC, the stomp, the watchdog) on hand-made Z80 and
+// 8035 programs, and Rally-X (scroll / radar maths, the crash sound model,
+// the machine's wiring and video on a tiny Z80 program and synthetic
+// graphics).
 //
 //   unit_tests <fixture dir>
+#include "../../emu/cpu/i8035.h"
 #include "../../emu/cpu/i8080.h"
 #include "../../emu/cpu/z80.h"
+#include "../../emu/machines/dkong.h"
 #include "../../emu/machines/invaders.h"
 #include "../../emu/machines/pacman.h"
 #include "../../emu/machines/rallyx.h"
@@ -167,6 +173,39 @@ void test_romset(const std::string& dir)
     CHECK(!romset::load(set, nullptr, 0, reg, st));
     CHECK_EQ(romset::report(set, st, msg, 8), 4);           // tiny buffer: still counts
     CHECK_EQ(std::strlen(msg) < 8, 1);
+
+    // Variants: two program ROMs at the same place, one per variant ("one"
+    // and "two"), and a shared one; loose files as sources.
+    static const char* const kVariants[] = {"one", "two"};
+    const auto common = gen(4096, 3, 1), v1 = gen(4096, 5, 2), v2 = gen(4096, 1, 0);
+    const romset::Rom vroms[] = {
+        {0, 0x0000, 0x1000, c1, "common", false},
+        {0, 0x1000, 0x1000, c2, "one.2", false, 1},
+        {0, 0x1000, 0x1000, c3, "two.2", false, 2},
+    };
+    const romset::Set vset = {"one", nullptr, "Variants", regions, 2, vroms, 3, kVariants, 2};
+    romset::Source only_two[] = {{"c", common.data(), common.size()}, {"t", v2.data(), v2.size()}};
+    CHECK(romset::available(vset, only_two, 2));
+    CHECK_EQ(romset::pick_variant(vset, only_two, 2), 2);
+    CHECK(romset::load(vset, only_two, 2, reg, st));
+    CHECK(st[1] == romset::Status::Unused);
+    CHECK(std::memcmp(r0.data() + 0x1000, v2.data(), 4096) == 0);
+    CHECK_EQ(romset::report(vset, st, msg, sizeof msg), 0);
+    CHECK_EQ(msg[0], 0);
+    // Both there: the first variant, not overwritten by the second.
+    romset::Source both[] = {{"t", v2.data(), v2.size()}, {"o", v1.data(), v1.size()},
+                             {"c", common.data(), common.size()}};
+    CHECK_EQ(romset::pick_variant(vset, both, 3), 1);
+    CHECK(romset::load(vset, both, 3, reg, st));
+    CHECK(std::memcmp(r0.data() + 0x1000, v1.data(), 4096) == 0);
+    CHECK(st[2] == romset::Status::Unused);
+    // Only the shared ROM: not available; the report names the first
+    // variant's missing ROM only.
+    CHECK(!romset::available(vset, only_two, 1));
+    CHECK(!romset::load(vset, only_two, 1, reg, st));
+    CHECK_EQ(romset::report(vset, st, msg, sizeof msg), 1);
+    CHECK(std::strstr(msg, "one.2") != nullptr);
+    CHECK(std::strstr(msg, "two.2") == nullptr);
 }
 
 // --- WSG ----------------------------------------------------------------------
@@ -781,6 +820,329 @@ void test_i8080_interrupts()
     }
 }
 
+// --- 8035 -------------------------------------------------------------------------
+
+struct Bench48 {
+    uint8_t    rom[0x1000] = {};
+    i8035::Cpu cpu;
+    uint8_t    last_port = 0xee, last_out = 0, ext_addr = 0, ext_val = 0, pins[3] = {0xff, 0xff, 0xff};
+    bool       t[2] = {};
+    int        outs = 0;
+    Bench48()
+    {
+        cpu.rom = rom;
+        cpu.ctx = this;
+        cpu.port_out = [](void* c, uint8_t p, uint8_t v) {
+            Bench48& b = *static_cast<Bench48*>(c);
+            b.last_port = p;
+            b.last_out = v;
+            ++b.outs;
+        };
+        cpu.port_in = [](void* c, uint8_t p) { return static_cast<Bench48*>(c)->pins[p]; };
+        cpu.ext_read = [](void*, uint8_t a) { return uint8_t(a ^ 0xa5); };
+        cpu.ext_write = [](void* c, uint8_t a, uint8_t v) {
+            static_cast<Bench48*>(c)->ext_addr = a;
+            static_cast<Bench48*>(c)->ext_val = v;
+        };
+        cpu.test_in = [](void* c, uint8_t n) { return uint8_t(static_cast<Bench48*>(c)->t[n & 1]); };
+        cpu.reset();
+    }
+    void load(uint16_t at, std::initializer_list<uint8_t> bytes)
+    {
+        for (uint8_t b : bytes) rom[at++ & 0xfff] = b;
+    }
+    int step() { return cpu.run(1); }
+};
+
+void test_i8035_timing()
+{
+    struct Case { std::initializer_list<uint8_t> code; int cycles; const char* what; };
+    const Case cases[] = {
+        {{0x00}, 1, "NOP"},             {{0x23, 0x05}, 2, "MOV A,#"},      {{0x68}, 1, "ADD A,R0"},
+        {{0x60}, 1, "ADD A,@R0"},       {{0x03, 0x01}, 2, "ADD A,#"},      {{0x04, 0x10}, 2, "JMP"},
+        {{0x14, 0x10}, 2, "CALL"},      {{0xe8, 0x00}, 2, "DJNZ"},         {{0xc6, 0x00}, 2, "JZ"},
+        {{0x80}, 2, "MOVX A,@R0"},      {{0x90}, 2, "MOVX @R0,A"},         {{0xa3}, 2, "MOVP A,@A"},
+        {{0xe3}, 2, "MOVP3"},           {{0x39}, 2, "OUTL P1,A"},          {{0x09}, 2, "IN A,P1"},
+        {{0x08}, 2, "INS A,BUS"},       {{0x89, 0x01}, 2, "ORL P1,#"},     {{0x9a, 0x01}, 2, "ANL P2,#"},
+        {{0xb8, 0x01}, 2, "MOV R0,#"},  {{0xb0, 0x01}, 2, "MOV @R0,#"},    {{0xa8}, 1, "MOV R0,A"},
+        {{0x42}, 1, "MOV A,T"},         {{0x57}, 1, "DA A"},               {{0xb3}, 2, "JMPP @A"},
+        {{0x83}, 2, "RET"},             {{0x93}, 2, "RETR"},               {{0xc5}, 1, "SEL RB0"},
+        {{0x16, 0x00}, 2, "JTF"},       {{0x12, 0x00}, 2, "JB0"},          {{0x0c}, 2, "MOVD A,P4"},
+    };
+    for (const Case& k : cases) {
+        Bench48 b;
+        b.load(0, k.code);
+        const int got = b.step();
+        if (got != k.cycles) std::printf("8035 %s: %d cycles\n", k.what, got);
+        CHECK_EQ(got, k.cycles);
+    }
+    {
+        Bench48 b;                                // DJNZ R2 x 5: 5 x 2 cycles
+        b.load(0, {0xba, 0x05, 0xea, 0x02, 0x00});
+        b.step();
+        CHECK_EQ(b.cpu.run(10), 10);
+        CHECK_EQ(b.cpu.pc, 4);
+    }
+}
+
+void test_i8035_alu()
+{
+    using namespace i8035;
+    {
+        Bench48 b;                                // BCD: 19 + 28 = 47
+        b.load(0, {0x23, 0x19, 0x03, 0x28, 0x57});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x41);
+        CHECK_EQ(b.cpu.psw & (CY | AC), AC);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x47);
+        CHECK_EQ(b.cpu.psw & CY, 0);
+    }
+    {
+        Bench48 b;                                // BCD: 99 + 1 = (1)00
+        b.load(0, {0x23, 0x99, 0x03, 0x01, 0x57});
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x00);
+        CHECK_EQ(b.cpu.psw & CY, CY);
+    }
+    {
+        Bench48 b;                                // F0 + 20 = (1)10; ADDC adds the carry
+        b.load(0, {0x23, 0xf0, 0x03, 0x20, 0x13, 0x01});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x10);
+        CHECK_EQ(b.cpu.psw & (CY | AC), CY);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x12);
+        CHECK_EQ(b.cpu.psw & CY, 0);
+    }
+    {
+        Bench48 b;                                // RLC, RRC through the carry; RL, RR; SWAP; CPL A
+        b.load(0, {0x23, 0x80, 0xf7, 0x67, 0x67, 0xe7, 0x77, 0x77, 0x47, 0x37});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x00);
+        CHECK_EQ(b.cpu.psw & CY, CY);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x80);
+        CHECK_EQ(b.cpu.psw & CY, 0);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x40);
+        b.step(); b.step(); b.step();             // RL, RR, RR: 80, 40, 20
+        CHECK_EQ(b.cpu.a, 0x20);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x02);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0xfd);
+    }
+    {
+        Bench48 b;                                // XCHD, XCH, INC / DEC @R0, register banks
+        b.cpu.ram[0x20] = 0x34;
+        b.load(0, {0xb8, 0x20, 0x23, 0x12, 0x30, 0x10, 0xd5, 0xb8, 0x55, 0xc5, 0x20});
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x14);
+        CHECK_EQ(b.cpu.ram[0x20], 0x32);
+        b.step();
+        CHECK_EQ(b.cpu.ram[0x20], 0x33);
+        b.step(); b.step();                       // SEL RB1; MOV R0,#55
+        CHECK_EQ(b.cpu.ram[0x18], 0x55);
+        CHECK_EQ(b.cpu.ram[0x00], 0x20);
+        b.step(); b.step();                       // SEL RB0; XCH A,@R0
+        CHECK_EQ(b.cpu.a, 0x33);
+        CHECK_EQ(b.cpu.ram[0x20], 0x14);
+    }
+    {
+        Bench48 b;                                // MOV A,PSW reads bit 3 set; flags F0 / F1
+        b.load(0, {0x97, 0xa7, 0xc7, 0x95, 0xb6, 0x10, 0x00});
+        b.load(0x10, {0xb5, 0x76, 0x20});
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x88);
+        b.step(); b.step();                       // CPL F0; JF0 -> 10
+        CHECK_EQ(b.cpu.pc, 0x10);
+        b.step(); b.step();                       // CPL F1; JF1 -> 20
+        CHECK_EQ(b.cpu.pc, 0x20);
+    }
+}
+
+void test_i8035_flow()
+{
+    using namespace i8035;
+    {
+        Bench48 b;                                // CALL / RETR restores the PSW's top bits, RET doesn't
+        b.load(0, {0x14, 0x40, 0x14, 0x50, 0x00});
+        b.load(0x40, {0xa7, 0x93});
+        b.load(0x50, {0xa7, 0x83});
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x40);
+        CHECK_EQ(b.cpu.psw & 7, 1);
+        CHECK_EQ(b.cpu.ram[8], 0x02);             // return address, PSW bits
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x02);
+        CHECK_EQ(b.cpu.psw, 0);                   // the carry set in the routine is gone
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x04);
+        CHECK_EQ(b.cpu.psw, CY);
+    }
+    {
+        Bench48 b;                                // eight levels, then the stack pointer wraps
+        b.load(0, {0x14, 0x00});
+        for (int i = 0; i < 9; ++i) b.step();
+        CHECK_EQ(b.cpu.psw & 7, 1);
+    }
+    {
+        Bench48 b;                                // MOVP / MOVP3 / JMPP read program memory
+        b.load(0x020, {0x77});
+        b.load(0x320, {0x88});
+        b.load(0x040, {0x60});
+        b.load(0, {0x23, 0x20, 0xa3, 0x23, 0x20, 0xe3, 0x23, 0x40, 0xb3});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x77);
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x88);
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x60);
+    }
+    {
+        Bench48 b;                                // a conditional jump stays in its address byte's page
+        b.load(0, {0x04, 0xfe});
+        b.load(0xfe, {0xc6, 0x30});               // JZ at 0FE: its address byte in page 0
+        b.load(0x2ff, {0xc6, 0x40});              // JZ at 2FF: in page 3
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x030);
+        b.cpu.pc = 0x2ff;
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x340);
+    }
+    {
+        Bench48 b;                                // SEL MB1: JMP / CALL go to the upper 2 KB
+        b.load(0, {0xf5, 0x04, 0x10});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x810);
+        b.load(0x810, {0x04, 0x20});              // the bank stays for the next jump
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x820);
+        b.load(0x820, {0x07, 0xff});              // and a PC count wraps inside the bank
+        b.cpu.pc = 0xfff;
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x800);
+    }
+}
+
+void test_i8035_timer_irq()
+{
+    {
+        Bench48 b;                                // timer: +1 every 32 cycles; JTF sees the overflow once
+        b.load(0, {0x55, 0x04, 0x01});
+        b.step();
+        CHECK_EQ(b.cpu.run(8190), 8190);
+        CHECK_EQ(b.cpu.timer, 255);
+        CHECK(!b.cpu.timer_flag);
+        b.cpu.run(2);
+        CHECK_EQ(b.cpu.timer, 0);
+        CHECK(b.cpu.timer_flag);
+        CHECK(!b.cpu.timer_overflow);             // no interrupt pending while disabled
+        b.load(1, {0x16, 0x10});
+        b.cpu.pc = 1;
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x10);
+        CHECK(!b.cpu.timer_flag);
+    }
+    {
+        Bench48 b;                                // the timer interrupt: a CALL to 7, once per overflow
+        b.load(0, {0x04, 0x09});
+        b.load(3, {0x1e, 0x93});
+        b.load(7, {0x1f, 0x93});
+        b.load(9, {0x25, 0x55, 0x04, 0x0b});
+        b.cpu.run(8192 * 2 + 64);
+        CHECK_EQ(b.cpu.ram[7], 2);
+        CHECK(!b.cpu.in_irq);
+    }
+    {
+        Bench48 b;                                // the INT pin: level-sensitive, held off until RETR
+        b.load(0, {0x04, 0x09});
+        b.load(3, {0x1e, 0x93});
+        b.load(9, {0x86, 0x20, 0x05, 0x00, 0x04, 0x0b});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x0b);                 // JNI not taken
+        b.cpu.pc = 9;
+        b.cpu.irq(true);
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x20);                 // JNI taken (interrupts still disabled)
+        b.cpu.pc = 0x0b;
+        b.step();                                 // EN I
+        CHECK_EQ(b.step(), 2);                    // taken: 2 cycles
+        CHECK_EQ(b.cpu.pc, 3);
+        CHECK(b.cpu.in_irq);
+        b.step();
+        CHECK_EQ(b.cpu.ram[6], 1);
+        b.cpu.timer_overflow = true;              // nothing else gets in until RETR
+        b.cpu.tirq_enabled = true;
+        CHECK_EQ(b.cpu.pc, 4);
+        b.step();                                 // RETR
+        CHECK(!b.cpu.in_irq);
+        CHECK_EQ(b.cpu.pc, 0x0c);
+        b.step();
+        CHECK_EQ(b.cpu.pc, 3);                    // still asserted: in again (external first)
+        b.cpu.irq(false);
+        b.step(); b.step(); b.step();             // INC R6, RETR, then the timer's
+        CHECK_EQ(b.cpu.pc, 7);
+        CHECK_EQ(b.cpu.ram[6], 2);
+    }
+    {
+        Bench48 b;                                // inside an interrupt, JMP ignores SEL MB1
+        b.load(0, {0xf5, 0x05, 0x00});
+        b.load(3, {0x04, 0x30});
+        b.step(); b.step();
+        b.cpu.irq(true);
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x030);
+    }
+    {
+        Bench48 b;                                // event counter: T1's falling edges
+        b.load(0, {0x45, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42});
+        b.t[1] = true;
+        b.step();
+        for (int i = 0; i < 6; ++i) {
+            b.t[1] = (i & 1) != 0;
+            b.step();
+        }
+        b.step();
+        CHECK_EQ(b.cpu.a, 3);
+    }
+}
+
+void test_i8035_ports()
+{
+    Bench48 b;
+    b.pins[1] = 0x3c;
+    b.pins[0] = 0x5a;
+    b.load(0, {0x23, 0x81, 0x39, 0x99, 0xf0, 0x09, 0x8a, 0x0f, 0x08, 0xb8, 0x12, 0x80, 0xb9, 0x34, 0x91,
+               0x02, 0x36, 0x40, 0x26, 0x40});
+    b.step(); b.step();
+    CHECK_EQ(b.last_port, i8035::kP1);
+    CHECK_EQ(b.last_out, 0x81);
+    b.step();                                     // ANL P1,#F0
+    CHECK_EQ(b.cpu.p1, 0x80);
+    CHECK_EQ(b.last_out, 0x80);
+    b.step();                                     // IN A,P1: the pins ANDed with the latch
+    CHECK_EQ(b.cpu.a, 0x00);
+    b.step();                                     // ORL P2,#0F (P2 was FF)
+    CHECK_EQ(b.last_port, i8035::kP2);
+    CHECK_EQ(b.last_out, 0xff);
+    b.step();
+    CHECK_EQ(b.cpu.a, 0x5a);                      // INS A,BUS
+    b.step(); b.step();
+    CHECK_EQ(b.cpu.a, 0x12 ^ 0xa5);               // MOVX A,@R0
+    b.step(); b.step();
+    CHECK_EQ(b.ext_addr, 0x34);                   // MOVX @R1,A
+    CHECK_EQ(b.ext_val, 0x12 ^ 0xa5);
+    b.step();
+    CHECK_EQ(b.last_port, i8035::kBus);           // OUTL BUS,A
+    b.step();
+    CHECK_EQ(b.cpu.pc, 0x12);                     // JT0 not taken (T0 low)
+    b.t[0] = true;
+    b.step();
+    CHECK_EQ(b.cpu.pc, 0x14);                     // JNT0 not taken
+}
+
 // --- WAV parser + sample player -------------------------------------------------
 
 void put_le(std::vector<uint8_t>& v, uint32_t x, int bytes)
@@ -1172,6 +1534,166 @@ void test_invaders()
     CHECK_EQ(m.watchdog_resets(), 2);
 }
 
+// --- Donkey Kong wiring -------------------------------------------------------------
+
+void test_dkong()
+{
+    static uint8_t cpu_rom[0x4000], snd[0x1000], tiles[0x1000], sprites[0x2000], proms[0x300];
+    std::memset(cpu_rom, 0, sizeof cpu_rom);
+    std::memset(snd, 0, sizeof snd);
+    std::memset(tiles, 0, sizeof tiles);
+    std::memset(sprites, 0, sizeof sprites);
+    std::memset(proms, 0xff, 0x200);              // all PROM bits set = black (stored inverted)
+    std::memset(proms + 0x200, 1, 0x100);         // every tile column in colour 1
+    // Colour 1: pixel value 1 red, 3 blue.
+    proms[4 + 1] = 0x0f; proms[0x100 + 4 + 1] = 0x01;
+    proms[4 + 3] = 0x0c; proms[0x100 + 4 + 3] = 0x0f;
+    // Tile 2: hardware pixel (0, 0) = 1. Sprite 1: every pixel 3.
+    tiles[2 * 8] = 0x80;
+    for (int py = 0; py < 16; ++py)
+        for (int part = 0; part < 4; ++part) sprites[part * 0x800 + 16 + py] = 0xff;
+
+    const uint8_t prog[] = {
+        0xf3,                   // 0000 DI
+        0x31, 0x00, 0x6c,       //      LD SP,6C00
+        0x3e, 0x01,             //      LD A,1
+        0x32, 0x84, 0x7d,       //      LD (7D84),A   - NMI on
+        0x3a, 0x00, 0x7d,       // 0009 LD A,(7D00)   - IN2 (watchdog)
+        0x32, 0x10, 0x60,       //      LD (6010),A
+        0x3a, 0x20, 0x60,       //      LD A,(6020)
+        0x32, 0x02, 0x7d,       //      LD (7D02),A   - stomp
+        0x3a, 0x21, 0x60,       //      LD A,(6021)
+        0x32, 0x00, 0x7c,       //      LD (7C00),A   - tune
+        0x18, 0xec,             //      JR 0009
+    };
+    std::memcpy(cpu_rom, prog, sizeof prog);
+    // NMI: count, then the sprite DMA 6900 -> 7000, 0x180 bytes.
+    const uint8_t nmi[] = {
+        0xf5, 0x21, 0x00, 0x60, 0x34,
+        0x3e, 0x00, 0x32, 0x00, 0x78, 0x3e, 0x69, 0x32, 0x00, 0x78,     // ch 0 address 6900
+        0x3e, 0x7f, 0x32, 0x01, 0x78, 0x3e, 0x41, 0x32, 0x01, 0x78,     // ch 0 count 017F
+        0x3e, 0x00, 0x32, 0x02, 0x78, 0x3e, 0x70, 0x32, 0x02, 0x78,     // ch 1 address 7000
+        0x3e, 0x7f, 0x32, 0x03, 0x78, 0x3e, 0x81, 0x32, 0x03, 0x78,     // ch 1 count
+        0x3e, 0x53, 0x32, 0x08, 0x78,                                   // mode: ch 0 + 1, TC stop
+        0x3e, 0x01, 0x32, 0x85, 0x7d, 0xaf, 0x32, 0x85, 0x7d,           // DRQ
+        0xf1, 0xed, 0x45,                                               // POP AF; RETN
+    };
+    std::memcpy(cpu_rom + 0x66, nmi, sizeof nmi);
+    // 8035: P2 = C0 (tune latch on MOVX, DAC full); a square on the DAC of
+    // the tune latch's level (inverted), none while that reads 0.
+    const uint8_t sprog[] = {
+        0x23, 0xc0, 0x3a, 0xb8, 0x00,   // 000 MOV A,#C0; OUTL P2,A; MOV R0,#0
+        0x80, 0xc6, 0x05,               // 005 MOVX A,@R0; JZ 005
+        0x39, 0xb9, 0x14, 0xe9, 0x0b,   // 008 OUTL P1,A; MOV R1,#20; DJNZ R1,00B
+        0x27, 0x39, 0xb9, 0x14, 0xe9, 0x11,   // 00D CLR A; OUTL P1,A; MOV R1,#20; DJNZ R1,011
+        0x04, 0x05,                     // 013 JMP 005
+    };
+    std::memcpy(snd, sprog, sizeof sprog);
+
+    static dkong::Machine m;
+    m.init({cpu_rom, snd, tiles, sprites, proms}, 24000);
+    auto& c = m.cpu();
+    c.wr(0x6021, 0x0f);                           // tune F: the 8035 reads 0 - silent
+    int16_t audio[1024];
+    int samples = 0;
+    for (int f = 0; f < 30; ++f) samples += m.run_frame(audio, 1024);
+    CHECK_EQ(samples, 30 * 396);                  // 24000 Hz / 60.606 Hz
+    CHECK_EQ(c.rd(0x6000), 30);                   // one NMI per frame
+    CHECK_EQ(m.dma_count(), 30);
+    CHECK_EQ(m.watchdog_resets(), 0);
+    CHECK_EQ(c.rd(0x6010) & 0x40, 0x40);          // 8035 P2 bit 4 clear -> IN2 bit 6 set
+    const uint32_t quiet = m.dac_writes();        // a few before the tune was set
+
+    // Inputs (active high) and DIPs.
+    m.set_inputs(dkong::kRight | dkong::kJump | dkong::kStart1 | dkong::kCoin);
+    CHECK_EQ(c.rd(0x7c00), 0x11);
+    CHECK_EQ(c.rd(0x7d00) & 0x8c, 0x84);
+    m.set_inputs(dkong::kUp | dkong::kLeft | dkong::kDown | dkong::kStart2);
+    CHECK_EQ(c.rd(0x7c00), 0x0e);
+    CHECK_EQ(c.rd(0x7d00) & 0x8c, 0x08);
+    m.set_inputs(0);
+    CHECK_EQ(c.rd(0x7d80), dkong::kDipDefault);
+    CHECK_EQ(dkong::kDipDefault, 0x80);
+
+    // Video: tile 2 at row 2, column 31 = hardware (248, 16); sprite 1 at
+    // y byte 100, x byte 108: hardware x 100-115, lines 147-162; seventeen
+    // more sprites on its lines, the last one past the 16-a-line limit.
+    c.wr(0x7400 + 2 * 32 + 31, 2);
+    const uint8_t sp0[4] = {100, 1, 1, 108};
+    for (int k = 0; k < 4; ++k) c.wr(uint16_t(0x6900 + k), sp0[k]);
+    for (int i = 1; i <= 16; ++i) {
+        const uint8_t s[4] = {100, 1, 1, uint8_t(i == 16 ? 20 : 140)};
+        for (int k = 0; k < 4; ++k) c.wr(uint16_t(0x6900 + i * 4 + k), s[k]);
+    }
+    m.run_frame(nullptr, 0);
+    CHECK_EQ(c.rd(0x7000), 100);                  // copied by the DMA
+    CHECK_EQ(c.rd(0x7043), 20);
+    CHECK_EQ(m.video().sprite_count, 16);         // the 17th has no line left
+    const uint16_t red = 0xf800, blue = 0x001f, black = 0;
+    uint16_t line[224];
+    // Flip screen off: display line y = hardware column 255 - y, x = line - 16.
+    m.render_line(7, line);
+    CHECK_EQ(line[0], red);
+    CHECK_EQ(line[1], black);
+    m.render_line(140, line);                     // hardware x 115: the sprite's right edge
+    CHECK_EQ(line[130], black);
+    CHECK_EQ(line[131], blue);
+    CHECK_EQ(line[146], blue);
+    CHECK_EQ(line[147], black);
+    m.render_line(155, line);
+    CHECK_EQ(line[131], blue);
+    m.render_line(156, line);
+    CHECK_EQ(line[131], black);
+    m.render_line(255 - 12, line);                // the 17th sprite (x 12-27): dropped
+    CHECK_EQ(line[131], black);
+    // Flip screen on (as the upright game runs): the picture turns 180 degrees.
+    c.wr(0x7d82, 1);
+    m.run_frame(nullptr, 0);
+    m.render_line(248, line);
+    CHECK_EQ(line[223], red);
+    CHECK_EQ(line[222], black);
+    m.render_line(115, line);
+    CHECK_EQ(line[223 - 131], blue);
+    CHECK_EQ(line[223 - 130], black);
+    // Palette bank 1: colour 17 has no pens set - black.
+    c.wr(0x7d86, 1);
+    m.run_frame(nullptr, 0);
+    m.render_line(248, line);
+    CHECK_EQ(line[223], black);
+
+    // Sound: the tune latch reaches the 8035 inverted; its square on the
+    // DAC (a small one: level 0F of FF) is heard. The stomp (latch bit 2) is heard on its own.
+    auto level = [&](int frames) {
+        std::vector<int16_t> all;
+        for (int f = 0; f < frames; ++f) {
+            const int n = m.run_frame(audio, 1024);
+            all.insert(all.end(), audio, audio + n);
+        }
+        return rms(all, all.size() / 2, all.size());
+    };
+    CHECK(level(30) < 2);
+    c.wr(0x6021, 0x00);                           // DAC square of level 0F
+    const double square = level(10);
+    CHECK_EQ(m.sound_cpu().p1 == 0x0f || m.sound_cpu().p1 == 0x00, 1);
+    CHECK(m.dac_writes() > quiet + 1000u);
+    c.wr(0x6021, 0x0f);
+    const double after = level(60);
+    c.wr(0x6020, 1);                              // stomp
+    m.run_frame(audio, 1024);
+    c.wr(0x6020, 0);
+    const double stomp = level(15);
+    std::printf("dkong: DAC square rms %.0f, silent %.1f, stomp rms %.0f\n", square, after, stomp);
+    CHECK(square > 50);
+    CHECK(after < 5);
+    CHECK(stomp > 300);
+
+    // Without IN2 reads the board resets after 256 frames.
+    cpu_rom[0x0a] = 0x30; cpu_rom[0x0b] = 0x60;   // LD A,(6030)
+    m.init({cpu_rom, snd, tiles, sprites, proms}, 24000);
+    for (int f = 0; f < 600; ++f) m.run_frame(nullptr, 0);
+    CHECK_EQ(m.watchdog_resets(), 2);
+}
+
 // --- Rally-X: scroll / radar maths, crash sound, wiring ---------------------------
 
 void test_rallyx_maths()
@@ -1435,6 +1957,11 @@ int main(int argc, char** argv)
     test_i8080_timing();
     test_i8080_flags();
     test_i8080_interrupts();
+    test_i8035_timing();
+    test_i8035_alu();
+    test_i8035_flow();
+    test_i8035_timer_irq();
+    test_i8035_ports();
     test_wav();
     test_sample_player();
     test_invaders_sound();
@@ -1442,6 +1969,7 @@ int main(int argc, char** argv)
     test_rallyx_maths();
     test_rallyx_bang();
     test_rallyx();
+    test_dkong();
     std::printf("unit tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

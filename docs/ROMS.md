@@ -17,6 +17,10 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
   sets have everything in one zip.
 - Extra files in a zip are ignored. A missing or bad chip is named in the
   error, with its checksum.
+- Some games take either of two sets that differ only in their program
+  chips (Donkey Kong: `dkong` or `dkongo`). Either one works; with both,
+  the first in the table below is used. The chips of the other set are
+  then never mixed in.
 
 ## The sets
 
@@ -26,7 +30,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Space Invaders | `invaders` | Space Invaders / Space Invaders M | - |
 | Galaga | `galaga` | Galaga (Namco rev. B) | - |
 | Dig Dug | `digdug` | Dig Dug (rev 2) | - |
-| Donkey Kong | `dkong` (or `dkongo`, US set 2) | Donkey Kong (US set 1) | `dkong` for `dkongo` |
+| Donkey Kong | `dkong` or `dkongo` | Donkey Kong (US set 1) / (US set 2) | `dkong` for `dkongo` |
 | Q\*bert | `qbert` | Q\*bert (US set 1) | - |
 | Asteroids | `asteroid` (or `asteroid2`, rev 2) | Asteroids (rev 4) | - |
 | Rally-X | `rallyx` | Rally-X (32k Ver.?) | - |

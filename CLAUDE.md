@@ -127,8 +127,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by
   default (the board stands up, cable out the top; rotation 2); menu
   setting "USB Port: Top / Bottom" (NVS usb_top).
-- 4-way games (Pac-Man; `games::Info::four_way`): a d-pad diagonal counts
-  as the direction pressed last (Tom found Pac-Man hard to steer).
+- 4-way games (Pac-Man, Donkey Kong; `games::Info::four_way`): a d-pad
+  diagonal counts as the direction pressed last (Tom found Pac-Man hard
+  to steer).
 - Tom, v0.2.0 on the 2.8" ST7789: ROMs over USB worked, Pac-Man and Space
   Invaders "played perfectly". 4.0" log: Pac-Man emu ~5.7 ms + draw ~6-8
   ms a frame (of 16.5), every frame drawn.
@@ -138,6 +139,17 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   only (`arcade_host --samples`, to compare a model with a recording).
 - Home isn't on every controller (Q36): leaving a game also works with
   Select + Start twice.
+- Donkey Kong (`emu/machines/dkong.*`, set `dkong` or `dkongo` as romset
+  variants): emulated = Z80 + tiles / sprites (16 a line) / palette PROMs,
+  the 8257 sprite DMA (an instant copy, the Z80 stalled 8 cycles a byte),
+  and the 8035 sound CPU (`emu/cpu/i8035.*`) with its DAC - music, death,
+  roar, coin, spring, falling, prize are exact. Modelled
+  (`emu/sound/dkong_sound.*`): the discrete walk, jump and stomp circuits
+  (555 VCOs, CMOS wobble oscillators, RC envelopes, the noise counter) and
+  the DAC's fade (P2.7) and 1.9 kHz Sallen-Key filter; the mixer's ~300 Hz
+  output filter is left out (too dull on a small speaker). The upright
+  game runs with flip screen ON (that is its normal picture); flip = the
+  whole picture turned 180 degrees. Attract mode is silent on the real game.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
@@ -169,6 +181,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   CPUs (`emu/cpu/`), sound chips (`emu/sound/`), machines
   (`emu/machines/`), ROM sets / zip / CRC (`emu/rom/`), `emu/util/`.
   Hot paths allocate nothing; big tables `const` (flash); machine RAM small.
+- ROM sets may have variants (`romset::Set::variants`, a ROM's `variant`):
+  alternative program-ROM sets of one game; the first complete one loads.
 - `emu/games.*`: the game table shared by firmware and PC tools (machine
   face, screen, orientation, controller -> panel buttons: Select = coin,
   Start = 1P start, L = 2P start, A = fire). Adding a game = machine +
