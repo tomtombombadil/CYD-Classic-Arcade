@@ -27,7 +27,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   1 program; old math box PROM dumps, no AVG PROM), spyhunt (old dump:
   cpu_pg5.11d halves swapped vs today's 88aa1e99), rthunder (rev 3).
   Stargate: Tom is still looking. No Namco MCU
-  ROMs (51xx/53xx/54xx) and no sample zips yet. Support these revisions.
+  ROMs (51xx/53xx/54xx). Support these revisions.
 - **No ROMs in the repo, ever** (nor sample WAVs, nor ROM-derived data such
   as converted headers). Users add their own standard MAME sets. `roms/`
   and `samples/` are git-ignored for local testing; never commit from them.
@@ -63,9 +63,12 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   one (fire / jump), right = second. A setting "Swap A/B and X/Y" in the
   menu for players who want the printed letters (`pad_set_swap_ab()`).
 - SD card layout (Tom, 2026-10-14): ROM zips as they are in
-  `/CYD-Classic-Arcade/` at the card's root; sample zips in
-  `/CYD-Classic-Arcade/samples/` (same names as the ROM zips). 2.8"
-  boards: the same zips over USB from the web page.
+  `/CYD-Classic-Arcade/` at the card's root. 2.8" boards: the same zips
+  over USB from the web page.
+- **ROM zips only, no sample files** (Tom, 2026-10-14: on handhelds the
+  zip is all a player ever needs). Analog sounds are always our own
+  models in the firmware. `emu/sound/samples.*` stays for the PC tool
+  only (`arcade_host --samples`, to compare a model with a recording).
 - Home isn't on every controller (Q36): the emulator menu must also open
   some other way - Start + Select held together.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5

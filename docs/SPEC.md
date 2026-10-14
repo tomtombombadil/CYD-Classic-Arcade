@@ -48,9 +48,9 @@ its sound one of three ways, and we do what the machine did:
 3. **Analog circuits** - Space Invaders and Asteroids (all of it), Donkey
    Kong's walk / jump / stomp, Q\*bert's knocker (a solenoid hitting the
    cabinet!), Galaga's explosion filters. The ROM only switches these
-   on and off. Two ways, in this order: the user's MAME **sample** zip
-   (WAV recordings, optional, `docs/ROMS.md`), else our own small sound
-   models (noise + tones + envelopes) that sound close.
+   on and off. We play our own small sound models of those circuits
+   (noise + tones + envelopes), built into the firmware. No sample files
+   (Tom: the ROM zip is all a player ever needs).
 
 Output: the ESP32's DAC on GPIO26 into the board's own amplifier and the
 speaker connector (a plain 8-ohm speaker, nothing added). 24,000 samples a
@@ -79,10 +79,10 @@ turn the panel at game start.
 ## 6. ROM storage
 
 ROMs are read in place from flash, never copied into RAM: the `roms`
-partition (1.7 MB, `partitions.csv`) holds the recognised ROM chips and
-samples, memory-mapped. Getting them there: from an SD card's `roms` folder
-on boards with a usable slot; over USB from the web page (Web Serial) on
-the 2.8" boards.
+partition (1.7 MB, `partitions.csv`) holds the recognised ROM chips,
+memory-mapped. Getting them there: from the SD card's `CYD-Classic-Arcade`
+folder on boards with a usable slot; over USB from the web page (Web
+Serial) on the 2.8" boards.
 
 ## 7. Milestones
 

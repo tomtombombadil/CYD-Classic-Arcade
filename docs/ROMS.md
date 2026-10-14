@@ -1,4 +1,4 @@
-# ROMs and sound samples
+# ROMs
 
 CYD Classic Arcade ships **no game ROMs**. You copy in the ROM files of
 games you own. It reads standard **MAME ROM sets** (the `.zip` files, as
@@ -20,22 +20,22 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 
 ## The sets
 
-| Game | MAME set | MAME title | Also give (split sets) | Optional sound samples |
-|---|---|---|---|---|
-| Pac-Man | `pacman` | Pac-Man (Midway) | `puckman` | - |
-| Space Invaders | `invaders` | Space Invaders / Space Invaders M | - | `invaders` samples |
-| Galaga | `galaga` | Galaga (Namco rev. B) | - | - |
-| Dig Dug | `digdug` | Dig Dug (rev 2) | - | - |
-| Donkey Kong | `dkong` (or `dkongo`, US set 2) | Donkey Kong (US set 1) | `dkong` for `dkongo` | `dkong` samples |
-| Q\*bert | `qbert` | Q\*bert (US set 1) | - | `qbert` samples (the knocker) |
-| Asteroids | `asteroid` (or `asteroid2`, rev 2) | Asteroids (rev 4) | - | `asteroid` samples |
-| Rally-X | `rallyx` | Rally-X (32k Ver.?) | - | - |
-| Qix | `qix` | Qix (Rev 2) | - | - |
-| Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` | - |
-| Stargate (stretch) | `stargate` | Stargate | - | - |
-| Star Wars | `starwars` | Star Wars (Atari, set 1) | - | - |
-| Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - | - |
-| Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - | - |
+| Game | MAME set | MAME title | Also give (split sets) |
+|---|---|---|---|
+| Pac-Man | `pacman` | Pac-Man (Midway) | `puckman` |
+| Space Invaders | `invaders` | Space Invaders / Space Invaders M | - |
+| Galaga | `galaga` | Galaga (Namco rev. B) | - |
+| Dig Dug | `digdug` | Dig Dug (rev 2) | - |
+| Donkey Kong | `dkong` (or `dkongo`, US set 2) | Donkey Kong (US set 1) | `dkong` for `dkongo` |
+| Q\*bert | `qbert` | Q\*bert (US set 1) | - |
+| Asteroids | `asteroid` (or `asteroid2`, rev 2) | Asteroids (rev 4) | - |
+| Rally-X | `rallyx` | Rally-X (32k Ver.?) | - |
+| Qix | `qix` | Qix (Rev 2) | - |
+| Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` |
+| Stargate (stretch) | `stargate` | Stargate | - |
+| Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
+| Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
+| Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
 Every set above is the parent ("main") set in MAME except `pacman`, which is
 the Midway version and a clone of the Japanese `puckman` (Puck Man).
@@ -54,28 +54,20 @@ Notes:
   own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). They are optional:
   without them the chips are modelled from their known behaviour (Galaga's
   explosions then come from our own noise model).
+- **Only the ROM zips** are needed. MAME also has separate "sample" sets
+  (recordings of analog sounds); this emulator doesn't use them - those
+  sounds are modelled in the firmware.
 - **Q\*bert:** the speech chip (Votrax SC-01) has its own internal ROM,
   `sc01a.bin`; non-merged sets include it. Keep it in the zip.
-- **Sample zips** are MAME's separate sound-sample sets (WAV files in a zip
-  named after the game). They are optional: without them those sounds are
-  made by the firmware's own simple sound models (see SPEC, Sound). Files
-  are found by name; any missing one is modelled instead. WAVs: PCM, 8 or
-  16 bit, mono or stereo, any rate.
-- **Space Invaders samples:** `0.wav` UFO (older sets only - newer ones
-  leave it to the model), `1.wav` shot, `2.wav` player hit, `3.wav` invader
-  hit, `4.wav`-`7.wav` the four fleet notes, `8.wav` UFO hit, `9.wav`
-  extra ship.
 
 ## Getting them onto the board
 
 (Planned - see SPEC.) Boards with a working SD slot (the ESP32-32E boards:
 3.2", 3.5", 4.0"): put the zips, as they are, in a `CYD-Classic-Arcade`
-folder at the root of the card, and sample zips in a `samples` folder
-inside it (MAME names sample zips like the ROM zips, e.g. `invaders.zip`):
+folder at the root of the card:
 
     CYD-Classic-Arcade/pacman.zip
     CYD-Classic-Arcade/invaders.zip
-    CYD-Classic-Arcade/samples/invaders.zip
 
 The firmware copies what it recognises into its own flash. The 2.8" boards
 (no usable SD slot) get the same zips over USB from the web page.
