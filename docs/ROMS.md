@@ -1,0 +1,54 @@
+# ROMs and sound samples
+
+CYD Classic Arcade ships **no game ROMs**. You copy in the ROM files of
+games you own. It reads standard **MAME ROM sets** (the `.zip` files, as
+they are - no unzipping or renaming).
+
+## How files are found
+
+Every ROM chip is recognised by its **CRC-32 checksum**, not its file name.
+File names change between MAME versions (Space Invaders' `invaders.h` is
+`9316b-0869_m739h.h1` in newer sets); the contents don't. So:
+
+- Any MAME version's zip of the right set works.
+- Split, merged and non-merged sets all work. A clone set (e.g. `pacman`)
+  in a **split** collection holds only the files that differ from its
+  parent - give the parent zip too (`puckman.zip` for `pacman`). Non-merged
+  sets have everything in one zip.
+- Extra files in a zip are ignored. A missing or bad chip is named in the
+  error, with its checksum.
+
+## The sets
+
+| Game | MAME set | MAME title | Also give (split sets) | Optional sound samples |
+|---|---|---|---|---|
+| Pac-Man | `pacman` | Pac-Man (Midway) | `puckman` | - |
+| Space Invaders | `invaders` | Space Invaders / Space Invaders M | - | `invaders` samples |
+| Galaga | `galaga` | Galaga (Namco rev. B) | - | - |
+| Dig Dug | `digdug` | Dig Dug (rev 2) | - | - |
+| Donkey Kong | `dkong` | Donkey Kong (US set 1) | - | `dkong` samples |
+| Q\*bert | `qbert` | Q\*bert (US set 1) | - | `qbert` samples (the knocker) |
+| Asteroids | `asteroid` | Asteroids (rev 4) | - | `asteroid` samples |
+| Defender (stretch) | `defender` | Defender (Red label) | - | - |
+| Stargate (stretch) | `stargate` | Stargate | - | - |
+| Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - | - |
+
+Every set above is the parent ("main") set in MAME except `pacman`, which is
+the Midway version and a clone of the Japanese `puckman` (Puck Man).
+
+Notes:
+- **Galaga, Dig Dug:** non-merged sets also hold the Namco custom chips'
+  own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). Keep them in the zip -
+  Galaga's explosions come from the 54xx chip.
+- **Q\*bert:** the speech chip (Votrax SC-01) has its own internal ROM,
+  `sc01a.bin`; non-merged sets include it. Keep it in the zip.
+- **Sample zips** are MAME's separate sound-sample sets (WAV files in a zip
+  named after the game). They are optional: without them those sounds are
+  made by the firmware's own simple sound models (see SPEC, Sound).
+
+## Getting them onto the board
+
+(Planned - see SPEC.) Boards with a working SD slot (the ESP32-32E boards:
+3.2", 3.5", 4.0"): put the zips in a `roms` folder on the card; the
+firmware copies what it recognises into its own flash once. The 2.8" boards
+(no usable SD slot) get them over USB from the web page.

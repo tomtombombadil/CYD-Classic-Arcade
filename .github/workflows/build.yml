@@ -53,14 +53,16 @@ jobs:
             ~/.platformio
             ~/.cache/pip
             external
-          key: pio-${{ hashFiles('platformio.ini', 'tools/fetch_deps.py') }}
+          key: pio-6.1.18-${{ hashFiles('platformio.ini', 'tools/fetch_deps.py') }}
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      # PlatformIO 6.2.0 brings SCons 4.11, which breaks pioarduino's ESP-IDF
+      # build ("No module named SCons.Tool.FortranCommon")
       - name: Install PlatformIO and esptool
-        run: python -m pip install --upgrade platformio esptool==4.8.1
+        run: python -m pip install platformio==6.1.18 esptool==4.8.1
 
       - name: Build
         env:
