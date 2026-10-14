@@ -1,17 +1,21 @@
 // Unit tests for the emulator modules that can be checked without ROMs:
-// CRC-32, the ZIP reader and ROM set matcher (on fixtures written by
-// make_fixtures.py), the Namco WSG (synthetic waveform PROM), Z80 timing /
-// interrupts, the Pac-Man machine wiring on a tiny hand-made program and
-// synthetic graphics, 8080 timing / flags / interrupts, 8035 timing /
-// flags / stack / banks / timer, counter and interrupts / ports, the WAV parser and
-// sample player (synthetic WAVs), the Space Invaders sound models, and the
-// Space Invaders machine wiring (shifter, inputs, video, sound) on a tiny
-// hand-made 8080 program.
+// CRC-32, the ZIP reader and ROM set matcher with variants (on fixtures
+// written by make_fixtures.py), the Namco WSG (synthetic waveform PROM),
+// Z80 timing / interrupts, the Pac-Man machine wiring on a tiny hand-made
+// program and synthetic graphics, 8080 timing / flags / interrupts, 8035
+// timing / flags / stack / banks / timer, counter and interrupts / ports,
+// the WAV parser and sample player (synthetic WAVs), the Space Invaders
+// sound models, the Space Invaders machine wiring (shifter, inputs, video,
+// sound) on a tiny hand-made 8080 program, and the Donkey Kong wiring
+// (NMI, sprite DMA, inputs, tiles / sprites / flip / palette bank, the
+// 8035's latch and DAC, the stomp, the watchdog) on hand-made Z80 and
+// 8035 programs.
 //
 //   unit_tests <fixture dir>
 #include "../../emu/cpu/i8035.h"
 #include "../../emu/cpu/i8080.h"
 #include "../../emu/cpu/z80.h"
+#include "../../emu/machines/dkong.h"
 #include "../../emu/machines/invaders.h"
 #include "../../emu/machines/pacman.h"
 #include "../../emu/rom/crc32.h"
@@ -1526,6 +1530,166 @@ void test_invaders()
     CHECK_EQ(m.watchdog_resets(), 2);
 }
 
+// --- Donkey Kong wiring -------------------------------------------------------------
+
+void test_dkong()
+{
+    static uint8_t cpu_rom[0x4000], snd[0x1000], tiles[0x1000], sprites[0x2000], proms[0x300];
+    std::memset(cpu_rom, 0, sizeof cpu_rom);
+    std::memset(snd, 0, sizeof snd);
+    std::memset(tiles, 0, sizeof tiles);
+    std::memset(sprites, 0, sizeof sprites);
+    std::memset(proms, 0xff, 0x200);              // all PROM bits set = black (stored inverted)
+    std::memset(proms + 0x200, 1, 0x100);         // every tile column in colour 1
+    // Colour 1: pixel value 1 red, 3 blue.
+    proms[4 + 1] = 0x0f; proms[0x100 + 4 + 1] = 0x01;
+    proms[4 + 3] = 0x0c; proms[0x100 + 4 + 3] = 0x0f;
+    // Tile 2: hardware pixel (0, 0) = 1. Sprite 1: every pixel 3.
+    tiles[2 * 8] = 0x80;
+    for (int py = 0; py < 16; ++py)
+        for (int part = 0; part < 4; ++part) sprites[part * 0x800 + 16 + py] = 0xff;
+
+    const uint8_t prog[] = {
+        0xf3,                   // 0000 DI
+        0x31, 0x00, 0x6c,       //      LD SP,6C00
+        0x3e, 0x01,             //      LD A,1
+        0x32, 0x84, 0x7d,       //      LD (7D84),A   - NMI on
+        0x3a, 0x00, 0x7d,       // 0009 LD A,(7D00)   - IN2 (watchdog)
+        0x32, 0x10, 0x60,       //      LD (6010),A
+        0x3a, 0x20, 0x60,       //      LD A,(6020)
+        0x32, 0x02, 0x7d,       //      LD (7D02),A   - stomp
+        0x3a, 0x21, 0x60,       //      LD A,(6021)
+        0x32, 0x00, 0x7c,       //      LD (7C00),A   - tune
+        0x18, 0xec,             //      JR 0009
+    };
+    std::memcpy(cpu_rom, prog, sizeof prog);
+    // NMI: count, then the sprite DMA 6900 -> 7000, 0x180 bytes.
+    const uint8_t nmi[] = {
+        0xf5, 0x21, 0x00, 0x60, 0x34,
+        0x3e, 0x00, 0x32, 0x00, 0x78, 0x3e, 0x69, 0x32, 0x00, 0x78,     // ch 0 address 6900
+        0x3e, 0x7f, 0x32, 0x01, 0x78, 0x3e, 0x41, 0x32, 0x01, 0x78,     // ch 0 count 017F
+        0x3e, 0x00, 0x32, 0x02, 0x78, 0x3e, 0x70, 0x32, 0x02, 0x78,     // ch 1 address 7000
+        0x3e, 0x7f, 0x32, 0x03, 0x78, 0x3e, 0x81, 0x32, 0x03, 0x78,     // ch 1 count
+        0x3e, 0x53, 0x32, 0x08, 0x78,                                   // mode: ch 0 + 1, TC stop
+        0x3e, 0x01, 0x32, 0x85, 0x7d, 0xaf, 0x32, 0x85, 0x7d,           // DRQ
+        0xf1, 0xed, 0x45,                                               // POP AF; RETN
+    };
+    std::memcpy(cpu_rom + 0x66, nmi, sizeof nmi);
+    // 8035: P2 = C0 (tune latch on MOVX, DAC full); a square on the DAC of
+    // the tune latch's level (inverted), none while that reads 0.
+    const uint8_t sprog[] = {
+        0x23, 0xc0, 0x3a, 0xb8, 0x00,   // 000 MOV A,#C0; OUTL P2,A; MOV R0,#0
+        0x80, 0xc6, 0x05,               // 005 MOVX A,@R0; JZ 005
+        0x39, 0xb9, 0x14, 0xe9, 0x0b,   // 008 OUTL P1,A; MOV R1,#20; DJNZ R1,00B
+        0x27, 0x39, 0xb9, 0x14, 0xe9, 0x11,   // 00D CLR A; OUTL P1,A; MOV R1,#20; DJNZ R1,011
+        0x04, 0x05,                     // 013 JMP 005
+    };
+    std::memcpy(snd, sprog, sizeof sprog);
+
+    static dkong::Machine m;
+    m.init({cpu_rom, snd, tiles, sprites, proms}, 24000);
+    auto& c = m.cpu();
+    c.wr(0x6021, 0x0f);                           // tune F: the 8035 reads 0 - silent
+    int16_t audio[1024];
+    int samples = 0;
+    for (int f = 0; f < 30; ++f) samples += m.run_frame(audio, 1024);
+    CHECK_EQ(samples, 30 * 396);                  // 24000 Hz / 60.606 Hz
+    CHECK_EQ(c.rd(0x6000), 30);                   // one NMI per frame
+    CHECK_EQ(m.dma_count(), 30);
+    CHECK_EQ(m.watchdog_resets(), 0);
+    CHECK_EQ(c.rd(0x6010) & 0x40, 0x40);          // 8035 P2 bit 4 clear -> IN2 bit 6 set
+    const uint32_t quiet = m.dac_writes();        // a few before the tune was set
+
+    // Inputs (active high) and DIPs.
+    m.set_inputs(dkong::kRight | dkong::kJump | dkong::kStart1 | dkong::kCoin);
+    CHECK_EQ(c.rd(0x7c00), 0x11);
+    CHECK_EQ(c.rd(0x7d00) & 0x8c, 0x84);
+    m.set_inputs(dkong::kUp | dkong::kLeft | dkong::kDown | dkong::kStart2);
+    CHECK_EQ(c.rd(0x7c00), 0x0e);
+    CHECK_EQ(c.rd(0x7d00) & 0x8c, 0x08);
+    m.set_inputs(0);
+    CHECK_EQ(c.rd(0x7d80), dkong::kDipDefault);
+    CHECK_EQ(dkong::kDipDefault, 0x80);
+
+    // Video: tile 2 at row 2, column 31 = hardware (248, 16); sprite 1 at
+    // y byte 100, x byte 108: hardware x 100-115, lines 147-162; seventeen
+    // more sprites on its lines, the last one past the 16-a-line limit.
+    c.wr(0x7400 + 2 * 32 + 31, 2);
+    const uint8_t sp0[4] = {100, 1, 1, 108};
+    for (int k = 0; k < 4; ++k) c.wr(uint16_t(0x6900 + k), sp0[k]);
+    for (int i = 1; i <= 16; ++i) {
+        const uint8_t s[4] = {100, 1, 1, uint8_t(i == 16 ? 20 : 140)};
+        for (int k = 0; k < 4; ++k) c.wr(uint16_t(0x6900 + i * 4 + k), s[k]);
+    }
+    m.run_frame(nullptr, 0);
+    CHECK_EQ(c.rd(0x7000), 100);                  // copied by the DMA
+    CHECK_EQ(c.rd(0x7043), 20);
+    CHECK_EQ(m.video().sprite_count, 16);         // the 17th has no line left
+    const uint16_t red = 0xf800, blue = 0x001f, black = 0;
+    uint16_t line[224];
+    // Flip screen off: display line y = hardware column 255 - y, x = line - 16.
+    m.render_line(7, line);
+    CHECK_EQ(line[0], red);
+    CHECK_EQ(line[1], black);
+    m.render_line(140, line);                     // hardware x 115: the sprite's right edge
+    CHECK_EQ(line[130], black);
+    CHECK_EQ(line[131], blue);
+    CHECK_EQ(line[146], blue);
+    CHECK_EQ(line[147], black);
+    m.render_line(155, line);
+    CHECK_EQ(line[131], blue);
+    m.render_line(156, line);
+    CHECK_EQ(line[131], black);
+    m.render_line(255 - 12, line);                // the 17th sprite (x 12-27): dropped
+    CHECK_EQ(line[131], black);
+    // Flip screen on (as the upright game runs): the picture turns 180 degrees.
+    c.wr(0x7d82, 1);
+    m.run_frame(nullptr, 0);
+    m.render_line(248, line);
+    CHECK_EQ(line[223], red);
+    CHECK_EQ(line[222], black);
+    m.render_line(115, line);
+    CHECK_EQ(line[223 - 131], blue);
+    CHECK_EQ(line[223 - 130], black);
+    // Palette bank 1: colour 17 has no pens set - black.
+    c.wr(0x7d86, 1);
+    m.run_frame(nullptr, 0);
+    m.render_line(248, line);
+    CHECK_EQ(line[223], black);
+
+    // Sound: the tune latch reaches the 8035 inverted; its square on the
+    // DAC (a small one: level 0F of FF) is heard. The stomp (latch bit 2) is heard on its own.
+    auto level = [&](int frames) {
+        std::vector<int16_t> all;
+        for (int f = 0; f < frames; ++f) {
+            const int n = m.run_frame(audio, 1024);
+            all.insert(all.end(), audio, audio + n);
+        }
+        return rms(all, all.size() / 2, all.size());
+    };
+    CHECK(level(30) < 2);
+    c.wr(0x6021, 0x00);                           // DAC square of level 0F
+    const double square = level(10);
+    CHECK_EQ(m.sound_cpu().p1 == 0x0f || m.sound_cpu().p1 == 0x00, 1);
+    CHECK(m.dac_writes() > quiet + 1000u);
+    c.wr(0x6021, 0x0f);
+    const double after = level(60);
+    c.wr(0x6020, 1);                              // stomp
+    m.run_frame(audio, 1024);
+    c.wr(0x6020, 0);
+    const double stomp = level(15);
+    std::printf("dkong: DAC square rms %.0f, silent %.1f, stomp rms %.0f\n", square, after, stomp);
+    CHECK(square > 50);
+    CHECK(after < 5);
+    CHECK(stomp > 300);
+
+    // Without IN2 reads the board resets after 256 frames.
+    cpu_rom[0x0a] = 0x30; cpu_rom[0x0b] = 0x60;   // LD A,(6030)
+    m.init({cpu_rom, snd, tiles, sprites, proms}, 24000);
+    for (int f = 0; f < 600; ++f) m.run_frame(nullptr, 0);
+    CHECK_EQ(m.watchdog_resets(), 2);
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -1551,6 +1715,7 @@ int main(int argc, char** argv)
     test_sample_player();
     test_invaders_sound();
     test_invaders();
+    test_dkong();
     std::printf("unit tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

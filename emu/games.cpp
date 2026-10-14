@@ -1,6 +1,7 @@
 // The game list (see games.h).
 #include "games.h"
 
+#include "machines/dkong.h"
 #include "machines/invaders.h"
 #include "machines/pacman.h"
 
@@ -75,6 +76,37 @@ const ButtonName kInvadersButtons[] = {
     {"left2", invaders::kLeft2}, {"right2", invaders::kRight2}, {"fire2", invaders::kFire2},
 };
 
+// ---- Donkey Kong ------------------------------------------------------------
+
+class Dkong : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[dkong::kRegionCpu], r[dkong::kRegionSound], r[dkong::kRegionTiles],
+                 r[dkong::kRegionSprites], r[dkong::kRegionProms]}, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    dkong::Machine m_;
+};
+
+// The cabinet's 4-way stick and its one button: A (or B) jumps.
+const Control kDkongControls[] = {
+    {kPadUp, dkong::kUp}, {kPadDown, dkong::kDown}, {kPadLeft, dkong::kLeft},
+    {kPadRight, dkong::kRight}, {kPadA, dkong::kJump}, {kPadB, dkong::kJump},
+    {kPadSelect, dkong::kCoin}, {kPadStart, dkong::kStart1}, {kPadL, dkong::kStart2},
+};
+
+const ButtonName kDkongButtons[] = {
+    {"up", dkong::kUp}, {"down", dkong::kDown}, {"left", dkong::kLeft}, {"right", dkong::kRight},
+    {"jump", dkong::kJump}, {"coin", dkong::kCoin}, {"start1", dkong::kStart1}, {"start2", dkong::kStart2},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -89,6 +121,9 @@ const Info kGames[] = {
      Orientation::Portrait, invaders::kCpuClock, invaders::kCyclesPerFrame, kInvadersControls,
      COUNT(kInvadersControls), kInvadersButtons, COUNT(kInvadersButtons), invaders::kSampleNames,
      invaders::kSampleCount, make<Invaders>, false},
+    {"dkong", "Donkey Kong", &dkong::kRomSet, dkong::kScreenW, dkong::kScreenH, Orientation::Portrait,
+     dkong::kCpuClock, dkong::kCyclesPerFrame, kDkongControls, COUNT(kDkongControls), kDkongButtons,
+     COUNT(kDkongButtons), nullptr, 0, make<Dkong>, true},
 };
 
 const int kGameCount = COUNT(kGames);

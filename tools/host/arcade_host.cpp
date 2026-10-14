@@ -15,7 +15,8 @@
 //                         F+N:btns press btns at frame F for N frames
 //                         buttons: per game (pacman: up down left right coin
 //                         coin2 start1 start2 service test; invaders: coin
-//                         start1 start2 left right fire left2 right2 fire2)
+//                         start1 start2 left right fire left2 right2 fire2;
+//                         dkong: up down left right jump coin start1 start2)
 //     --verbose           one timing line per frame
 //
 //   arcade_host --list-json

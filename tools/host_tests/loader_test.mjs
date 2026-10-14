@@ -118,6 +118,22 @@ check(L.sanitizeName("a".repeat(60) + ".zip").length === 31, "names: at most 31 
   check(r3.games[0].state === "complete" && r3.games[0].from.join() === "pacman.zip,puckman.zip" && !r3.zips[2].use,
         "a clone from its zip and its parent's: " + JSON.stringify(r3.games[0].from));
 }
+{
+  // A game with variants (Donkey Kong: dkong or dkongo program ROMs): either
+  // set's ROMs make it complete; missing ROMs are named for the closest set.
+  const dk = games.find((g) => g.id === "dkong");
+  check(dk && dk.variants && dk.variants.join() === "dkong,dkongo", "games.json lists dkong's variants");
+  const forSet = (v) => dk.roms.filter((r) => !r.variant || r.variant === v)
+    .map((r, i) => ({ name: r.name, data: rnd(10, 20 + i), lie: lieFor(r) }));
+  const dkongo = makeZip(forSet("dkongo"));
+  const r = L.recognise(games, [await zipInfo("dkongo.zip", dkongo)]);
+  const g = r.games.find((x) => x.id === "dkong");
+  check(g.state === "complete" && g.from.join() === "dkongo.zip", "a variant's own zip completes the game");
+  const noProgram = makeZip(forSet("dkongo").filter((m) => m.name !== "tkg3c.5k"));
+  const r2 = L.recognise(games, [await zipInfo("dkongo.zip", noProgram)]);
+  const g2 = r2.games.find((x) => x.id === "dkong");
+  check(g2.state === "incomplete" && g2.missing.join() === "tkg3c.5k", "missing: the closest variant's: " + g2.missing.join());
+}
 if (args.roms && fs.existsSync(args.roms)) {
   const picked = [];
   for (const f of fs.readdirSync(args.roms).filter((n) => n.endsWith(".zip")))
@@ -125,8 +141,10 @@ if (args.roms && fs.existsSync(args.roms)) {
   const r = L.recognise(games, picked);
   console.log("real sets: " + r.games.map((g) => `${g.id} ${g.state}`).join(", ") +
               "; used: " + r.zips.filter((z) => z.use).map((z) => z.name).join(" "));
-  for (const g of r.games)      // every game whose own zip is there
-    if (picked.some((z) => z.name === `${g.id}.zip`)) check(g.state === "complete", `real set ${g.id} complete`);
+  for (const g of r.games)      // every game whose own zip (or a variant's) is there
+    if (picked.some((z) => z.name === `${g.id}.zip` ||
+                           (games.find((x) => x.id === g.id).variants || []).some((v) => z.name === `${v}.zip`)))
+      check(g.state === "complete", `real set ${g.id} complete`);
 }
 
 // ---- 3. sending, against the fake board ---------------------------------------
