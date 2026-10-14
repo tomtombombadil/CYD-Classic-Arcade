@@ -44,8 +44,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Pillow: the host runner check reads its PNGs; Node runs the ROM page's tests
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Python and Node tools
-        run: python3 -m pip install pillow && node --version
+        run: python -m pip install pillow && node --version
       - name: Host tests
         run: sh tools/host_tests/build.sh
 
