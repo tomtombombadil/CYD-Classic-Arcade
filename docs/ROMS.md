@@ -26,9 +26,9 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Space Invaders | `invaders` | Space Invaders / Space Invaders M | - | `invaders` samples |
 | Galaga | `galaga` | Galaga (Namco rev. B) | - | - |
 | Dig Dug | `digdug` | Dig Dug (rev 2) | - | - |
-| Donkey Kong | `dkong` | Donkey Kong (US set 1) | - | `dkong` samples |
+| Donkey Kong | `dkong` (or `dkongo`, US set 2) | Donkey Kong (US set 1) | `dkong` for `dkongo` | `dkong` samples |
 | Q\*bert | `qbert` | Q\*bert (US set 1) | - | `qbert` samples (the knocker) |
-| Asteroids | `asteroid` | Asteroids (rev 4) | - | `asteroid` samples |
+| Asteroids | `asteroid` (or `asteroid2`, rev 2) | Asteroids (rev 4) | - | `asteroid` samples |
 | Defender (stretch) | `defender` | Defender (Red label) | - | - |
 | Stargate (stretch) | `stargate` | Stargate | - | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - | - |
@@ -36,10 +36,15 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 Every set above is the parent ("main") set in MAME except `pacman`, which is
 the Midway version and a clone of the Japanese `puckman` (Puck Man).
 
+Older MAME versions named the sets differently: their `asteroid` is today's
+`asteroid2` (rev 2), and they leave out the vector generator's PROM
+(`034602-01.c8`), which our emulator doesn't need. Both work.
+
 Notes:
 - **Galaga, Dig Dug:** non-merged sets also hold the Namco custom chips'
-  own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). Keep them in the zip -
-  Galaga's explosions come from the 54xx chip.
+  own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). They are optional:
+  without them the chips are modelled from their known behaviour (Galaga's
+  explosions then come from our own noise model).
 - **Q\*bert:** the speech chip (Votrax SC-01) has its own internal ROM,
   `sc01a.bin`; non-merged sets include it. Keep it in the zip.
 - **Sample zips** are MAME's separate sound-sample sets (WAV files in a zip
