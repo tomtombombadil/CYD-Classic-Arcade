@@ -122,6 +122,12 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   overflowed IRAM by 48,428 bytes (Bluetooth uses most of it). EMU_HOT
   stays a no-op hook; speed has to come from the code (Pac-Man's one Z80
   takes ~5.7 ms a frame from flash, ~9 emulated MHz - Galaga has three).
+- Pacing (v0.5.0, Tom: Rally-X crawled and surged on the 4.0", slowed on
+  the 3.2"): a frame is drawn only when the sound queue holds enough to
+  last through the draw (`draw_est`, measured); else drawing is skipped.
+  The queue grows to cover the slowest recent draw (max ~128 ms). A
+  scrolling Rally-X shown 411x320 on the 4.0" is ~50 ms a full picture at
+  40 MHz SPI, so it shows ~12 pictures a second at full game speed.
 - Menu help text at the bottom wraps to the screen (`screen::text_box`),
   in the small font on every panel (Tom: it ran off the right edge).
 - Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by

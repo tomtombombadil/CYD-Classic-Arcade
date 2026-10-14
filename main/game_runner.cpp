@@ -1,9 +1,14 @@
 // The game loop (see game_runner.h).
 //
 // Pacing: each frame's audio goes into the ring the audio task drains at
-// 24 kHz; the loop waits while the ring holds more than a few frames, so
-// the game runs at its own speed, locked to the sound. When the loop falls
-// behind (the ring is nearly empty), it skips drawing that frame.
+// 24 kHz; the loop waits while the ring is full enough, so the game runs at
+// its own speed, locked to the sound. A frame is drawn only when the ring
+// holds enough sound to last through the drawing (the time a draw takes is
+// measured as it goes); otherwise drawing is skipped and the next frame is
+// emulated. v0.4.0 drew whenever one frame of sound was queued: a scrolling
+// Rally-X picture scaled up on the 4.0" takes ~50 ms to send, so each draw
+// emptied the ring, one frame was emulated, and it drew again - the game
+// crawled, and surged when few lines changed (Tom).
 //
 // Drawing: each line is rendered, hashed and only sent to the panel if it
 // differs from the line already there; changed lines go out in strips.
@@ -111,9 +116,11 @@ void run(int index, AudioRing& ring)
     for (int y = 0; y < kMaxLines; ++y) line_hash[y] = 0;   // a black line hashes otherwise
     ring.clear();
 
-    // About three frames of sound queued: enough to ride out a slow frame.
+    // Sound queued: at least three frames, and always enough to last
+    // through a draw (draw_est, in samples, follows the slowest recent draw).
     const uint32_t frame_samples = uint32_t(24000.0 / games::frame_rate(g) + 0.5);
-    const uint32_t queue_target = frame_samples * 3;
+    const uint32_t queue_max = AudioRing::kSize - kAudioCap;
+    uint32_t draw_est = frame_samples;
 
     Input in;
     games::FourWay four_way;
@@ -126,6 +133,7 @@ void run(int index, AudioRing& ring)
         const uint32_t pad = g.four_way ? four_way.filter(in.game()) : in.game();
         m->set_inputs(games::map_pad(g, pad));
 
+        const uint32_t queue_target = std::min(queue_max, std::max(frame_samples * 3, draw_est + frame_samples * 2));
         while (ring.count() > queue_target) vTaskDelay(1);
         const int64_t t0 = esp_timer_get_time();
         const int n = m->run_frame(audio, kAudioCap);
@@ -134,8 +142,8 @@ void run(int index, AudioRing& ring)
         emu_us += t1 - t0;
         ++frames;
 
-        // Behind (less than a frame of sound left): skip drawing this one.
-        if (ring.count() < frame_samples) continue;
+        // Not enough sound queued to last through a draw: skip this one.
+        if (ring.count() < draw_est + frame_samples / 2) continue;
 
         lcd.startWrite();
         int rows = 0, start = 0;
@@ -173,14 +181,21 @@ void run(int index, AudioRing& ring)
         }
         flush();
         lcd.endWrite();
-        draw_us += esp_timer_get_time() - t1;
+        const int64_t took_us = esp_timer_get_time() - t1;
+        draw_us += took_us;
         ++drawn;
+        // Up at once to a slower draw, down slowly (a quiet screen draws
+        // fast, the next scroll doesn't)
+        const uint32_t took = uint32_t(took_us * 24 / 1000);
+        draw_est = took > draw_est ? took : draw_est - (draw_est - took) / 8;
+        draw_est = std::min(draw_est, queue_max - frame_samples * 2);
 
         const uint32_t now = now_ms();
         if (now - stat_t >= 5000) {
-            ESP_LOGI(kTag, "%s: %lu frames, %lu drawn in 5 s; emu %.2f ms, draw %.2f ms a frame; %lu lines sent",
+            ESP_LOGI(kTag, "%s: %lu frames, %lu drawn in 5 s; emu %.2f ms, draw %.2f ms a frame; %lu lines sent; queue %lu",
                      g.id, (unsigned long)frames, (unsigned long)drawn, frames ? emu_us / 1000.0 / frames : 0.0,
-                     drawn ? draw_us / 1000.0 / drawn : 0.0, (unsigned long)lines_sent);
+                     drawn ? draw_us / 1000.0 / drawn : 0.0, (unsigned long)lines_sent,
+                     (unsigned long)(std::max(frame_samples * 3, draw_est + frame_samples * 2)));
             stat_t = now;
             frames = drawn = lines_sent = 0;
             emu_us = draw_us = 0;
