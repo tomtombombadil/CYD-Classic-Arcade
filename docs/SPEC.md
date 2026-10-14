@@ -24,9 +24,11 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound | 4:3 landscape | medium |
 | Rally-X | Z80 3.072 MHz | Namco wavetable sound (as Pac-Man), analog crash "bang", scrolling + radar | 288x224 landscape | easy (after Pac-Man) |
 | Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM) | 240x256 portrait | medium: light CPUs, but 64 KB of RAM |
+| Star Wars | 6809 1.5 MHz + math box | color vector generator (AVG), 6809 sound CPU, 4 POKEY, TMS5220 speech (the voices are LPC data in the ROMs) | 4:3 landscape | medium-hard: vectors need a frame buffer (4 bpp, ~38 KB) |
 | Defender (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
+| Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
 
 ## 3. Sound - where it comes from
 

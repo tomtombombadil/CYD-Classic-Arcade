@@ -33,7 +33,9 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Qix | `qix` | Qix (Rev 2) | - | - |
 | Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` | - |
 | Stargate (stretch) | `stargate` | Stargate | - | - |
+| Star Wars | `starwars` | Star Wars (Atari, set 1) | - | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - | - |
+| Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - | - |
 
 Every set above is the parent ("main") set in MAME except `pacman`, which is
 the Midway version and a clone of the Japanese `puckman` (Puck Man).
@@ -41,6 +43,11 @@ the Midway version and a clone of the Japanese `puckman` (Puck Man).
 Older MAME versions named the sets differently: their `asteroid` is today's
 `asteroid2` (rev 2), and they leave out the vector generator's PROM
 (`034602-01.c8`), which our emulator doesn't need. Both work.
+
+Older dumps also work where the data is the same: an old `spyhunt` has
+`cpu_pg5.11d` with its two halves swapped (the loader checks both orders),
+and an old `starwars` has the math box PROMs in another layout, and no
+AVG PROM - our emulator needs neither.
 
 Notes:
 - **Galaga, Dig Dug:** non-merged sets also hold the Namco custom chips'
