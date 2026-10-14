@@ -50,6 +50,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   A game is shown as large as fits with its shape kept (borders only
   where the shapes differ).
 - Pac-Man's sound and screens confirmed right by Tom (2026-10-14, PC run).
+- Controller test v0.1.0 on Tom's 2.8" ST7789 (2026-10-14): 8BitDo
+  Ultimate Bluetooth and Vilcorn D8 pair and work (two at once), every
+  button, both sticks' directions, DAC tones OK. ShanWan Q36 (two units)
+  not found; an 8BitDo "80EL" unclear (charge?). Bluepad32 names buttons
+  by POSITION (Xbox layout: A = bottom), so on Nintendo-labelled pads A/B
+  and X/Y read swapped. L1+L2 -> L and R1+R2 -> R by design; the right
+  stick is unused.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
