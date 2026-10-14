@@ -20,6 +20,10 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 
+#ifndef CYD_SPI_WRITE_HZ
+#define CYD_SPI_WRITE_HZ 40000000
+#endif
+
 #define BOARD_TOUCH_RESISTIVE   1
 #define BOARD_PIN_BOOT_BTN      0
 #define BOARD_PIN_LED_R         22

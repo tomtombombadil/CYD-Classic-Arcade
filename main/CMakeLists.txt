@@ -1,4 +1,6 @@
+file(GLOB MAIN_SRCS ${CMAKE_CURRENT_LIST_DIR}/*.cpp ${CMAKE_CURRENT_LIST_DIR}/*.c)
 idf_component_register(
-    SRCS "main.cpp" "pad_bt.c" "audio_out.cpp"
+    SRCS ${MAIN_SRCS}
     INCLUDE_DIRS "." "boards"
-    REQUIRES bluepad32 btstack LovyanGFX esp_driver_dac esp_timer nvs_flash)
+    REQUIRES arcade_core bluepad32 btstack LovyanGFX esp_driver_dac esp_driver_gpio esp_driver_spi
+             esp_driver_uart esp_driver_sdspi esp_partition esp_timer fatfs nvs_flash sdmmc)

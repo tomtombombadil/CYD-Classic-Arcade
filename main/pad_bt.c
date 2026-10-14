@@ -7,7 +7,6 @@
 
 #include <btstack_port_esp32.h>
 #include <btstack_run_loop.h>
-#include <btstack_stdio_esp32.h>
 #include <freertos/FreeRTOS.h>
 #include <uni.h>
 
@@ -135,11 +134,8 @@ static struct uni_platform s_platform = {
 };
 
 void pad_bt_run(void) {
-#ifdef CONFIG_ESP_CONSOLE_UART
-#ifndef CONFIG_BLUEPAD32_USB_CONSOLE_ENABLE
-    btstack_stdio_init();
-#endif
-#endif
+    // No btstack_stdio_init(): it would take the serial port's input, which
+    // carries the ROM loader (main/serial_link.cpp).
     btstack_init();
     uni_platform_set_custom(&s_platform);
     uni_init(0, NULL);

@@ -32,3 +32,7 @@ CONFIG_BLUEPAD32_MAX_DEVICES=2
 # No interactive console: saves RAM, the serial log stays
 CONFIG_BLUEPAD32_USB_CONSOLE_ENABLE=n
 CONFIG_BTSTACK_AUDIO=n
+
+# ---- SD card: long file names (the "CYD-Classic-Arcade" folder) ----
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255

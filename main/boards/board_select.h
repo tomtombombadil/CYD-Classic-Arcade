@@ -18,10 +18,10 @@
 //           BOARD_PIN_SD_CS/SCK/MISO/MOSI, BOARD_PIN_AUDIO_EN, BOARD_PIN_BATTERY_ADC
 #pragma once
 
-// Display SPI clock. 40 MHz is safe on every board; many run at 55-80 MHz.
-#ifndef CYD_SPI_WRITE_HZ
-#define CYD_SPI_WRITE_HZ 40000000
-#endif
+// Display SPI clock: 40 MHz unless a board says more (set before its board
+// file). A 224x288 frame takes 26 ms at 40 MHz - too slow for 60 fps - so
+// panels that take 80 MHz get it (the display's pins are the SPI
+// controller's own, which allows 80 MHz).
 
 // ---- 2.8" ESP32-2432S028 (the original CYD layout) ---------------------------
 #if defined(CYD_BOARD_28_ILI9341_RES)
@@ -31,6 +31,7 @@
   class LGFX : public LGFX_Esp32_2432S028<lgfx::Panel_ILI9341, false> {};
 
 #elif defined(CYD_BOARD_28_ST7789_RES)
+  #define CYD_SPI_WRITE_HZ 80000000
   #include "esp32_2432s028.hpp"
   #define BOARD_NAME "2.8\" ST7789 Resistive"
   #define BOARD_PORTRAIT_W 240
@@ -38,6 +39,7 @@
 
 // ---- "ESP32-32E" display boards ---------------------------------------------
 #elif defined(CYD_BOARD_32_ST7789_RES)
+  #define CYD_SPI_WRITE_HZ 80000000
   #include "esp32_32e_display.hpp"
   #define BOARD_NAME "3.2\" ST7789 Resistive"
   #define BOARD_PORTRAIT_W 240
