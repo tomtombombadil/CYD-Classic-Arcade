@@ -129,6 +129,7 @@ void run(AudioRing& ring)
     uint32_t next_mem = 0, phase = 0;
     Input in;
     int16_t tone[480];
+    in.wait_for_release();      // not the press that opened this
     for (;;) {
         const uint32_t now = now_ms();
         in.update(now);

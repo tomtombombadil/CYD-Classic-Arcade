@@ -139,10 +139,12 @@ void run(AudioRing& ring)
             redraw = true;
         } else if (choose && id == kTest) {
             pad_test::run(ring);
+            in.wait_for_release();
             redraw = true;
         } else if (choose && id < games::kGameCount && catalog::available(id)) {
             status[0] = 0;
             game_runner::run(id, ring);
+            in.wait_for_release();
             menu_font();
             redraw = true;
         }

@@ -27,14 +27,19 @@ public:
     bool back() const { return back_; }
     int  connected() const { return connected_; }
 
+    // Ignore every button until all are let go (after leaving a game: the
+    // Start that ended it must not start the next one).
+    void wait_for_release() { wait_release_ = true; }
+
 private:
     uint32_t held_ = 0, prev_ = 0, pressed_ = 0, game_ = 0;
     uint32_t repeat_at_ = 0;
     // hotkey state
     bool     hotkey_used_ = false;   // Start pressed during this Select hold
-    int      start_presses_ = 0;
+    int      start_presses_ = 0;    // -1: the gesture fired; Start is ignored until Select is let go
     uint32_t first_start_ = 0;
     int      coin_left_ = 0;         // updates the coin stays pressed
     bool     back_ = false;
+    bool     wait_release_ = false;
     int      connected_ = 0;
 };

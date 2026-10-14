@@ -24,6 +24,18 @@ void Input::update(uint32_t now)
     held_ = h;
     pressed_ = held_ & ~prev_;
     const uint32_t released = prev_ & ~held_;
+    if (wait_release_) {
+        if (held_) {
+            pressed_ = 0;
+            game_ = 0;
+            back_ = false;
+            return;
+        }
+        wait_release_ = false;
+        hotkey_used_ = false;
+        start_presses_ = 0;
+        coin_left_ = 0;
+    }
 
     // d-pad repeat (menus)
     if (pressed_ & kDpad) {
@@ -36,13 +48,13 @@ void Input::update(uint32_t now)
     // back: Home, or Select held + Start pressed twice
     back_ = (pressed_ & PAD_HOME) != 0;
     if (held_ & PAD_SELECT) {
-        if (pressed_ & PAD_START) {
+        if ((pressed_ & PAD_START) && start_presses_ >= 0) {
             hotkey_used_ = true;
             if (start_presses_ == 0 || now - first_start_ > kDoublePressMs) {
                 start_presses_ = 1;
                 first_start_ = now;
             } else {
-                start_presses_ = 0;
+                start_presses_ = -1;    // no more until Select is let go
                 back_ = true;
             }
         }

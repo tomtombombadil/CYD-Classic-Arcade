@@ -99,6 +99,7 @@ void run(int index, AudioRing& ring)
 
     Input in;
     games::FourWay four_way;
+    in.wait_for_release();      // not the press that opened this
     uint32_t stat_t = now_ms(), frames = 0, drawn = 0, lines_sent = 0;
     int64_t emu_us = 0, draw_us = 0;
     for (;;) {

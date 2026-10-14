@@ -84,6 +84,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   most retro handhelds - or Home. While Select is held, Start goes to the
   gesture, not the game; the coin drops when Select is let go unused
   (`main/input.*`). Replaces v0.2.0's Start + Select held 1 s.
+  After the second Start, Start does nothing more until Select is let go
+  (Tom, v0.3.0: a third press often started the game again), and the menu
+  ignores every button until all are let go (`Input::wait_for_release()`;
+  games too, so the press that opened one doesn't reach it).
+- Web flasher caching (v0.3.0: Tom's browser flashed a cached v0.2.0 file
+  for the 4.0" from the v0.3.0 page): every manifest / firmware link
+  carries the build's stamp (`?v=<version>-<time>`, boards.json `stamp`).
 - Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by
   default (the board stands up, cable out the top; rotation 2); menu
   setting "USB Port: Top / Bottom" (NVS usb_top).

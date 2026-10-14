@@ -76,6 +76,11 @@ def main():
     (out / "roms" / "games.json").write_text(games, encoding="utf-8")
     print(f"added roms/games.json ({len(json.loads(games))} games)")
 
+    # Every build gets its own stamp in its file links: the file names stay
+    # the same from version to version, and browsers kept flashing a cached
+    # older file (Tom's 4.0" got v0.2.0 from the v0.3.0 page)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    stamp = args.version + "-" + now.strftime("%Y%m%d%H%M%S")
     published = []
     for b in boards_from_ini():
         src = args.bins / b["file"]
@@ -90,7 +95,7 @@ def main():
             "builds": [{
                 "chipFamily": "ESP32",
                 # Merged image: bootloader + partitions + app, from 0x0
-                "parts": [{"path": f"../firmware/{b['file']}", "offset": 0}],
+                "parts": [{"path": f"../firmware/{b['file']}?v={stamp}", "offset": 0}],
             }],
         }
         (out / "manifests" / f"{b['name']}.json").write_text(
@@ -104,7 +109,8 @@ def main():
 
     (out / "boards.json").write_text(json.dumps({
         "version": args.version,
-        "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "built": now.strftime("%Y-%m-%d %H:%M UTC"),
+        "stamp": stamp,
         "boards": published,
     }, indent=2), encoding="utf-8")
     (out / ".nojekyll").write_text("", encoding="utf-8")

@@ -301,7 +301,7 @@
     return m ? [m[1], m[2]] : ["", title];
   }
 
-  let boards = [];
+  let boards = [], stamp = "";
   const select = document.getElementById("board");
   const installer = document.getElementById("installer");
   const btn = document.getElementById("install-btn");
@@ -315,14 +315,15 @@
       chosen.replaceChildren("Not sure which board you have? See ", el("a", { href: "#boards-h" }, "Which board do I have?"), " below.");
       return;
     }
-    installer.setAttribute("manifest", `manifests/${b.name}.json`);
+    // the build's stamp, so the browser never reuses an older cached file
+    installer.setAttribute("manifest", `manifests/${b.name}.json?v=${stamp}`);
     const kb = Math.round(b.size / 1024);
     chosen.replaceChildren(
       b.hint + " ",
       ...(b.tested === false ? [el("span", { class: "untested" }, "Not yet tested on this board - please "),
                                 el("a", { href: "https://github.com/tomtombombadil/CYD-Classic-Arcade/issues" }, "tell us"),
                                 el("span", { class: "untested" }, " if it works. ")] : []),
-      el("a", { href: `firmware/${b.file}`, download: b.file }, `Download the file instead`),
+      el("a", { href: `firmware/${b.file}?v=${stamp}`, download: b.file }, `Download the file instead`),
       ` (${kb} KB, flash at 0x0).`);
   }
   select.addEventListener("change", pick);
@@ -332,6 +333,7 @@
     .then(data => {
       document.getElementById("ver").textContent = `Firmware ${data.version}, built ${data.built}`;
       boards = data.boards;
+      stamp = encodeURIComponent(data.stamp || data.version || "");
       select.replaceChildren(el("option", { value: "" }, "Choose your board…"),
         ...boards.map(b => { const [s, rest] = split(b.title);
           return el("option", { value: b.name }, `${s}" ${rest}${b.tested === false ? " (untested)" : ""}`); }));
