@@ -1,0 +1,11 @@
+#!/bin/sh
+# Builds the headless runner: tools/host/build.sh [out dir] (default build/host)
+set -e
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+OUT=${1:-$ROOT/build/host}
+mkdir -p "$OUT"
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp $ROOT/emu/rom/romset.cpp \
+     $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp $ROOT/emu/machines/pacman.cpp"
+g++ -std=c++17 -O2 -Wall -Wextra -o "$OUT/arcade_host" \
+    "$ROOT/tools/host/arcade_host.cpp" "$ROOT/tools/host/writers.cpp" $EMU
+echo "built $OUT/arcade_host"
