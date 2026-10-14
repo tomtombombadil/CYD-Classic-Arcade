@@ -59,6 +59,41 @@ constexpr romset::Rom kRoms[] = {
 // middle, without the score lines).
 constexpr int kSpriteTop = 16, kSpriteBottom = 272;
 
+// Idle loops (see namco_galaga::Speedup), found by profiling and read in
+// the program; none is entered other than from its top.
+//   sound 00B0-00B4  LD SP,8B80 / JR 00B0: the sound CPU's main loop (its
+//                    work is in the NMIs)
+//   main 0238-027F   the main CPU's main loop (EI, then the work flags):
+//                    with neither bit 0 nor bit 1 of 87CC set it only
+//                    reads; checked at 0239-0251 (the reads of 8400 /
+//                    840D / 840E feed nothing when no work is due), 0272
+//                    and 027E
+//   sub 0078-007F    LD SP / CALL 1DDC / JR 0078, and 1DDC-1DF5: the sub
+//   sub 1DDC-1DF5    CPU's main loop runs task 9B3D (1-4; 0 is a RET, 5 and
+//                    up nothing) unless 89CF is set (then it keeps writing
+//                    9B3D = 0); idle when 9B3D is 0, or 89CF is clear and
+//                    9B3D >= 5; checked at 0078 / 007B / 007E / 1DDC
+using namco_galaga::Idle;
+Idle main_loop(namco_galaga::Board& b, uint16_t pc)
+{
+    const bool point = (pc >= 0x0239 && pc <= 0x0251) || pc == 0x0272 || pc == 0x027e;
+    if (!point) return Idle::kStep;
+    return (b.peek(0x87cc) & 0x03) == 0 ? Idle::kYes : Idle::kNo;
+}
+Idle sub_loop(namco_galaga::Board& b, uint16_t pc)
+{
+    if (pc != 0x0078 && pc != 0x007b && pc != 0x007e && pc != 0x1ddc) return Idle::kStep;
+    const uint8_t task = b.peek(0x9b3d);
+    return (task == 0 || (!b.peek(0x89cf) && task >= 5)) ? Idle::kYes : Idle::kNo;
+}
+
+constexpr namco_galaga::Speedup kSpeedups[] = {
+    {namco_galaga::kSound, 0x00b0, 0x00b4, nullptr, 11},
+    {namco_galaga::kMain, 0x0238, 0x027f, main_loop, 8},
+    {namco_galaga::kSub, 0x0078, 0x007f, sub_loop, 9},
+    {namco_galaga::kSub, 0x1ddc, 0x1df5, sub_loop, 9},
+};
+
 } // namespace
 
 const romset::Set kRomSet = {
@@ -107,7 +142,7 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap)
 
     std::memset(earom_, 0xff, sizeof earom_);
     chip53_.set_dips(dips_a_, dips_b_);
-    board_init(b, audio_rate, nullptr, 0);
+    board_init(b, audio_rate, kSpeedups, int(sizeof kSpeedups / sizeof kSpeedups[0]));
     reset();
 }
 

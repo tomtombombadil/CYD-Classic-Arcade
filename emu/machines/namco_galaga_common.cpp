@@ -19,8 +19,8 @@ namespace namco_galaga {
 namespace {
 
 // Slice length in CPU cycles: the CPUs see each other's RAM writes at
-// most this late (MAME's driver uses 512).
-constexpr int kSlice = 256;
+// most this late (as with MAME's driver's 512).
+constexpr int kSlice = 512;
 
 // When the sound CPU's NMIs, VBLANK and the frame's end fall.
 constexpr int kEventCycles[] = {64 * kCyclesPerLine, 192 * kCyclesPerLine, kVblankLine * kCyclesPerLine,
@@ -49,8 +49,18 @@ void Board::board_init(const BoardRoms& roms, uint32_t audio_rate, const Speedup
 {
     roms_ = roms;
     audio_rate_ = audio_rate;
-    speedups_ = speedups;
-    speedup_count_ = speedup_count;
+    for (int n = 0; n < kCpuCount; ++n) {
+        speedup_count_[n] = 0;
+        speedup_lo_[n] = 0xffff;
+        speedup_hi_[n] = 0;
+    }
+    for (int i = 0; i < speedup_count; ++i) {
+        const Speedup& s = speedups[i];
+        if (speedup_count_[s.cpu] == kMaxSpeedups) continue;
+        speedups_[s.cpu][speedup_count_[s.cpu]++] = &s;
+        if (s.pc_lo < speedup_lo_[s.cpu]) speedup_lo_[s.cpu] = s.pc_lo;
+        if (s.pc_hi > speedup_hi_[s.cpu]) speedup_hi_[s.cpu] = s.pc_hi;
+    }
     for (int n = 0; n < kCpuCount; ++n) {
         z80::Cpu& c = cpu_[n];
         port_[n] = {this, n};
@@ -74,6 +84,7 @@ void Board::board_reset()
         pos_[n] = pos_[kMain];
         sleep_[n] = nullptr;
         nmi_sent_[n] = false;
+        watch_[n].valid = false;
     }
     latch_ = 0;                         // sub CPUs held in reset
     bus06_.reset();
@@ -192,24 +203,65 @@ void Board::write_latch(int bit, bool v, int n)
     }
 }
 
-// The speedup whose loop CPU n is spinning in at the start of a slice, or
-// null. Never while an interrupt is waiting to be taken.
-const Speedup* Board::idle(int n)
+// The speedup whose loop CPU n is spinning in at the start of a slice
+// (stepping it to a check point if need be), or null. Never while an
+// interrupt is waiting to be taken. Steps taken count towards the CPU's
+// time, up to `end`.
+const Speedup* Board::idle(int n, int end)
 {
-    const z80::Cpu& c = cpu_[n];
-    if (nmi_sent_[n] || (c.irq_line() && c.iff1)) return nullptr;
-    const uint16_t pc = cpu_[n].pc.w;
-    for (int i = 0; i < speedup_count_; ++i) {
-        const Speedup& s = speedups_[i];
-        if (s.cpu != n || pc < s.pc_lo || pc > s.pc_hi) continue;
-        if (!s.addr) {
-            sleep_[n] = &s;
-            return &s;
+    z80::Cpu& c = cpu_[n];
+    for (int steps = 0; steps < 16 && pos_[n] < end; ++steps) {
+        if (nmi_sent_[n] || (c.irq_line() && c.iff1)) return nullptr;
+        const uint16_t pc = c.pc.w;
+        const Speedup* hit = nullptr;
+        if (pc >= speedup_lo_[n] && pc <= speedup_hi_[n])
+            for (int i = 0; i < speedup_count_[n] && !hit; ++i) {
+                const Speedup& s = *speedups_[n][i];
+                if (pc >= s.pc_lo && pc <= s.pc_hi) hit = &s;
+            }
+        if (!hit) {
+            watch_[n].valid = false;            // left the loop: steady() starts over
+            return nullptr;
         }
-        const uint8_t v = s.addr < 0x8800 ? vram_[s.addr & 0x7ff] : ram_[((s.addr >> 11) & 3) - 1][s.addr & 0x3ff];
-        if (((v & s.mask) == s.want) == s.equal) return &s;
+        if (!hit->check) {
+            sleep_[n] = hit;
+            return hit;
+        }
+        switch (hit->check(*this, pc)) {
+        case Idle::kNo:  return nullptr;
+        case Idle::kYes: return hit;
+        default: {
+            const int done = c.run(1);
+            pos_[n] += done;
+            stats_[n].run += uint32_t(done);
+            executed_[n] += uint64_t(done);
+            break;
+        }
+        }
     }
     return nullptr;
+}
+
+bool Board::steady(int n, const Range* ranges, int count, int cycles)
+{
+    Watch& w = watch_[n];
+    bool same = w.valid && w.irqs == irqs_[n];
+    int k = 0;
+    for (int r = 0; r < count; ++r)
+        for (uint32_t a = ranges[r].lo; a <= ranges[r].hi && k < int(sizeof w.bytes); ++a, ++k) {
+            const uint8_t v = peek(uint16_t(a));
+            if (w.bytes[k] != v) {
+                w.bytes[k] = v;
+                same = false;
+            }
+        }
+    if (!same) {
+        w.since = executed_[n];
+        w.irqs = irqs_[n];
+        w.valid = true;
+        return false;
+    }
+    return executed_[n] - w.since >= uint64_t(cycles);
 }
 
 void Board::run_cpus(int end)
@@ -220,10 +272,11 @@ void Board::run_cpus(int end)
             pos_[n] = end;
             continue;
         }
+        if (pos_[n] >= end) continue;
+        const Speedup* s = sleep_[n];
+        if (!s && speedups_on_) s = idle(n, end);
         const int want = end - pos_[n];
         if (want <= 0) continue;
-        const Speedup* s = sleep_[n];
-        if (!s && speedups_on_) s = idle(n);
         if (s) {
             stats_[n].skipped += uint32_t(want);
             pos_[n] = end;
@@ -234,6 +287,7 @@ void Board::run_cpus(int end)
         nmi_sent_[n] = false;
         pos_[n] += done;
         stats_[n].run += uint32_t(done);
+        executed_[n] += uint64_t(done);
     }
 }
 
@@ -242,10 +296,12 @@ void Board::do_vblank()
     vblank();
     if (latch_ & 0x01) {
         cpu_[kMain].irq(true);
+        ++irqs_[kMain];
         sleep_[kMain] = nullptr;
     }
     if ((latch_ & 0x02) && !subs_held()) {
         cpu_[kSub].irq(true);
+        ++irqs_[kSub];
         sleep_[kSub] = nullptr;
     }
     if (++watchdog_ >= kWatchdogFrames) {

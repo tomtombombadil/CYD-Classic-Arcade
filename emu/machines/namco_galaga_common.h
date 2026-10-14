@@ -19,15 +19,17 @@
 // NMIs fall on slice edges.
 //
 // Idle skipping (see Speedup): the CPUs spend much of a frame in wait
-// loops. A machine names those loops (program counter range, and the RAM
-// address one polls); at the start of each slice, a CPU found inside such
-// a loop that would keep spinning skips the whole slice. That changes
-// nothing the CPU would have seen: within a slice no other CPU writes RAM
-// before this one has run its part (the others either ran already or run
-// after it), and interrupts only come at slice edges. A loop that polls no
+// loops. A machine names those loops; at the start of each slice, a CPU
+// found inside one that would keep spinning skips the whole slice. That
+// changes nothing the CPU would have seen: within a slice no other CPU
+// writes RAM before this one has run its part (the others either ran
+// already or run after it), and interrupts only come at slice edges. A
+// loop's check looks only at points of the loop where every decision still
+// lies ahead (no register holds an old reading); elsewhere in the loop the
+// CPU runs single instructions until it reaches one. A loop that polls no
 // RAM (a jump to itself) can only be left by an interrupt, so the CPU
-// sleeps until its next one. R advances as the loop would advance it (the
-// main CPU of Galaga reads R for random numbers).
+// sleeps until its next one. R advances as the loop would advance it
+// (Galaga's main CPU reads R for random numbers).
 #pragma once
 
 #include "../cpu/z80.h"
@@ -65,16 +67,20 @@ enum Button : uint16_t {
 };
 
 // A wait loop to skip: CPU `cpu` with its program counter in [pc_lo,
-// pc_hi] (the loop's instructions), polling RAM at `addr` and spinning
-// while ((value & mask) == want) == equal, as the loop's own test does;
-// addr = 0 for a loop that polls nothing (only an interrupt ends it).
-// `cycles_per_r`: the loop's T-states per opcode fetch (R counts fetches).
+// pc_hi] (the whole loop). `check` says what the loop will do from here,
+// from the program counter and RAM (Board::peek, Board::steady); null for
+// a loop that polls nothing, which only an interrupt ends. `cycles_per_r`:
+// the loop's T-states per opcode fetch (R counts fetches).
+class Board;
+enum class Idle : uint8_t {
+    kNo,        // the loop is about to end (or do work): run
+    kYes,       // it would spin through the whole slice: skip it
+    kStep,      // not at a check point: run one instruction and ask again
+};
 struct Speedup {
     uint8_t  cpu;
     uint16_t pc_lo, pc_hi;
-    uint16_t addr;
-    uint8_t  mask, want;
-    bool     equal;
+    Idle   (*check)(Board& b, uint16_t pc);
     uint8_t  cycles_per_r;
 };
 
@@ -103,8 +109,25 @@ public:
     const namco_io::Chip51& chip51() const { return chip51_; }
     const namco_wsg::Wsg&   wsg() const { return wsg_; }
     uint8_t latch() const { return latch_; }
-    uint8_t ram(int bank, int off) const { return ram_[bank][off & 0x3ff]; }
-    uint8_t vram(int off) const { return vram_[off & 0x7ff]; }
+    // RAM as the CPUs see it at 8000-87FF / 8800-8BFF / 9000-93FF / 9800-9BFF.
+    uint8_t peek(uint16_t addr) const
+    {
+        return addr < 0x8800 ? vram_[addr & 0x7ff] : ram_[((addr >> 11) & 3) - 1][addr & 0x3ff];
+    }
+
+    // For loops that do work when there is some (a speedup's check): true
+    // once nothing in the loop's inputs (RAM ranges [lo, hi]) has changed
+    // while CPU n ran at least `cycles` inside the loop - enough for whole
+    // passes of it, which then found nothing to do and will find nothing
+    // again until an input changes. Found outside the loop's speedup
+    // ranges at a slice start, or an IRQ to the CPU (its handler may have
+    // changed anything), starts the count over; NMIs don't, so this is
+    // only for loops whose inputs the NMI handlers leave alone. Up to 64
+    // bytes of inputs.
+    struct Range {
+        uint16_t lo, hi;
+    };
+    bool steady(int n, const Range* ranges, int count, int cycles);
 
 protected:
     struct BoardRoms {
@@ -159,7 +182,7 @@ private:
     void    run_cpus(int end);
     void    do_vblank();
     void    nmi(int n);
-    const Speedup* idle(int n);
+    const Speedup* idle(int n, int end);
     bool    subs_held() const { return !(latch_ & 0x08); }
 
     BoardRoms roms_{};
@@ -172,11 +195,21 @@ private:
     uint32_t frame_ = 0;
     uint16_t buttons_ = 0;
 
-    const Speedup* speedups_ = nullptr;
-    int      speedup_count_ = 0;
+    static constexpr int kMaxSpeedups = 16;     // per CPU
+    const Speedup* speedups_[kCpuCount][kMaxSpeedups] = {};
+    int      speedup_count_[kCpuCount] = {};
+    uint16_t speedup_lo_[kCpuCount] = {}, speedup_hi_[kCpuCount] = {};  // all of a CPU's loops
     bool     speedups_on_ = true;
     const Speedup* sleep_[kCpuCount] = {};  // in a loop only an interrupt ends
     bool     nmi_sent_[kCpuCount] = {};     // an NMI the CPU hasn't run since
+    uint64_t executed_[kCpuCount] = {};     // cycles run, ever
+    uint32_t irqs_[kCpuCount] = {};         // IRQs raised, ever
+    struct Watch {                          // steady(): the inputs last seen
+        uint8_t  bytes[64];
+        uint64_t since;                     // executed_ when they last changed
+        uint32_t irqs;
+        bool     valid;
+    } watch_[kCpuCount] = {};
     CpuStats stats_[kCpuCount] = {};
 
     uint32_t audio_rate_ = 24000;

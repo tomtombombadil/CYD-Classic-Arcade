@@ -49,21 +49,98 @@ constexpr romset::Rom kRoms[] = {
 constexpr uint8_t kStarRG[4] = {0, 71, 151, 222};
 constexpr uint8_t kStarB[4] = {0, 81, 174, 255};
 
-// Idle loops (see namco_galaga::Speedup). Each was found by profiling and
-// read in the program; none is entered other than from its own top.
+// Idle loops (see namco_galaga::Speedup), found by profiling and read in
+// the program; none is entered other than from its top. The polling loops
+// are checked at their first instruction (the RAM read); "spins" = the
+// value that keeps the loop going.
 //   sub 05B1-05B6    LD SP,9100 / JP 05B1: the sub CPU's main loop, all
 //                    its work is in the VBLANK interrupt
+//   sub 05E7-05EC    LD A,(92D6) / DEC A / JR Z: waits for the main CPU's
+//                    sprite copy (spins while 92D6 = 1)
 //   sound 00B9-00BA  JR 00B9: the sound CPU's main loop (work in the NMIs)
 //   main 038D-0392   LD A,(9201) / DEC A / JR Z: attract mode, waits for
-//                    9201 to leave 1 (set by the sub and sound CPUs)
+//                    the sub / sound CPU (spins while 9201 = 1)
 //   main 0414-0417   LD A,(HL) / AND A / JR NZ with HL = 92AF (set just
-//   main 1337-133A   before): a delay counter the VBLANK handler counts down
+//   main 1337-133A   before): a delay the VBLANK handler counts down
+//                    (spins while 92AF != 0)
+//   main 0850-0855   LD A,(92D7) / DEC A / JR Z: waits for the sub CPU's
+//                    sprite copy (spins while 92D7 = 1)
+//   main 134C-1351   LD A,(9287) / AND A / JR NZ: a timer the VBLANK
+//                    handler counts down (spins while 9287 != 0)
+//   main 04A4-04C4   between stages: spins while 901D = 0 and 92AF != 0
+//                    (LD A,(901D) / AND A / JR Z,04C1 / LD A,(HL) with HL =
+//                    92AF / AND A / JR NZ,04A4); checked at 04A4 and 04C1
+//   main 045E-0465   the main CPU's background loop in play: CALL 0728
+//   main 0728-07AD   (add the 16 score counters 9290-929F to the score
+//   main 080B-0826   digits, copy a higher score to the high score, award
+//                    a bonus fighter when the score reaches 983E), CALL
+//                    080B (leave on 9008 / 92A7 / 9213), JR 045E. Its
+//                    inputs: 83E0-83FF (score digits), 9290-929F, 9840
+//                    (player), 983E, 9008, 92A7, 9213; every pass with work
+//                    changes one of them, a pass without writes nothing. So
+//                    once they have stayed the same for 6000 cycles (a pass
+//                    takes 2000-2250 without work, NMIs aside: two whole
+//                    passes since the change) it only spins until they change - the
+//                    sub CPU adds score, the VBLANK handler moves the game
+//                    on. The NMI handler (0066) only moves 06XX bytes. In
+//                    0728-07AD / 080B-0826 the stack must hold the return
+//                    to the loop (0728 is called from elsewhere too); RST 10
+//                    (0010-0014) inside it is stepped through.
+using namco_galaga::Idle;
+template <uint16_t kTop, uint16_t kAddr, int kSpinValue>
+Idle while_equal(namco_galaga::Board& b, uint16_t pc)
+{
+    if (pc != kTop) return Idle::kStep;
+    return b.peek(kAddr) == kSpinValue ? Idle::kYes : Idle::kNo;
+}
+template <uint16_t kTop, uint16_t kAddr>
+Idle while_nonzero(namco_galaga::Board& b, uint16_t pc)
+{
+    if (pc != kTop) return Idle::kStep;
+    return b.peek(kAddr) ? Idle::kYes : Idle::kNo;
+}
+
+Idle stage_wait(namco_galaga::Board& b, uint16_t pc)
+{
+    if (pc != 0x04a4 && pc != 0x04c1) return Idle::kStep;
+    return !b.peek(0x901d) && b.peek(0x92af) ? Idle::kYes : Idle::kNo;
+}
+
+constexpr namco_galaga::Board::Range kLoopInputs[] = {
+    {0x83e0, 0x83ff}, {0x9290, 0x929f}, {0x9840, 0x9840}, {0x983e, 0x983e},
+    {0x9008, 0x9008}, {0x92a7, 0x92a7}, {0x9213, 0x9213},
+};
+constexpr int kLoopSteadyCycles = 6000;
+
+Idle background_loop(namco_galaga::Board& b, uint16_t pc)
+{
+    if (pc <= 0x0014) return Idle::kStep;                       // in RST 10
+    if (pc >= 0x0728) {
+        const uint16_t sp = b.cpu(namco_galaga::kMain).sp.w;
+        if (sp < 0x8000 || sp >= 0x9bff) return Idle::kNo;
+        const uint16_t ret = uint16_t(b.peek(sp) | (b.peek(uint16_t(sp + 1)) << 8));
+        if (ret != (pc < 0x080b ? 0x0461 : 0x0464)) return Idle::kNo;
+    }
+    return b.steady(namco_galaga::kMain, kLoopInputs, int(sizeof kLoopInputs / sizeof kLoopInputs[0]),
+                    kLoopSteadyCycles)
+               ? Idle::kYes
+               : Idle::kNo;
+}
+
 constexpr namco_galaga::Speedup kSpeedups[] = {
-    {namco_galaga::kSub, 0x05b1, 0x05b6, 0, 0, 0, true, 10},
-    {namco_galaga::kSound, 0x00b9, 0x00ba, 0, 0, 0, true, 12},
-    {namco_galaga::kMain, 0x038d, 0x0392, 0x9201, 0xff, 0x01, true, 9},
-    {namco_galaga::kMain, 0x0414, 0x0417, 0x92af, 0xff, 0x00, false, 7},
-    {namco_galaga::kMain, 0x1337, 0x133a, 0x92af, 0xff, 0x00, false, 7},
+    {namco_galaga::kSub, 0x05b1, 0x05b6, nullptr, 10},
+    {namco_galaga::kSub, 0x05e7, 0x05ec, while_equal<0x05e7, 0x92d6, 1>, 10},
+    {namco_galaga::kSound, 0x00b9, 0x00ba, nullptr, 12},
+    {namco_galaga::kMain, 0x038d, 0x0392, while_equal<0x038d, 0x9201, 1>, 10},
+    {namco_galaga::kMain, 0x0414, 0x0417, while_nonzero<0x0414, 0x92af>, 8},
+    {namco_galaga::kMain, 0x1337, 0x133a, while_nonzero<0x1337, 0x92af>, 8},
+    {namco_galaga::kMain, 0x0850, 0x0855, while_equal<0x0850, 0x92d7, 1>, 10},
+    {namco_galaga::kMain, 0x134c, 0x1351, while_nonzero<0x134c, 0x9287>, 8},
+    {namco_galaga::kMain, 0x04a4, 0x04c4, stage_wait, 8},
+    {namco_galaga::kMain, 0x045e, 0x0465, background_loop, 5},
+    {namco_galaga::kMain, 0x0728, 0x07ad, background_loop, 5},
+    {namco_galaga::kMain, 0x080b, 0x0826, background_loop, 5},
+    {namco_galaga::kMain, 0x0010, 0x0014, background_loop, 5},
 };
 
 } // namespace
