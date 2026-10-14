@@ -7,5 +7,3 @@ idf_component_register(
     SRCS ${EMU_SRCS} ${CORE_SRCS}
     INCLUDE_DIRS ${ROOT})
 target_compile_options(${COMPONENT_LIB} PRIVATE -O2 -Wno-unused-parameter)
-# The CPU interpreters' dispatch in internal RAM (see EMU_HOT in emu/cpu/z80.h)
-target_compile_definitions(${COMPONENT_LIB} PRIVATE EMU_HOT_IRAM=1)

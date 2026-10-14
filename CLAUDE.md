@@ -100,10 +100,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Landscape games (Rally-X first): the panel turns a quarter clockwise
   from the menu's portrait for the game (USB on the right with USB Port:
   Top) and back after (`screen::landscape()`); scaling as above.
-- CPU cores' hot functions run from internal RAM on the board
-  (`emu/cpu/hot.h`, EMU_HOT_IRAM set by components/arcade_core): Pac-Man's
-  one Z80 took 5.7 ms a frame from flash (~9 emulated MHz) - too slow for
-  Galaga's three.
+- No room in internal RAM (IRAM) for the CPU cores: v0.3.3 put the Z80 /
+  8080 interpreters there (`emu/cpu/hot.h`, EMU_HOT_IRAM) and the link
+  overflowed IRAM by 48,428 bytes (Bluetooth uses most of it). EMU_HOT
+  stays a no-op hook; speed has to come from the code (Pac-Man's one Z80
+  takes ~5.7 ms a frame from flash, ~9 emulated MHz - Galaga has three).
 - Menu help text at the bottom wraps to the screen (`screen::text_box`),
   in the small font on every panel (Tom: it ran off the right edge).
 - Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by
