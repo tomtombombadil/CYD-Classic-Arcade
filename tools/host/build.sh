@@ -4,7 +4,7 @@ set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=${1:-$ROOT/build/host}
 mkdir -p "$OUT"
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
      $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/machines/pacman.cpp \
      $ROOT/emu/machines/invaders.cpp $ROOT/emu/games.cpp"

@@ -1,8 +1,9 @@
 #!/bin/sh
 # Host tests for the emulator core: tools/host_tests/build.sh [--quick]
 #   1. unit tests (CRC-32, ZIP, ROM sets, WSG, Z80 timing / interrupts,
-#      Pac-Man wiring, 8080 timing / flags / interrupts, WAV parser, sample
-#      player, Space Invaders sound models and wiring), -O2 and with
+#      Pac-Man wiring, 8080 timing / flags / interrupts, 8035 timing / flags
+#      / timer / interrupts / ports, WAV parser, sample player, Space
+#      Invaders sound models and wiring), -O2 and with
 #      -fsanitize=address,undefined
 #   2. ZEXDOC and ZEXALL (downloaded on first use into build/zex - GPL test
 #      programs, never committed), -O2; the sanitizer build runs ZEXDOC for
@@ -25,7 +26,7 @@ mkdir -p "$OUT" "$ZEX" "$I80"
 QUICK=0
 [ "$1" = "--quick" ] && QUICK=1
 
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
      $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/machines/pacman.cpp \
      $ROOT/emu/machines/invaders.cpp"

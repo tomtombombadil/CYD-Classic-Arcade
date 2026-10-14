@@ -2,12 +2,14 @@
 // CRC-32, the ZIP reader and ROM set matcher (on fixtures written by
 // make_fixtures.py), the Namco WSG (synthetic waveform PROM), Z80 timing /
 // interrupts, the Pac-Man machine wiring on a tiny hand-made program and
-// synthetic graphics, 8080 timing / flags / interrupts, the WAV parser and
+// synthetic graphics, 8080 timing / flags / interrupts, 8035 timing /
+// flags / stack / banks / timer, counter and interrupts / ports, the WAV parser and
 // sample player (synthetic WAVs), the Space Invaders sound models, and the
 // Space Invaders machine wiring (shifter, inputs, video, sound) on a tiny
 // hand-made 8080 program.
 //
 //   unit_tests <fixture dir>
+#include "../../emu/cpu/i8035.h"
 #include "../../emu/cpu/i8080.h"
 #include "../../emu/cpu/z80.h"
 #include "../../emu/machines/invaders.h"
@@ -810,6 +812,329 @@ void test_i8080_interrupts()
     }
 }
 
+// --- 8035 -------------------------------------------------------------------------
+
+struct Bench48 {
+    uint8_t    rom[0x1000] = {};
+    i8035::Cpu cpu;
+    uint8_t    last_port = 0xee, last_out = 0, ext_addr = 0, ext_val = 0, pins[3] = {0xff, 0xff, 0xff};
+    bool       t[2] = {};
+    int        outs = 0;
+    Bench48()
+    {
+        cpu.rom = rom;
+        cpu.ctx = this;
+        cpu.port_out = [](void* c, uint8_t p, uint8_t v) {
+            Bench48& b = *static_cast<Bench48*>(c);
+            b.last_port = p;
+            b.last_out = v;
+            ++b.outs;
+        };
+        cpu.port_in = [](void* c, uint8_t p) { return static_cast<Bench48*>(c)->pins[p]; };
+        cpu.ext_read = [](void*, uint8_t a) { return uint8_t(a ^ 0xa5); };
+        cpu.ext_write = [](void* c, uint8_t a, uint8_t v) {
+            static_cast<Bench48*>(c)->ext_addr = a;
+            static_cast<Bench48*>(c)->ext_val = v;
+        };
+        cpu.test_in = [](void* c, uint8_t n) { return uint8_t(static_cast<Bench48*>(c)->t[n & 1]); };
+        cpu.reset();
+    }
+    void load(uint16_t at, std::initializer_list<uint8_t> bytes)
+    {
+        for (uint8_t b : bytes) rom[at++ & 0xfff] = b;
+    }
+    int step() { return cpu.run(1); }
+};
+
+void test_i8035_timing()
+{
+    struct Case { std::initializer_list<uint8_t> code; int cycles; const char* what; };
+    const Case cases[] = {
+        {{0x00}, 1, "NOP"},             {{0x23, 0x05}, 2, "MOV A,#"},      {{0x68}, 1, "ADD A,R0"},
+        {{0x60}, 1, "ADD A,@R0"},       {{0x03, 0x01}, 2, "ADD A,#"},      {{0x04, 0x10}, 2, "JMP"},
+        {{0x14, 0x10}, 2, "CALL"},      {{0xe8, 0x00}, 2, "DJNZ"},         {{0xc6, 0x00}, 2, "JZ"},
+        {{0x80}, 2, "MOVX A,@R0"},      {{0x90}, 2, "MOVX @R0,A"},         {{0xa3}, 2, "MOVP A,@A"},
+        {{0xe3}, 2, "MOVP3"},           {{0x39}, 2, "OUTL P1,A"},          {{0x09}, 2, "IN A,P1"},
+        {{0x08}, 2, "INS A,BUS"},       {{0x89, 0x01}, 2, "ORL P1,#"},     {{0x9a, 0x01}, 2, "ANL P2,#"},
+        {{0xb8, 0x01}, 2, "MOV R0,#"},  {{0xb0, 0x01}, 2, "MOV @R0,#"},    {{0xa8}, 1, "MOV R0,A"},
+        {{0x42}, 1, "MOV A,T"},         {{0x57}, 1, "DA A"},               {{0xb3}, 2, "JMPP @A"},
+        {{0x83}, 2, "RET"},             {{0x93}, 2, "RETR"},               {{0xc5}, 1, "SEL RB0"},
+        {{0x16, 0x00}, 2, "JTF"},       {{0x12, 0x00}, 2, "JB0"},          {{0x0c}, 2, "MOVD A,P4"},
+    };
+    for (const Case& k : cases) {
+        Bench48 b;
+        b.load(0, k.code);
+        const int got = b.step();
+        if (got != k.cycles) std::printf("8035 %s: %d cycles\n", k.what, got);
+        CHECK_EQ(got, k.cycles);
+    }
+    {
+        Bench48 b;                                // DJNZ R2 x 5: 5 x 2 cycles
+        b.load(0, {0xba, 0x05, 0xea, 0x02, 0x00});
+        b.step();
+        CHECK_EQ(b.cpu.run(10), 10);
+        CHECK_EQ(b.cpu.pc, 4);
+    }
+}
+
+void test_i8035_alu()
+{
+    using namespace i8035;
+    {
+        Bench48 b;                                // BCD: 19 + 28 = 47
+        b.load(0, {0x23, 0x19, 0x03, 0x28, 0x57});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x41);
+        CHECK_EQ(b.cpu.psw & (CY | AC), AC);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x47);
+        CHECK_EQ(b.cpu.psw & CY, 0);
+    }
+    {
+        Bench48 b;                                // BCD: 99 + 1 = (1)00
+        b.load(0, {0x23, 0x99, 0x03, 0x01, 0x57});
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x00);
+        CHECK_EQ(b.cpu.psw & CY, CY);
+    }
+    {
+        Bench48 b;                                // F0 + 20 = (1)10; ADDC adds the carry
+        b.load(0, {0x23, 0xf0, 0x03, 0x20, 0x13, 0x01});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x10);
+        CHECK_EQ(b.cpu.psw & (CY | AC), CY);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x12);
+        CHECK_EQ(b.cpu.psw & CY, 0);
+    }
+    {
+        Bench48 b;                                // RLC, RRC through the carry; RL, RR; SWAP; CPL A
+        b.load(0, {0x23, 0x80, 0xf7, 0x67, 0x67, 0xe7, 0x77, 0x77, 0x47, 0x37});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x00);
+        CHECK_EQ(b.cpu.psw & CY, CY);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x80);
+        CHECK_EQ(b.cpu.psw & CY, 0);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x40);
+        b.step(); b.step(); b.step();             // RL, RR, RR: 80, 40, 20
+        CHECK_EQ(b.cpu.a, 0x20);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0x02);
+        b.step();
+        CHECK_EQ(b.cpu.a, 0xfd);
+    }
+    {
+        Bench48 b;                                // XCHD, XCH, INC / DEC @R0, register banks
+        b.cpu.ram[0x20] = 0x34;
+        b.load(0, {0xb8, 0x20, 0x23, 0x12, 0x30, 0x10, 0xd5, 0xb8, 0x55, 0xc5, 0x20});
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x14);
+        CHECK_EQ(b.cpu.ram[0x20], 0x32);
+        b.step();
+        CHECK_EQ(b.cpu.ram[0x20], 0x33);
+        b.step(); b.step();                       // SEL RB1; MOV R0,#55
+        CHECK_EQ(b.cpu.ram[0x18], 0x55);
+        CHECK_EQ(b.cpu.ram[0x00], 0x20);
+        b.step(); b.step();                       // SEL RB0; XCH A,@R0
+        CHECK_EQ(b.cpu.a, 0x33);
+        CHECK_EQ(b.cpu.ram[0x20], 0x14);
+    }
+    {
+        Bench48 b;                                // MOV A,PSW reads bit 3 set; flags F0 / F1
+        b.load(0, {0x97, 0xa7, 0xc7, 0x95, 0xb6, 0x10, 0x00});
+        b.load(0x10, {0xb5, 0x76, 0x20});
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x88);
+        b.step(); b.step();                       // CPL F0; JF0 -> 10
+        CHECK_EQ(b.cpu.pc, 0x10);
+        b.step(); b.step();                       // CPL F1; JF1 -> 20
+        CHECK_EQ(b.cpu.pc, 0x20);
+    }
+}
+
+void test_i8035_flow()
+{
+    using namespace i8035;
+    {
+        Bench48 b;                                // CALL / RETR restores the PSW's top bits, RET doesn't
+        b.load(0, {0x14, 0x40, 0x14, 0x50, 0x00});
+        b.load(0x40, {0xa7, 0x93});
+        b.load(0x50, {0xa7, 0x83});
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x40);
+        CHECK_EQ(b.cpu.psw & 7, 1);
+        CHECK_EQ(b.cpu.ram[8], 0x02);             // return address, PSW bits
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x02);
+        CHECK_EQ(b.cpu.psw, 0);                   // the carry set in the routine is gone
+        b.step(); b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x04);
+        CHECK_EQ(b.cpu.psw, CY);
+    }
+    {
+        Bench48 b;                                // eight levels, then the stack pointer wraps
+        b.load(0, {0x14, 0x00});
+        for (int i = 0; i < 9; ++i) b.step();
+        CHECK_EQ(b.cpu.psw & 7, 1);
+    }
+    {
+        Bench48 b;                                // MOVP / MOVP3 / JMPP read program memory
+        b.load(0x020, {0x77});
+        b.load(0x320, {0x88});
+        b.load(0x040, {0x60});
+        b.load(0, {0x23, 0x20, 0xa3, 0x23, 0x20, 0xe3, 0x23, 0x40, 0xb3});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x77);
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.a, 0x88);
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x60);
+    }
+    {
+        Bench48 b;                                // a conditional jump stays in its address byte's page
+        b.load(0, {0x04, 0xfe});
+        b.load(0xfe, {0xc6, 0x30});               // JZ at 0FE: its address byte in page 0
+        b.load(0x2ff, {0xc6, 0x40});              // JZ at 2FF: in page 3
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x030);
+        b.cpu.pc = 0x2ff;
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x340);
+    }
+    {
+        Bench48 b;                                // SEL MB1: JMP / CALL go to the upper 2 KB
+        b.load(0, {0xf5, 0x04, 0x10});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x810);
+        b.load(0x810, {0x04, 0x20});              // the bank stays for the next jump
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x820);
+        b.load(0x820, {0x07, 0xff});              // and a PC count wraps inside the bank
+        b.cpu.pc = 0xfff;
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x800);
+    }
+}
+
+void test_i8035_timer_irq()
+{
+    {
+        Bench48 b;                                // timer: +1 every 32 cycles; JTF sees the overflow once
+        b.load(0, {0x55, 0x04, 0x01});
+        b.step();
+        CHECK_EQ(b.cpu.run(8190), 8190);
+        CHECK_EQ(b.cpu.timer, 255);
+        CHECK(!b.cpu.timer_flag);
+        b.cpu.run(2);
+        CHECK_EQ(b.cpu.timer, 0);
+        CHECK(b.cpu.timer_flag);
+        CHECK(!b.cpu.timer_overflow);             // no interrupt pending while disabled
+        b.load(1, {0x16, 0x10});
+        b.cpu.pc = 1;
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x10);
+        CHECK(!b.cpu.timer_flag);
+    }
+    {
+        Bench48 b;                                // the timer interrupt: a CALL to 7, once per overflow
+        b.load(0, {0x04, 0x09});
+        b.load(3, {0x1e, 0x93});
+        b.load(7, {0x1f, 0x93});
+        b.load(9, {0x25, 0x55, 0x04, 0x0b});
+        b.cpu.run(8192 * 2 + 64);
+        CHECK_EQ(b.cpu.ram[7], 2);
+        CHECK(!b.cpu.in_irq);
+    }
+    {
+        Bench48 b;                                // the INT pin: level-sensitive, held off until RETR
+        b.load(0, {0x04, 0x09});
+        b.load(3, {0x1e, 0x93});
+        b.load(9, {0x86, 0x20, 0x05, 0x00, 0x04, 0x0b});
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x0b);                 // JNI not taken
+        b.cpu.pc = 9;
+        b.cpu.irq(true);
+        b.step();
+        CHECK_EQ(b.cpu.pc, 0x20);                 // JNI taken (interrupts still disabled)
+        b.cpu.pc = 0x0b;
+        b.step();                                 // EN I
+        CHECK_EQ(b.step(), 2);                    // taken: 2 cycles
+        CHECK_EQ(b.cpu.pc, 3);
+        CHECK(b.cpu.in_irq);
+        b.step();
+        CHECK_EQ(b.cpu.ram[6], 1);
+        b.cpu.timer_overflow = true;              // nothing else gets in until RETR
+        b.cpu.tirq_enabled = true;
+        CHECK_EQ(b.cpu.pc, 4);
+        b.step();                                 // RETR
+        CHECK(!b.cpu.in_irq);
+        CHECK_EQ(b.cpu.pc, 0x0c);
+        b.step();
+        CHECK_EQ(b.cpu.pc, 3);                    // still asserted: in again (external first)
+        b.cpu.irq(false);
+        b.step(); b.step(); b.step();             // INC R6, RETR, then the timer's
+        CHECK_EQ(b.cpu.pc, 7);
+        CHECK_EQ(b.cpu.ram[6], 2);
+    }
+    {
+        Bench48 b;                                // inside an interrupt, JMP ignores SEL MB1
+        b.load(0, {0xf5, 0x05, 0x00});
+        b.load(3, {0x04, 0x30});
+        b.step(); b.step();
+        b.cpu.irq(true);
+        b.step(); b.step();
+        CHECK_EQ(b.cpu.pc, 0x030);
+    }
+    {
+        Bench48 b;                                // event counter: T1's falling edges
+        b.load(0, {0x45, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x42});
+        b.t[1] = true;
+        b.step();
+        for (int i = 0; i < 6; ++i) {
+            b.t[1] = (i & 1) != 0;
+            b.step();
+        }
+        b.step();
+        CHECK_EQ(b.cpu.a, 3);
+    }
+}
+
+void test_i8035_ports()
+{
+    Bench48 b;
+    b.pins[1] = 0x3c;
+    b.pins[0] = 0x5a;
+    b.load(0, {0x23, 0x81, 0x39, 0x99, 0xf0, 0x09, 0x8a, 0x0f, 0x08, 0xb8, 0x12, 0x80, 0xb9, 0x34, 0x91,
+               0x02, 0x36, 0x40, 0x26, 0x40});
+    b.step(); b.step();
+    CHECK_EQ(b.last_port, i8035::kP1);
+    CHECK_EQ(b.last_out, 0x81);
+    b.step();                                     // ANL P1,#F0
+    CHECK_EQ(b.cpu.p1, 0x80);
+    CHECK_EQ(b.last_out, 0x80);
+    b.step();                                     // IN A,P1: the pins ANDed with the latch
+    CHECK_EQ(b.cpu.a, 0x00);
+    b.step();                                     // ORL P2,#0F (P2 was FF)
+    CHECK_EQ(b.last_port, i8035::kP2);
+    CHECK_EQ(b.last_out, 0xff);
+    b.step();
+    CHECK_EQ(b.cpu.a, 0x5a);                      // INS A,BUS
+    b.step(); b.step();
+    CHECK_EQ(b.cpu.a, 0x12 ^ 0xa5);               // MOVX A,@R0
+    b.step(); b.step();
+    CHECK_EQ(b.ext_addr, 0x34);                   // MOVX @R1,A
+    CHECK_EQ(b.ext_val, 0x12 ^ 0xa5);
+    b.step();
+    CHECK_EQ(b.last_port, i8035::kBus);           // OUTL BUS,A
+    b.step();
+    CHECK_EQ(b.cpu.pc, 0x12);                     // JT0 not taken (T0 low)
+    b.t[0] = true;
+    b.step();
+    CHECK_EQ(b.cpu.pc, 0x14);                     // JNT0 not taken
+}
+
 // --- WAV parser + sample player -------------------------------------------------
 
 void put_le(std::vector<uint8_t>& v, uint32_t x, int bytes)
@@ -1217,6 +1542,11 @@ int main(int argc, char** argv)
     test_i8080_timing();
     test_i8080_flags();
     test_i8080_interrupts();
+    test_i8035_timing();
+    test_i8035_alu();
+    test_i8035_flow();
+    test_i8035_timer_irq();
+    test_i8035_ports();
     test_wav();
     test_sample_player();
     test_invaders_sound();
