@@ -34,13 +34,59 @@ void note_name_match(Status& st, uint32_t found_size, uint32_t want_size)
     st = found_size == want_size ? Status::WrongCrc : Status::WrongSize;
 }
 
+// A ROM with this size and CRC is in one of the sources (ZIP directories
+// or whole loose files; nothing is unpacked).
+bool present(const Rom& rom, const Source* sources, int source_count)
+{
+    for (int s = 0; s < source_count; ++s) {
+        const Source& src = sources[s];
+        zip::Reader z;
+        if (zip::looks_like_zip(src.data, src.len) && z.open(src.data, src.len)) {
+            uint32_t it = z.begin();
+            zip::Entry e;
+            while (z.next(it, e))
+                if (e.size == rom.size && e.crc == rom.crc) return true;
+        } else if (src.len == rom.size && crc32::of(src.data, src.len) == rom.crc) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A ROM is part of variant v (0 = a set without variants).
+bool in_variant(const Rom& rom, int v) { return rom.variant == 0 || rom.variant == v; }
+
 } // namespace
+
+int pick_variant(const Set& set, const Source* sources, int source_count)
+{
+    if (set.variant_count <= 0) return 0;
+    int best = 1, best_found = -1;
+    for (int v = 1; v <= set.variant_count; ++v) {
+        int found = 0, needed = 0;
+        for (int i = 0; i < set.rom_count; ++i) {
+            const Rom& rom = set.roms[i];
+            if (rom.optional || !in_variant(rom, v)) continue;
+            ++needed;
+            if (present(rom, sources, source_count)) ++found;
+        }
+        if (found == needed) return v;
+        if (found > best_found) {
+            best = v;
+            best_found = found;
+        }
+    }
+    return best;
+}
 
 bool load(const Set& set, const Source* sources, int source_count, uint8_t* const* regions,
           Status* status)
 {
     for (int r = 0; r < set.region_count; ++r) std::memset(regions[r], 0, set.regions[r].size);
-    for (int i = 0; i < set.rom_count; ++i) status[i] = Status::Missing;
+    // Another variant's ROMs are left out (they would load over this one's).
+    const int variant = pick_variant(set, sources, source_count);
+    for (int i = 0; i < set.rom_count; ++i)
+        status[i] = in_variant(set.roms[i], variant) ? Status::Missing : Status::Unused;
 
     for (int s = 0; s < source_count; ++s) {
         const Source& src = sources[s];
@@ -51,7 +97,7 @@ bool load(const Set& set, const Source* sources, int source_count, uint8_t* cons
             while (z.next(it, e)) {
                 for (int i = 0; i < set.rom_count; ++i) {
                     const Rom& rom = set.roms[i];
-                    if (status[i] == Status::Ok) continue;
+                    if (status[i] == Status::Ok || status[i] == Status::Unused) continue;
                     if (e.size == rom.size && e.crc == rom.crc) {
                         if (uint64_t(rom.offset) + rom.size > set.regions[rom.region].size) continue;
                         uint8_t* dst = regions[rom.region] + rom.offset;
@@ -67,7 +113,7 @@ bool load(const Set& set, const Source* sources, int source_count, uint8_t* cons
         const uint32_t crc = crc32::of(src.data, src.len);
         for (int i = 0; i < set.rom_count; ++i) {
             const Rom& rom = set.roms[i];
-            if (status[i] == Status::Ok) continue;
+            if (status[i] == Status::Ok || status[i] == Status::Unused) continue;
             if (src.len == rom.size && crc == rom.crc) {
                 if (uint64_t(rom.offset) + rom.size > set.regions[rom.region].size) continue;
                 std::memcpy(regions[rom.region] + rom.offset, src.data, rom.size);
@@ -79,30 +125,23 @@ bool load(const Set& set, const Source* sources, int source_count, uint8_t* cons
     }
 
     for (int i = 0; i < set.rom_count; ++i)
-        if (status[i] != Status::Ok && !set.roms[i].optional) return false;
+        if (status[i] != Status::Ok && status[i] != Status::Unused && !set.roms[i].optional) return false;
     return true;
 }
 
 bool available(const Set& set, const Source* sources, int source_count)
 {
-    for (int i = 0; i < set.rom_count; ++i) {
-        const Rom& rom = set.roms[i];
-        if (rom.optional) continue;
-        bool found = false;
-        for (int s = 0; s < source_count && !found; ++s) {
-            const Source& src = sources[s];
-            zip::Reader z;
-            if (zip::looks_like_zip(src.data, src.len) && z.open(src.data, src.len)) {
-                uint32_t it = z.begin();
-                zip::Entry e;
-                while (!found && z.next(it, e)) found = e.size == rom.size && e.crc == rom.crc;
-            } else {
-                found = src.len == rom.size && crc32::of(src.data, src.len) == rom.crc;
-            }
+    const int variants = set.variant_count > 0 ? set.variant_count : 1;
+    for (int v = set.variant_count > 0 ? 1 : 0; v <= variants; ++v) {
+        bool all = true;
+        for (int i = 0; i < set.rom_count && all; ++i) {
+            const Rom& rom = set.roms[i];
+            if (rom.optional || !in_variant(rom, v)) continue;
+            all = present(rom, sources, source_count);
         }
-        if (!found) return false;
+        if (all) return true;
     }
-    return true;
+    return false;
 }
 
 const char* status_name(Status s)
@@ -112,6 +151,7 @@ const char* status_name(Status s)
     case Status::Ok:        return "ok";
     case Status::WrongCrc:  return "wrong crc";
     case Status::WrongSize: return "wrong size";
+    case Status::Unused:    return "unused";
     default:                return "unreadable";
     }
 }
@@ -122,7 +162,7 @@ int report(const Set& set, const Status* status, char* out, size_t cap)
     size_t used = 0;
     if (cap) out[0] = 0;
     for (int i = 0; i < set.rom_count; ++i) {
-        if (status[i] == Status::Ok) continue;
+        if (status[i] == Status::Ok || status[i] == Status::Unused) continue;
         const Rom& rom = set.roms[i];
         if (!rom.optional) ++bad;
         if (used + 1 >= cap) continue;

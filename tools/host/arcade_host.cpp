@@ -121,8 +121,8 @@ int load_samples(const std::string& path, const GameInfo& g, std::vector<std::ve
     return found;
 }
 
-// A folder: the game's and its parent's ZIPs, plus every small loose file
-// (ROM images). Other ZIPs only when the folder is small.
+// A folder: the game's, its parent's and its variants' ZIPs, plus every
+// small loose file (ROM images). Other ZIPs only when the folder is small.
 void add_dir(const std::string& dir, const romset::Set& set, std::vector<File>& files)
 {
     DIR* d = opendir(dir.c_str());
@@ -143,7 +143,9 @@ void add_dir(const std::string& dir, const romset::Set& set, std::vector<File>& 
         const std::string ln = lower(n);
         const bool zip = ln.size() > 4 && ln.compare(ln.size() - 4, 4, ".zip") == 0;
         bool take;
-        if (zip) take = ln == game_zip || ln == parent_zip || (names.size() < 64 && st.st_size < (4 << 20));
+        bool own = ln == game_zip || ln == parent_zip;
+        for (int v = 0; v < set.variant_count; ++v) own = own || ln == std::string(set.variants[v]) + ".zip";
+        if (zip) take = own || (names.size() < 64 && st.st_size < (4 << 20));
         else     take = st.st_size <= (1 << 20);
         if (!take) continue;
         File f;
@@ -230,13 +232,24 @@ int list_json()
     for (int g = 0; g < games::kGameCount; ++g) {
         const games::Info& gi = games::kGames[g];
         const romset::Set& set = *gi.set;
-        std::printf("  {\"id\": \"%s\", \"title\": \"%s\", \"parent\": %s%s%s, \"roms\": [\n", gi.id, gi.title,
+        std::printf("  {\"id\": \"%s\", \"title\": \"%s\", \"parent\": %s%s%s, ", gi.id, gi.title,
                     set.parent ? "\"" : "", set.parent ? set.parent : "null", set.parent ? "\"" : "");
+        // Alternative sets (e.g. dkong / dkongo): a ROM with "variant" is
+        // needed only for that set; the others are needed for every one.
+        if (set.variant_count > 0) {
+            std::printf("\"variants\": [");
+            for (int v = 0; v < set.variant_count; ++v)
+                std::printf("%s\"%s\"", v ? ", " : "", set.variants[v]);
+            std::printf("], ");
+        }
+        std::printf("\"roms\": [\n");
         for (int r = 0; r < set.rom_count; ++r) {
             const romset::Rom& rom = set.roms[r];
-            std::printf("    {\"name\": \"%s\", \"size\": %u, \"crc\": \"%08x\", \"optional\": %s}%s\n", rom.name,
-                        unsigned(rom.size), unsigned(rom.crc), rom.optional ? "true" : "false",
-                        r + 1 < set.rom_count ? "," : "");
+            std::printf("    {\"name\": \"%s\", \"size\": %u, \"crc\": \"%08x\", \"optional\": %s", rom.name,
+                        unsigned(rom.size), unsigned(rom.crc), rom.optional ? "true" : "false");
+            if (rom.variant > 0 && rom.variant <= set.variant_count)
+                std::printf(", \"variant\": \"%s\"", set.variants[rom.variant - 1]);
+            std::printf("}%s\n", r + 1 < set.rom_count ? "," : "");
         }
         std::printf("  ]}%s\n", g + 1 < games::kGameCount ? "," : "");
     }
@@ -316,7 +329,9 @@ int main(int argc, char** argv)
                      files.size());
         return 1;
     }
-    std::printf("%s: all ROMs found (%zu files searched)\n", set.title, files.size());
+    const int variant = romset::pick_variant(set, sources.data(), int(sources.size()));
+    if (variant > 0) std::printf("%s: all ROMs found, set %s (%zu files searched)\n", set.title, set.variants[variant - 1], files.size());
+    else             std::printf("%s: all ROMs found (%zu files searched)\n", set.title, files.size());
 
     // --- run ---
     std::unique_ptr<games::Machine> m(gi.make());

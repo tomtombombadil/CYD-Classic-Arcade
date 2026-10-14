@@ -163,6 +163,39 @@ void test_romset(const std::string& dir)
     CHECK(!romset::load(set, nullptr, 0, reg, st));
     CHECK_EQ(romset::report(set, st, msg, 8), 4);           // tiny buffer: still counts
     CHECK_EQ(std::strlen(msg) < 8, 1);
+
+    // Variants: two program ROMs at the same place, one per variant ("one"
+    // and "two"), and a shared one; loose files as sources.
+    static const char* const kVariants[] = {"one", "two"};
+    const auto common = gen(4096, 3, 1), v1 = gen(4096, 5, 2), v2 = gen(4096, 1, 0);
+    const romset::Rom vroms[] = {
+        {0, 0x0000, 0x1000, c1, "common", false},
+        {0, 0x1000, 0x1000, c2, "one.2", false, 1},
+        {0, 0x1000, 0x1000, c3, "two.2", false, 2},
+    };
+    const romset::Set vset = {"one", nullptr, "Variants", regions, 2, vroms, 3, kVariants, 2};
+    romset::Source only_two[] = {{"c", common.data(), common.size()}, {"t", v2.data(), v2.size()}};
+    CHECK(romset::available(vset, only_two, 2));
+    CHECK_EQ(romset::pick_variant(vset, only_two, 2), 2);
+    CHECK(romset::load(vset, only_two, 2, reg, st));
+    CHECK(st[1] == romset::Status::Unused);
+    CHECK(std::memcmp(r0.data() + 0x1000, v2.data(), 4096) == 0);
+    CHECK_EQ(romset::report(vset, st, msg, sizeof msg), 0);
+    CHECK_EQ(msg[0], 0);
+    // Both there: the first variant, not overwritten by the second.
+    romset::Source both[] = {{"t", v2.data(), v2.size()}, {"o", v1.data(), v1.size()},
+                             {"c", common.data(), common.size()}};
+    CHECK_EQ(romset::pick_variant(vset, both, 3), 1);
+    CHECK(romset::load(vset, both, 3, reg, st));
+    CHECK(std::memcmp(r0.data() + 0x1000, v1.data(), 4096) == 0);
+    CHECK(st[2] == romset::Status::Unused);
+    // Only the shared ROM: not available; the report names the first
+    // variant's missing ROM only.
+    CHECK(!romset::available(vset, only_two, 1));
+    CHECK(!romset::load(vset, only_two, 1, reg, st));
+    CHECK_EQ(romset::report(vset, st, msg, sizeof msg), 1);
+    CHECK(std::strstr(msg, "one.2") != nullptr);
+    CHECK(std::strstr(msg, "two.2") == nullptr);
 }
 
 // --- WSG ----------------------------------------------------------------------

@@ -97,7 +97,8 @@ export function sanitizeName(name) {
   return base.slice(0, 27) + ".zip";
 }
 
-// games: games.json (list of {id, title, parent, roms:[{name, size, crc, optional}]}).
+// games: games.json (list of {id, title, parent, variants?, roms:[{name, size, crc,
+//        optional, variant?}]} - a ROM with a variant is needed only for that set).
 // zips:  [{name, size, entries}] (entries from readZipDirectory, null = unreadable).
 // Returns {games, zips}:
 //   games[i] = {id, title, parent, state: "complete" | "incomplete" | "none",
@@ -126,10 +127,19 @@ export function recognise(games, zips) {
   const pickedNames = new Set(zips.map(lower));
 
   const outGames = games.map((g) => {
-    const own = new Set([`${g.id}.zip`, ...(g.parent ? [`${g.parent}.zip`] : [])]);
+    const variants = g.variants && g.variants.length ? g.variants : [null];
+    const own = new Set([`${g.id}.zip`, ...(g.parent ? [`${g.parent}.zip`] : []),
+                         ...(g.variants || []).map((v) => `${v}.zip`)]);
     const rank = (z) => (lower(z) === `${g.id}.zip` ? 0 : own.has(lower(z)) ? 1 : 2);
-    const need = g.roms.filter((r) => !r.optional).map((r) => ({ name: r.name, k: key(r.size, parseInt(r.crc, 16)) }));
-    const missing = need.filter((r) => !usable.some((z) => z.keys.has(r.k))).map((r) => r.name);
+    // A game that accepts alternative sets (variants, e.g. dkong / dkongo):
+    // the first complete one, else the one with the fewest ROMs missing.
+    let need = null, missing = null;
+    for (const v of variants) {
+      const n = g.roms.filter((r) => !r.optional && (!r.variant || r.variant === v))
+        .map((r) => ({ name: r.name, k: key(r.size, parseInt(r.crc, 16)) }));
+      const m = n.filter((r) => !usable.some((z) => z.keys.has(r.k))).map((r) => r.name);
+      if (!need || m.length < missing.length) { need = n; missing = m; }
+    }
     const found = need.length - missing.length;
     const state = missing.length === 0 ? "complete" : found ? "incomplete" : "none";
     const from = [];
