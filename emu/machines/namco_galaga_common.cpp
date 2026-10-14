@@ -49,7 +49,6 @@ int pixel_at(const uint8_t* base, int bit) { return (bit_at(base, bit) << 1) | b
 
 void Board::board_init(const BoardRoms& roms, uint32_t audio_rate, const Speedup* speedups, int speedup_count)
 {
-    roms_ = roms;
     audio_rate_ = audio_rate;
     for (int n = 0; n < kCpuCount; ++n) {
         speedup_count_[n] = 0;
@@ -101,7 +100,6 @@ void Board::board_reset()
 
 void Board::set_inputs(uint16_t b)
 {
-    buttons_ = b;
     // The 51XX's view: active low, see namco_io.h.
     uint8_t sticks = 0xff, buttons = 0xff;
     if (b & kUp)      sticks &= uint8_t(~0x01);

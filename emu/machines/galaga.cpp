@@ -151,7 +151,6 @@ const romset::Set kRomSet = {
 
 void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap)
 {
-    roms_ = roms;
     BoardRoms b{};
     b.cpu[namco_galaga::kMain] = roms.main;
     b.cpu[namco_galaga::kSub] = roms.sub;

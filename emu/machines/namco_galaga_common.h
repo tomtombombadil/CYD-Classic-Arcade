@@ -185,7 +185,6 @@ private:
     const Speedup* idle(int n, int end);
     bool    subs_held() const { return !(latch_ & 0x08); }
 
-    BoardRoms roms_{};
     z80::Cpu cpu_[kCpuCount];
     Port     port_[kCpuCount] = {};
     int      pos_[kCpuCount] = {};      // each CPU's time in the frame
@@ -193,7 +192,6 @@ private:
     int      watchdog_ = 0;
     int      watchdog_resets_ = 0;
     uint32_t frame_ = 0;
-    uint16_t buttons_ = 0;
 
     static constexpr int kMaxSpeedups = 16;     // per CPU
     const Speedup* speedups_[kCpuCount][kMaxSpeedups] = {};

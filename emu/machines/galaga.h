@@ -109,7 +109,6 @@ private:
     void    frame_end() override;
     void    mix(int16_t* out, int n) override;
 
-    Roms     roms_{};
     starfield05::Generator stars_;
     namco54::Chip noise_;
     uint8_t  video_latch_ = 0;      // A000-A007: 0-2 star scroll, 3-4 star sets, 5 stars on, 7 flip

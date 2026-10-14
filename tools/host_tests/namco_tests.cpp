@@ -12,6 +12,7 @@
 #include "../../emu/machines/starfield05.h"
 #include "../../emu/sound/namco54.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
