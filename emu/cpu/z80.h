@@ -13,11 +13,7 @@
 
 #include <cstdint>
 
-// A device build may define EMU_HOT (e.g. as IRAM_ATTR on the ESP32) to put
-// the interpreter loop in fast instruction RAM.
-#ifndef EMU_HOT
-#define EMU_HOT
-#endif
+#include "hot.h"
 
 namespace z80 {
 

@@ -97,6 +97,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   are scaled up to fill the panel's width with their shape kept, nearest
   pixel, no blending (224 wide -> 320 on the 320x480 panels; Pac-Man shows
   as 320x411). 240x320 panels stay 1:1.
+- Landscape games (Rally-X first): the panel turns a quarter clockwise
+  from the menu's portrait for the game (USB on the right with USB Port:
+  Top) and back after (`screen::landscape()`); scaling as above.
+- CPU cores' hot functions run from internal RAM on the board
+  (`emu/cpu/hot.h`, EMU_HOT_IRAM set by components/arcade_core): Pac-Man's
+  one Z80 took 5.7 ms a frame from flash (~9 emulated MHz) - too slow for
+  Galaga's three.
 - Menu help text at the bottom wraps to the screen (`screen::text_box`),
   in the small font on every panel (Tom: it ran off the right edge).
 - Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by

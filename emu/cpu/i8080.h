@@ -20,9 +20,7 @@
 
 #include <cstdint>
 
-#ifndef EMU_HOT
-#define EMU_HOT
-#endif
+#include "hot.h"
 
 namespace i8080 {
 

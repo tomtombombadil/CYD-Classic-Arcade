@@ -24,6 +24,7 @@ void init()
 }
 
 void apply_rotation() { s_lcd.setRotation(settings::get().usb_top ? 2 : 0); }
+void landscape() { s_lcd.setRotation(settings::get().usb_top ? 3 : 1); }
 
 void menu_font()
 {

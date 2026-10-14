@@ -71,6 +71,7 @@ void run(int index, AudioRing& ring)
     }
     games::Machine* m = g.make();
     LGFX& lcd = screen::lcd();
+    if (g.orientation == games::Orientation::Landscape) screen::landscape();
     // Scale: as large as fits with the shape kept, never smaller than 1:1
     const float scale = std::max(1.0f, std::min(float(lcd.width()) / g.width, float(lcd.height()) / g.height));
     const int out_w = std::min(lcd.width(), int(g.width * scale + 0.5f));
@@ -91,6 +92,7 @@ void run(int index, AudioRing& ring)
         heap_caps_free(line_hash);
         heap_caps_free(audio);
         catalog::unload(roms);
+        screen::apply_rotation();
         message("Not enough memory", g.title);
         return;
     }
@@ -192,6 +194,7 @@ void run(int index, AudioRing& ring)
     heap_caps_free(line_hash);
     heap_caps_free(audio);
     catalog::unload(roms);
+    screen::apply_rotation();
     lcd.fillScreen(screen::kBg);
 }
 
