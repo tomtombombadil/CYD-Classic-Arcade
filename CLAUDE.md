@@ -59,8 +59,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   stick is unused. ShanWan Q36 works with its switch on "D" (shows as
   "Q36 for Android"; two of them pair as P1 and P2) - except its Home
   button, which never arrives.
-- Controller test also confirmed by Tom on the 3.2" ST7789, 3.5" and 4.0"
-  ST7796 (2026-10-14); only the 2.8" ILI9341 is still untested.
+- Controller test also confirmed by Tom on the 2.8" ILI9341, 3.2" ST7789,
+  3.5" and 4.0" ST7796 (2026-10-14): every supported board is tested.
 - Measured on Tom's 2.8" ST7789 (v0.1.0, Bluetooth on): RAM 142 KB free,
   biggest block 108 KB, lowest 142 KB. A 224x288 frame takes 25.9 ms at
   40 MHz SPI (38 fps max) - too slow for 60 fps, so: SPI at 80 MHz where the
