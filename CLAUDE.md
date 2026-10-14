@@ -109,6 +109,23 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   CPUs (`emu/cpu/`), sound chips (`emu/sound/`), machines
   (`emu/machines/`), ROM sets / zip / CRC (`emu/rom/`), `emu/util/`.
   Hot paths allocate nothing; big tables `const` (flash); machine RAM small.
+- `emu/games.*`: the game table shared by firmware and PC tools (machine
+  face, screen, orientation, controller -> panel buttons: Select = coin,
+  Start = 1P start, L = 2P start, A = fire). Adding a game = machine +
+  entry there.
+- `core/`: plain C++ firmware logic, host-tested: `rom_store` (the user's
+  zips as they are in the `roms` partition, append-only, directory sector)
+  and `usb_import` (protocol of the web page's ROM loader, "CYDA ..."
+  lines on UART0 at 115200). `components/arcade_core` builds emu/ + core/.
+- Firmware (`main/`): `menu` (controller-driven; no touch yet), `game_runner`
+  (sound ring paces the game; changed lines only; skips drawing when
+  behind; back = Start + Select held 1 s or Home), `catalog` (which games
+  the stored zips complete; ROM regions unpacked into RAM at game start),
+  `sd_import` (new zips from /CYD-Classic-Arcade/ at boot, 32E boards),
+  `serial_link`, `settings` (NVS: swap_ab, volume), `pad_test`.
+- ROM page `web/roms/` (+ `loader.js`, tested in Node by
+  `tools/host_tests/loader_test.mjs` against `fake_board`): reads zip
+  directories in the browser, sends only the zips a game needs.
 - Rendering is line by line into small DMA strips; no full frame buffer
   (a 224x288x2 frame is 129 KB - not with Bluetooth on).
 - Sound: `main/audio_out.*`, 24 kHz, 8-bit DAC by DMA, volume
