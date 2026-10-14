@@ -1,0 +1,8 @@
+# Name,   Type, SubType, Offset,   Size
+# 4 MB flash: app 2.25 MB (Bluetooth stack + emulators), the rest holds the
+# user's ROMs (copied in from SD or over USB; read in place, never in RAM).
+# No OTA - the web flasher is the update path.
+nvs,      data, nvs,     0x9000,   0x6000
+phy_init, data, phy,     0xf000,   0x1000
+factory,  app,  factory, 0x10000,  0x240000
+roms,     data, 0x40,    0x250000, 0x1B0000

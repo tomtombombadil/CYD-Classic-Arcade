@@ -1,0 +1,12 @@
+roms/
+samples/
+*.zip
+.pio/
+build/
+external/
+sdkconfig.*
+!sdkconfig.defaults
+.vscode/
+__pycache__/
+/tmp/
+main/version_gen.h
