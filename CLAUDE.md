@@ -75,6 +75,14 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   frames and a WAV). Run them after any emulator change.
 - Claude's container can't reach the PlatformIO registry, so firmware
   builds are checked by CI (GitHub Actions) on every push.
+- CI pins PlatformIO 6.1.18: 6.2.0 brings SCons 4.11, which breaks
+  pioarduino's ESP-IDF build ("No module named SCons.Tool.FortranCommon").
+
+## Web flasher
+- Every push to main: CI builds every env with `custom_firmware_name`,
+  merges each into one image at 0x0 (esptool merge_bin) and publishes
+  `web/index.html` + `tools/make_site.py`'s manifests on GitHub Pages:
+  https://tomtombombadil.github.io/CYD-Classic-Arcade/
 
 ## Versions and releases
 - Semantic versioning from `VERSION` (started 0.1.0, 2026-10-14). A fix

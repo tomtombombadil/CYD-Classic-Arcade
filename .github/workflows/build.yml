@@ -99,3 +99,33 @@ jobs:
           name: elf-${{ matrix.env }}
           path: sym/*.elf
           retention-days: 90
+
+  # Web flasher on GitHub Pages: every push to main. Needs the repo's
+  # Settings -> Pages -> Source = "GitHub Actions" (set once).
+  pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [boards, build]
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: bins
+          pattern: fw-*
+          merge-multiple: true
+      - name: Assemble site
+        run: python3 tools/make_site.py --bins bins --version "${{ needs.boards.outputs.version }}" --out _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
