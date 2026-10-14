@@ -22,9 +22,14 @@ void apply_rotation();
 
 // The menu font for this panel size, and its line height.
 void menu_font();
+void small_font();      // help and news lines (the same on every panel)
 int  line_h();
 
 // One line of text across the screen (cleared first).
 void line(int y, uint16_t color, const char* text, uint16_t bg = kBg);
+
+// Text wrapped at word breaks to the screen's width (8 px margins), from y
+// down. draw = false only measures. Returns the height used.
+int text_box(int y, uint16_t color, const char* text, bool draw = true);
 
 }  // namespace screen

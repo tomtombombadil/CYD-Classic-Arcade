@@ -7,6 +7,9 @@
 //
 // Drawing: each line is rendered, hashed and only sent to the panel if it
 // differs from the line already there; changed lines go out in strips.
+// On the bigger panels (320x480) the picture is scaled up to fill the
+// width, keeping its shape: each screen pixel takes the nearest game pixel
+// (no blending), so 224 game pixels become 320 - some two wide, some one.
 // Plain blocking writes, no DMA: on the ESP32-32E boards the display's DMA
 // stopped working once the SD card's bus had been used (v0.2.0: no picture
 // in games, then none in the menu either), and Tom's other CYD projects
@@ -19,6 +22,7 @@
 
 #include "emu/games.h"
 
+#include <algorithm>
 #include <cstring>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
@@ -66,15 +70,24 @@ void run(int index, AudioRing& ring)
         return;
     }
     games::Machine* m = g.make();
-    const size_t strip_bytes = size_t(g.width) * kStrip * sizeof(uint16_t);
+    LGFX& lcd = screen::lcd();
+    // Scale: as large as fits with the shape kept, never smaller than 1:1
+    const float scale = std::max(1.0f, std::min(float(lcd.width()) / g.width, float(lcd.height()) / g.height));
+    const int out_w = std::min(lcd.width(), int(g.width * scale + 0.5f));
+    const int out_h = std::min(lcd.height(), int(g.height * scale + 0.5f));
+    const size_t strip_bytes = size_t(out_w) * kStrip * sizeof(uint16_t);
     uint16_t* strip = static_cast<uint16_t*>(heap_caps_malloc(strip_bytes, MALLOC_CAP_8BIT));
+    uint16_t* src = static_cast<uint16_t*>(heap_caps_malloc(size_t(g.width) * sizeof(uint16_t), MALLOC_CAP_8BIT));
+    uint16_t* x_map = static_cast<uint16_t*>(heap_caps_malloc(size_t(out_w) * sizeof(uint16_t), MALLOC_CAP_8BIT));
     uint32_t* line_hash = static_cast<uint32_t*>(heap_caps_malloc(kMaxLines * sizeof(uint32_t), MALLOC_CAP_8BIT));
     int16_t* audio = static_cast<int16_t*>(heap_caps_malloc(kAudioCap * sizeof(int16_t), MALLOC_CAP_8BIT));
-    if (!m || !strip || !line_hash || !audio || g.height > kMaxLines) {
+    if (!m || !strip || !src || !x_map || !line_hash || !audio || g.height > kMaxLines) {
         ESP_LOGE(kTag, "%s: out of memory (largest block %u)", g.id,
                  unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
         delete m;
         heap_caps_free(strip);
+        heap_caps_free(src);
+        heap_caps_free(x_map);
         heap_caps_free(line_hash);
         heap_caps_free(audio);
         catalog::unload(roms);
@@ -86,10 +99,12 @@ void run(int index, AudioRing& ring)
              unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
              unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
 
-    LGFX& lcd = screen::lcd();
     lcd.fillScreen(TFT_BLACK);
-    const int x0 = (lcd.width() - g.width) / 2;
-    const int y0 = (lcd.height() - g.height) / 2;
+    const int x0 = (lcd.width() - out_w) / 2;
+    const int y0 = (lcd.height() - out_h) / 2;
+    for (int x = 0; x < out_w; ++x) x_map[x] = uint16_t(x * g.width / out_w);
+    const bool scaled = out_w != g.width || out_h != g.height;
+    ESP_LOGI(kTag, "%s: %dx%d shown as %dx%d", g.id, g.width, g.height, out_w, out_h);
     for (int y = 0; y < kMaxLines; ++y) line_hash[y] = 0;   // a black line hashes otherwise
     ring.clear();
 
@@ -123,20 +138,33 @@ void run(int index, AudioRing& ring)
         int rows = 0, start = 0;
         auto flush = [&]() {
             if (!rows) return;
-            lcd.pushImage(x0, y0 + start, g.width, rows, reinterpret_cast<const lgfx::swap565_t*>(strip));
+            lcd.pushImage(x0, y0 + start, out_w, rows, reinterpret_cast<const lgfx::swap565_t*>(strip));
             lines_sent += uint32_t(rows);
             rows = 0;
         };
-        for (int y = 0; y < g.height; ++y) {
-            uint16_t* row = strip + rows * g.width;
-            m->render_line(y, row);
-            const uint32_t h = hash_line(row, g.width);
-            if (h == line_hash[y]) {
+        // Output row r shows game line r * height / out_h; a game line is
+        // rendered and hashed once, and its rows are sent only if it changed.
+        int cur = -1;
+        bool changed = false;
+        for (int r = 0; r < out_h; ++r) {
+            const int y = r * g.height / out_h;
+            if (y != cur) {
+                cur = y;
+                uint16_t* line = scaled ? src : strip + rows * out_w;
+                m->render_line(y, line);
+                const uint32_t h = hash_line(line, g.width);
+                changed = h != line_hash[y];
+                line_hash[y] = h;
+            }
+            if (!changed) {
                 flush();
                 continue;
             }
-            line_hash[y] = h;
-            if (!rows) start = y;
+            uint16_t* row = strip + rows * out_w;
+            if (scaled) {
+                for (int x = 0; x < out_w; ++x) row[x] = src[x_map[x]];
+            }
+            if (!rows) start = r;
             ++rows;
             if (rows == kStrip) flush();
         }
@@ -159,6 +187,8 @@ void run(int index, AudioRing& ring)
     ring.clear();
     delete m;
     heap_caps_free(strip);
+    heap_caps_free(src);
+    heap_caps_free(x_map);
     heap_caps_free(line_hash);
     heap_caps_free(audio);
     catalog::unload(roms);

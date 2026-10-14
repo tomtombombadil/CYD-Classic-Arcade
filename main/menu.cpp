@@ -58,6 +58,17 @@ void draw_item(int i, int sel, int top)
     line(top + i * line_h(), on ? kBg : color, buf, on ? kGold : kBg);
 }
 
+// The line above the help text, for news (ROMs loaded, receiving).
+int status_y()
+{
+    const char* longest = "Add ROM zips: put them in a CYD-Classic-Arcade folder on the SD card, or send them over "
+                          "USB from the install web page.";
+    small_font();
+    const int y = lcd().height() - text_box(0, kMuted, longest, false) - 4 - line_h();
+    menu_font();
+    return y;
+}
+
 void draw_all(int sel, int top, const char* status)
 {
     LGFX& l = lcd();
@@ -66,18 +77,16 @@ void draw_all(int sel, int top, const char* status)
     std::snprintf(buf, sizeof buf, "CYD Classic Arcade %s", CYD_ARCADE_VERSION);
     line(0, kGold, buf);
     for (int i = 0; i < item_count(); ++i) draw_item(i, sel, top);
-    const int h = line_h();
-    int y = l.height() - h * 4;
-    if (status && status[0]) line(y, kGold, status);
-    y += h;
-    if (catalog::available_count() == 0) {
-        line(y, kMuted, "Add ROM zips: SD card folder");
-        line(y + h, kMuted, "CYD-Classic-Arcade, or over USB");
-        line(y + 2 * h, kMuted, "from the install web page.");
-    } else {
-        line(y, kMuted, "A: play.  In a game, hold Select");
-        line(y + h, kMuted, "and press Start twice: back here.");
-    }
+    const char* help = catalog::available_count() == 0
+        ? "Add ROM zips: put them in a CYD-Classic-Arcade folder on the SD card, or send them over USB "
+          "from the install web page."
+        : "A: play. In a game, hold Select and press Start twice to come back here.";
+    const int sy = status_y();
+    small_font();
+    const int y = l.height() - text_box(0, kMuted, help, false) - 4;
+    text_box(y, kMuted, help);
+    if (status && status[0]) line(sy, kGold, status);
+    menu_font();
 }
 
 }  // namespace
@@ -99,7 +108,10 @@ void run(AudioRing& ring)
         // ROMs arriving over USB
         const bool busy = serial_link::busy();
         if (busy != was_busy) {
-            line(lcd().height() - line_h() * 4, kGold, busy ? "Receiving ROMs over USB..." : "");
+            const int sy = status_y();
+            small_font();
+            line(sy, kGold, busy ? "Receiving ROMs over USB..." : "");
+            menu_font();
             was_busy = busy;
         }
         if (serial_link::take_changed()) {

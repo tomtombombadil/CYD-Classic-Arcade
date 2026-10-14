@@ -91,6 +91,14 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Web flasher caching (v0.3.0: Tom's browser flashed a cached v0.2.0 file
   for the 4.0" from the v0.3.0 page): every manifest / firmware link
   carries the build's stamp (`?v=<version>-<time>`, boards.json `stamp`).
+- v0.3.0 / v0.3.1 confirmed by Tom on the 3.5" and 4.0": games play and
+  show (the no-DMA + SD-first fix works).
+- Scaling (Tom, 2026-10-14: games were 1:1 and small on the 3.5"): games
+  are scaled up to fill the panel's width with their shape kept, nearest
+  pixel, no blending (224 wide -> 320 on the 320x480 panels; Pac-Man shows
+  as 320x411). 240x320 panels stay 1:1.
+- Menu help text at the bottom wraps to the screen (`screen::text_box`),
+  in the small font on every panel (Tom: it ran off the right edge).
 - Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by
   default (the board stands up, cable out the top; rotation 2); menu
   setting "USB Port: Top / Bottom" (NVS usb_top).
