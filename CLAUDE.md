@@ -50,6 +50,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   A game is shown as large as fits with its shape kept (borders only
   where the shapes differ).
 - Pac-Man's sound and screens confirmed right by Tom (2026-10-14, PC run).
+- New games (Tom, 2026-10-14): send him the PC screenshots (and a sound
+  clip), then push the game straight into a build - no waiting for his OK
+  on the shots; he tests on the boards when the shots look good.
 - Controller test v0.1.0 on Tom's 2.8" ST7789 (2026-10-14): 8BitDo
   Ultimate Bluetooth and Vilcorn D8 pair and work (two at once), every
   button, both sticks' directions, DAC tones OK. ShanWan Q36 (two units)
