@@ -88,7 +88,9 @@ public:
             auto cfg = _light.config();
             cfg.pin_bl      = 21;
             cfg.invert      = false;
-            cfg.freq        = 12000;
+            // Above hearing: at 12 kHz the backlight's on / off current
+            // was a faint whine in the speaker (Tom, 2.8" ST7789)
+            cfg.freq        = 44100;
             cfg.pwm_channel = 7;
             _light.config(cfg);
             _panel.setLight(&_light);

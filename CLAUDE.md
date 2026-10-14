@@ -136,7 +136,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   usb_top carries over) - Tom: no per-board code for which end is up.
 - 2.8" ILI9341 (Tom, v0.5.0): no sound at all, and his 8BitDo Ultimate
   only connected after a reboot each time. v0.5.1: sound 4x louder (it
-  was ~a fifth of CYD Classic Games' loudness at the same setting) and a
+  was ~a fifth of CYD Classic Games' loudness at the same setting; v0.5.2
+  reworked it, see Sound) and a
   menu item "Forget Controllers" (drops connections and pairing keys - a
   controller moved between Tom's boards). Both unconfirmed: need Tom's
   result / a serial log from that board.
@@ -215,8 +216,14 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   directories in the browser, sends only the zips a game needs.
 - Rendering is line by line into small DMA strips; no full frame buffer
   (a 224x288x2 frame is 129 KB - not with Bluetooth on).
-- Sound: `main/audio_out.*`, 24 kHz, 8-bit DAC by DMA, volume
-  (v/100)^2, default 50 % (= samples / 256 onto the DAC; clips near 100 %). Machines fill signed 16-bit mono.
+- Sound: `main/audio_out.*`, games at 24 kHz; the 8-bit DAC runs at 4x
+  (96 kHz) by DMA, each game sample joined to the next by a straight line,
+  first-order noise shaping (v0.5.2, Tom: Donkey Kong "distorted and
+  noisy", Pac-Man a little: the sound sat on ~2 DAC steps - in-band noise
+  now ~24 dB lower). Volume linear, 100 % = the loudest game peaks
+  (~21,000) just under full scale - never clips; default 50 %.
+- Backlight PWM at 44.1 kHz (v0.5.2): at 12 kHz it whined faintly in the
+  2.8" ST7789's speaker (Tom; silent while flashing - backlight off). Machines fill signed 16-bit mono.
 - Flash: 4 MB = app 2.25 MB + `roms` data partition 1.7 MB (ROMs read in
   place, memory-mapped). No OTA - the web flasher is the update path.
 - `version_gen.h` is written by `tools/version.py` (ESP-IDF components
