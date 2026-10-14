@@ -67,8 +67,7 @@ jobs:
       - name: Build
         env:
           CYD_VERSION: ${{ needs.boards.outputs.version }}
-        # -k: report every file that fails, not just the first
-        run: pio run -k -e ${{ matrix.env }}
+        run: pio run -e ${{ matrix.env }}
 
       - name: Size
         run: |
