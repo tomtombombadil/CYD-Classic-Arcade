@@ -56,7 +56,14 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   not found; an 8BitDo "80EL" unclear (charge?). Bluepad32 names buttons
   by POSITION (Xbox layout: A = bottom), so on Nintendo-labelled pads A/B
   and X/Y read swapped. L1+L2 -> L and R1+R2 -> R by design; the right
-  stick is unused.
+  stick is unused. ShanWan Q36 works with its switch on "D" (shows as
+  "Q36 for Android"; two of them pair as P1 and P2) - except its Home
+  button, which never arrives.
+- Buttons by POSITION (Tom, 2026-10-14): bottom face button = the main
+  one (fire / jump), right = second. A setting "Swap A/B and X/Y" in the
+  menu for players who want the printed letters (`pad_set_swap_ab()`).
+- Home isn't on every controller (Q36): the emulator menu must also open
+  some other way - Start + Select held together.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

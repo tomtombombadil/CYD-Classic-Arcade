@@ -4,6 +4,7 @@
 // shoulders, Start, Select, Home.
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -43,6 +44,11 @@ void pad_bt_run(void);
 
 // A copy of controller `idx` (0 .. PAD_MAX-1); safe from any task.
 void pad_get(int idx, pad_state_t* out);
+
+// Buttons are named by position (Xbox layout: A = bottom, B = right,
+// X = left, Y = top) on every controller. true swaps A<->B and X<->Y, for
+// players who'd rather follow Nintendo-style printed letters.
+void pad_set_swap_ab(bool swap);
 
 #ifdef __cplusplus
 }

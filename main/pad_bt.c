@@ -18,6 +18,7 @@
 #endif
 
 static pad_state_t s_pads[PAD_MAX];
+static volatile bool s_swap_ab = false;
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 
 // Stick pushed past this counts as the d-pad (range -512..511)
@@ -92,10 +93,11 @@ static void on_data(uni_hid_device_t* d, uni_controller_t* ctl) {
     if ((gp->dpad & DPAD_DOWN) || gp->axis_y > STICK_DIR) b |= PAD_DOWN;
     if ((gp->dpad & DPAD_LEFT) || gp->axis_x < -STICK_DIR) b |= PAD_LEFT;
     if ((gp->dpad & DPAD_RIGHT) || gp->axis_x > STICK_DIR) b |= PAD_RIGHT;
-    if (gp->buttons & BUTTON_A) b |= PAD_A;
-    if (gp->buttons & BUTTON_B) b |= PAD_B;
-    if (gp->buttons & BUTTON_X) b |= PAD_X;
-    if (gp->buttons & BUTTON_Y) b |= PAD_Y;
+    const bool swap = s_swap_ab;
+    if (gp->buttons & BUTTON_A) b |= swap ? PAD_B : PAD_A;
+    if (gp->buttons & BUTTON_B) b |= swap ? PAD_A : PAD_B;
+    if (gp->buttons & BUTTON_X) b |= swap ? PAD_Y : PAD_X;
+    if (gp->buttons & BUTTON_Y) b |= swap ? PAD_X : PAD_Y;
     if (gp->buttons & (BUTTON_SHOULDER_L | BUTTON_TRIGGER_L)) b |= PAD_L;
     if (gp->buttons & (BUTTON_SHOULDER_R | BUTTON_TRIGGER_R)) b |= PAD_R;
     if (gp->misc_buttons & MISC_BUTTON_START) b |= PAD_START;
@@ -142,6 +144,10 @@ void pad_bt_run(void) {
     uni_platform_set_custom(&s_platform);
     uni_init(0, NULL);
     btstack_run_loop_execute();  // never returns
+}
+
+void pad_set_swap_ab(bool swap) {
+    s_swap_ab = swap;
 }
 
 void pad_get(int idx, pad_state_t* out) {
