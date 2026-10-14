@@ -73,9 +73,10 @@ void run(int index, AudioRing& ring)
     LGFX& lcd = screen::lcd();
     if (g.orientation == games::Orientation::Landscape) screen::landscape();
     // Scale: as large as fits with the shape kept, never smaller than 1:1
-    const float scale = std::max(1.0f, std::min(float(lcd.width()) / g.width, float(lcd.height()) / g.height));
-    const int out_w = std::min(lcd.width(), int(g.width * scale + 0.5f));
-    const int out_h = std::min(lcd.height(), int(g.height * scale + 0.5f));
+    const int lcd_w = int(lcd.width()), lcd_h = int(lcd.height());   // int32_t is long on the ESP32
+    const float scale = std::max(1.0f, std::min(float(lcd_w) / g.width, float(lcd_h) / g.height));
+    const int out_w = std::min(lcd_w, int(g.width * scale + 0.5f));
+    const int out_h = std::min(lcd_h, int(g.height * scale + 0.5f));
     const size_t strip_bytes = size_t(out_w) * kStrip * sizeof(uint16_t);
     uint16_t* strip = static_cast<uint16_t*>(heap_caps_malloc(strip_bytes, MALLOC_CAP_8BIT));
     uint16_t* src = static_cast<uint16_t*>(heap_caps_malloc(size_t(g.width) * sizeof(uint16_t), MALLOC_CAP_8BIT));
@@ -102,8 +103,8 @@ void run(int index, AudioRing& ring)
              unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
 
     lcd.fillScreen(TFT_BLACK);
-    const int x0 = (lcd.width() - out_w) / 2;
-    const int y0 = (lcd.height() - out_h) / 2;
+    const int x0 = (lcd_w - out_w) / 2;
+    const int y0 = (lcd_h - out_h) / 2;
     for (int x = 0; x < out_w; ++x) x_map[x] = uint16_t(x * g.width / out_w);
     const bool scaled = out_w != g.width || out_h != g.height;
     ESP_LOGI(kTag, "%s: %dx%d shown as %dx%d", g.id, g.width, g.height, out_w, out_h);
