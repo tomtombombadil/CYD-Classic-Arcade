@@ -37,8 +37,17 @@ jobs:
           fi
           echo "version=${V}" >> "$GITHUB_OUTPUT"
 
+  # The emulators on the CI machine: unit tests, the Z80 instruction
+  # exercisers, the host runner on a synthetic ROM set (no game code)
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host tests
+        run: sh tools/host_tests/build.sh
+
   build:
-    needs: [boards]
+    needs: [boards, tests]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
