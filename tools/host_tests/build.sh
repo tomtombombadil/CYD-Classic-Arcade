@@ -22,7 +22,7 @@
 #      (downloaded on first use into build/m6502 - not ours, never
 #      committed; the decimal test's source is assembled by asm6502.py with
 #      the N / V / Z checks on), both builds; atari_tests (6502 timing /
-#      interrupts / opcode hook), -O2 and with the sanitizers
+#      interrupts / opcode hook, POKEY), -O2 and with the sanitizers
 # and the ROM store / USB protocol (core/), with the web page's loader
 # (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
@@ -39,7 +39,7 @@ QUICK=0
 EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
      $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp \
-     $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/samples.cpp \
+     $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/pokey.cpp \
      $ROOT/emu/machines/pacman.cpp $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp $ROOT/emu/machines/dkong.cpp \
      $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp $ROOT/emu/machines/namco_galaga_common.cpp \
      $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp"
@@ -74,7 +74,7 @@ g++ $FLAGS $SAN -o "$OUT/namco_tests_san" "$ROOT/tools/host_tests/namco_tests.cp
 "$OUT/namco_tests"
 "$OUT/namco_tests_san"
 
-echo "== Atari board tests (6502)"
+echo "== Atari board tests (6502, POKEY)"
 g++ $FLAGS -O2 -o "$OUT/atari_tests" "$ROOT/tools/host_tests/atari_tests.cpp" $EMU
 g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cpp" $EMU
 "$OUT/atari_tests"

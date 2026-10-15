@@ -1,10 +1,14 @@
-// Unit tests for the 6502 core's timing and interrupts (the instruction
-// set is checked by Klaus Dormann's tests in m6502_test), with hand-made
-// programs - no ROMs.
+// Unit tests for the Atari boards' parts, with hand-made programs and
+// synthetic data - no ROMs: the 6502 core's timing and interrupts (the
+// instruction set is checked by Klaus Dormann's tests in m6502_test), the
+// POKEY (dividers, joined / fast clocks, polynomial counters, RANDOM,
+// volume-only, the high-pass flip-flop).
 //
 //   atari_tests
 #include "../../emu/cpu/m6502.h"
+#include "../../emu/sound/pokey.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -170,6 +174,111 @@ void test_6502_hook()
     CHECK_EQ(r.cpu.pc, 0x0206);
 }
 
+// --- POKEY ----------------------------------------------------------------------
+
+int popcount(uint32_t v)
+{
+    int n = 0;
+    for (; v; v &= v - 1) ++n;
+    return n;
+}
+
+// Rising edges of a rendered signal (crossing its mid level).
+int edges(const std::vector<int16_t>& v)
+{
+    int lo = 32767, hi = -32768;
+    for (int16_t s : v) { if (s < lo) lo = s; if (s > hi) hi = s; }
+    const int mid = (lo + hi) / 2;
+    int n = 0;
+    for (size_t i = 1; i < v.size(); ++i) n += v[i - 1] <= mid && v[i] > mid;
+    return n;
+}
+
+void test_pokey()
+{
+    // The polynomial counters are maximal-length: 2^(n-1) ones in a period
+    // (the XNOR-fed 4 and 5 bit ones give the inverse: 2^(n-1) - 1).
+    CHECK_EQ(popcount(pokey::poly4_bits()), 7);
+    CHECK_EQ(popcount(pokey::poly5_bits()), 15);
+    int ones = 0;
+    for (uint32_t p = 0; p < 131071; ++p) ones += pokey::poly17_bit8(p);
+    CHECK_EQ(ones, 65536);
+    // RANDOM four clocks later: the old high nibble in the low one (the
+    // check Tempest makes).
+    bool shift_ok = true;
+    for (uint32_t p = 0; p < 5000; p += 7)
+        shift_ok = shift_ok && ((pokey::random17(p + 4) & 0x0f) == (pokey::random17(p) >> 4));
+    CHECK(shift_ok);
+
+    const uint32_t clock = 1512000, rate = 24000;
+    pokey::Pokey pk;
+    pk.init(clock, rate);
+    std::vector<int16_t> out(rate);
+    // In reset (SKCTL 0): nothing counts.
+    pk.write(pokey::kAudf1, 99, 0);
+    pk.write(pokey::kAudc1, 0xa8, 0);           // pure tone, volume 8
+    pk.render(out.data(), 1000);
+    CHECK_EQ(pk.underflows(0), 0);
+    // Out of reset: 64 kHz base, AUDF 99 -> 2800 clocks a half period = 270 Hz.
+    pk.write(pokey::kSkctl, 3, 0);
+    pk.render(out.data(), int(rate));
+    CHECK(std::abs(edges(out) - 270) <= 1);
+    int hi = 0;
+    for (int16_t s : out) if (s > hi) hi = s;
+    CHECK_EQ(hi, 8 * pokey::kLevelScale);
+    // 15 kHz base: 100 x 114 clocks -> 66 Hz.
+    pk.write(pokey::kAudctl, 0x01, 0);
+    pk.render(out.data(), int(rate));
+    CHECK(std::abs(edges(out) - 66) <= 1);
+    // Channel 1 at the full clock: AUDF + 4 = 103 clocks -> 7340 Hz.
+    pk.write(pokey::kAudctl, 0x40, 0);
+    pk.render(out.data(), int(rate));
+    const uint32_t u0 = pk.underflows(0);
+    pk.render(out.data(), int(rate));
+    CHECK(std::abs(int(pk.underflows(0) - u0) - int(clock / 103)) <= 2);
+    // Channels 1 + 2 joined, channel 2 sounding: (0x0123 + 1) x 28 clocks.
+    pk.write(pokey::kAudc1, 0, 0);
+    pk.write(pokey::kAudf1, 0x23, 0);
+    pk.write(pokey::kAudf2, 0x01, 0);
+    pk.write(pokey::kAudc2, 0xaf, 0);
+    pk.write(pokey::kAudctl, 0x10, 0);
+    pk.render(out.data(), int(rate));
+    const uint32_t u2 = pk.underflows(1);
+    pk.render(out.data(), int(rate));
+    CHECK(std::abs(int(pk.underflows(1) - u2) - int(clock / (0x124 * 28))) <= 1);
+    CHECK(std::abs(edges(out) - int(clock / (0x124 * 28) / 2)) <= 1);
+    // Volume only: a constant level.
+    pk.write(pokey::kAudc2, 0x15, 0);
+    pk.render(out.data(), 100);
+    CHECK_EQ(out[50], 5 * pokey::kLevelScale);
+    CHECK_EQ(out[99], 5 * pokey::kLevelScale);
+    // Noise (17-bit poly) from channel 3: both levels, irregular.
+    pk.write(pokey::kAudc2, 0, 0);
+    pk.write(pokey::kAudctl, 0, 0);
+    pk.write(pokey::kAudf3, 3, 0);
+    pk.write(pokey::kAudc3, 0x0f, 0);
+    pk.render(out.data(), int(rate));
+    int zeros = 0, fulls = 0;
+    for (int16_t s : out) { zeros += s == 0; fulls += s == 15 * pokey::kLevelScale; }
+    CHECK(zeros > 1000 && fulls > 1000);
+    // High-pass: channel 1 sampled by channel 3 at the same rate stays put.
+    pk.write(pokey::kAudc3, 0, 0);
+    pk.write(pokey::kAudf1, 50, 0);
+    pk.write(pokey::kAudf3, 50, 0);
+    pk.write(pokey::kAudc1, 0xaf, 0);
+    pk.write(pokey::kAudctl, 0x04, 0);
+    pk.write(pokey::kStimer, 0, 0);
+    pk.render(out.data(), int(rate));
+    CHECK(edges(out) < 5);
+    // RANDOM from the chip: timed by the clock passed in.
+    pk.write(pokey::kSkctl, 0, 1000);
+    pk.write(pokey::kSkctl, 3, 1000);
+    CHECK_EQ(pk.read(pokey::kRandom, 1000), pokey::random17(0));
+    CHECK_EQ(pk.read(pokey::kRandom, 1000 + 12345), pokey::random17(12345));
+    pk.set_allpot(0x5a);
+    CHECK_EQ(pk.read(pokey::kAllpot, 0), 0x5a);
+}
+
 } // namespace
 
 int main()
@@ -177,6 +286,7 @@ int main()
     test_6502_timing();
     test_6502_interrupts();
     test_6502_hook();
+    test_pokey();
     std::printf("atari tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
