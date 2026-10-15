@@ -305,6 +305,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   branch, every indexed mode (address, side effect, cycles), the
   datasheet's cycle counts, TFR / EXG, the stack, IRQ / FIRQ / NMI (armed
   by the first LDS), CWAI, SYNC, SWI 1-3 and small programs.
+- 6800 / 6802 / 6808 core (`emu/cpu/m6800.*`, the Williams and Qix sound
+  CPUs): the same kind of own tests in `m6800_tests.cpp` (ALU vs a plain
+  model, shifts' V = N xor C, CPX's 6800 flags, cycles, IRQ / NMI / SWI /
+  WAI). Undocumented opcodes run as 2-cycle no-ops.
 - Claude's container can't reach the PlatformIO registry, so firmware
   builds are checked by CI (GitHub Actions) on every push.
 - CI pins PlatformIO 6.1.18: 6.2.0 brings SCons 4.11, which breaks
