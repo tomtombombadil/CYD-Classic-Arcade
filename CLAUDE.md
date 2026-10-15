@@ -127,6 +127,14 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   as 320x411). 240x320 panels stay 1:1.
 - Landscape games (Rally-X first): the panel turns a quarter clockwise
   from the menu's portrait for the game and back after (`screen::landscape()`); scaling as above.
+- 6502 core (`emu/cpu/m6502.*`, for the Atari games and Burger Time):
+  NMOS, documented opcodes with NMOS decimal mode flags, the JMP ($xxFF)
+  wrap, cycle timing with page-cross / branch extras, IRQ delayed one
+  instruction after CLI / PLP, edge NMI. Undocumented opcodes run as NOPs
+  of their length and are counted (`illegal_count`). 256-byte pages
+  (boards bank RAM at that grain). `opcode_hook` sees each opcode fetch
+  and whether the last instruction wrote (Burger Time's DECO CPU-7
+  decryption). PC: ~500 emulated MHz.
 - No room in internal RAM (IRAM) for the CPU cores: v0.3.3 put the Z80 /
   8080 interpreters there (`emu/cpu/hot.h`, EMU_HOT_IRAM) and the link
   overflowed IRAM by 48,428 bytes (Bluetooth uses most of it). EMU_HOT
@@ -238,6 +246,29 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   more). Every Z80 game ran a little fewer instructions a frame than the
   real board; `mspacman_mrdo_tests` now checks every unprefixed opcode's
   time against Zilog's table.
+- Burger Time (`emu/machines/btime.*`, set `btime` = Data East set 1;
+  portrait 240x240, 57.44 Hz, 4-way, A = pepper; set_dips = DSW2, DSW1
+  fixed at 1 coin 1 credit, upright). Emulated: the DECO CPU-7 = our 6502
+  + `deco7_decrypt` in the opcode hook (an opcode fetched right after a
+  write, at an address with bits 8 and 2 set, has its bits swapped 6 5 3 4
+  2 7 1 0 - no undocumented opcode runs in 4000 frames of play), VBLANK
+  polled in DSW1 bit 7, the coin IRQ (held until the hook sees the
+  handler's first fetch), the sound 6502 (latch IRQ, NMI every 16 lines
+  gated by C000), two AY-3-8910s (`emu/sound/ay8910.*`, our own: counters
+  exact; ones that can't be heard are carried along lazily; tones above
+  ~23 kHz count as their average), characters, 8 sprites, the background
+  map page (4004), palette RAM. Modelled: channel 2A's band-pass (187 Hz,
+  Q 1.88, gain 4.7 - MAME's R51 = 5k, itself a guess) and the speaker's
+  coupling high-pass (~530 Hz, MAME's 3 ohm guess). With gain 4.7 the
+  music in play peaked ~2,500 against the thump's ~19,000 - too quiet on a
+  small speaker - so kBandGain is 2.0 and kOutGain 55,000: music ~5,000,
+  the loudest (coin / start tunes, thump) ~21,000. Graphics are
+  decoded as drawn into a 255-glyph cache (~0.35 decodes a frame), not
+  30 KB of tables: machine ~22 KB + 52 KB of ROM. Speed: the VBLANK waits
+  (LDA 4003 / BPL or BMI) skip to the read that sees the change, the sound
+  CPU's jump-to-self to its next interrupt (PC in play: emu ~0.05, render
+  ~0.065 ms a frame). Flip screen = the picture turned 180 degrees
+  (unseen: the upright game never sets it). No watchdog on this board.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
@@ -333,7 +364,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 
 ## Testing
 - Host: `tools/host_tests/` (Z80 exerciser, 8080 tests 8080PRE / 8080EXM /
-  TST8080 / CPUTEST, unit tests, `namco_tests` for the Galaga-family parts)
+  TST8080 / CPUTEST, Klaus Dormann's 6502 functional test and the 6502
+  decimal test (its source assembled at test time by `asm6502.py`, with the
+  N / V / Z checks on), unit tests, `namco_tests` for the Galaga-family
+  parts, `atari_tests` for the 6502 boards)
   and `tools/host/` (`arcade_host`: runs a game headless with scripted
   inputs, writes PNG frames and a WAV; a game table in it, `--samples` for
   a MAME sample zip). Run them after any

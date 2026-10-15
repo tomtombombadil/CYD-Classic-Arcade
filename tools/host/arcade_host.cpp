@@ -2,7 +2,7 @@
 //
 //   arcade_host <game> <zip | rom file | dir>... [options]
 //     games: the table in emu/games.cpp (pacman, invaders, rallyx, dkong,
-//     galaga, digdug, mspacman, mrdo, ...)
+//     galaga, digdug, mspacman, mrdo, btime, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -23,7 +23,9 @@
 //                         galaga, digdug: up down left right fire coin coin2
 //                         start1 start2 service test; mspacman: as pacman;
 //                         mrdo: up down left right fire coin coin2 start1
-//                         start2 tilt)
+//                         start2 tilt;
+//                         btime: up down left right pepper coin coin2 start1
+//                         start2)
 //     --verbose           one timing line per frame
 //
 //   arcade_host --check-table
