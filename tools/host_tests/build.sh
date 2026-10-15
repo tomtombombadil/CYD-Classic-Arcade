@@ -18,6 +18,11 @@
 #   6. the Namco Galaga-family parts (06XX / 51XX / 53XX, starfield, 54XX
 #      model, the three-CPU board and idle skipping on hand-made programs,
 #      Galaga / Dig Dug video), -O2 and with the sanitizers
+#   7. the 6502: Klaus Dormann's functional test and the decimal test
+#      (downloaded on first use into build/m6502 - not ours, never
+#      committed; the decimal test's source is assembled by asm6502.py with
+#      the N / V / Z checks on), both builds; atari_tests (6502 timing /
+#      interrupts / opcode hook), -O2 and with the sanitizers
 # and the ROM store / USB protocol (core/), with the web page's loader
 # (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
@@ -26,11 +31,12 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=$ROOT/build/host_tests
 ZEX=$ROOT/build/zex
 I80=$ROOT/build/i8080
-mkdir -p "$OUT" "$ZEX" "$I80"
+M65=$ROOT/build/m6502
+mkdir -p "$OUT" "$ZEX" "$I80" "$M65"
 QUICK=0
 [ "$1" = "--quick" ] && QUICK=1
 
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
      $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp \
      $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/samples.cpp \
@@ -47,6 +53,8 @@ g++ $FLAGS -O2 -o "$OUT/zex_test" "$ROOT/tools/host_tests/zex_test.cpp" "$ROOT/e
 g++ $FLAGS $SAN -o "$OUT/zex_test_san" "$ROOT/tools/host_tests/zex_test.cpp" "$ROOT/emu/cpu/z80.cpp"
 g++ $FLAGS -O2 -o "$OUT/i8080_test" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
 g++ $FLAGS $SAN -o "$OUT/i8080_test_san" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
+g++ $FLAGS -O2 -o "$OUT/m6502_test" "$ROOT/tools/host_tests/m6502_test.cpp" "$ROOT/emu/cpu/m6502.cpp"
+g++ $FLAGS $SAN -o "$OUT/m6502_test_san" "$ROOT/tools/host_tests/m6502_test.cpp" "$ROOT/emu/cpu/m6502.cpp"
 
 echo "== ROM store and USB loading (core/)"
 CORE="$ROOT/core/rom_store.cpp $ROOT/core/usb_import.cpp $ROOT/emu/rom/crc32.cpp"
@@ -65,6 +73,12 @@ g++ $FLAGS -O2 -o "$OUT/namco_tests" "$ROOT/tools/host_tests/namco_tests.cpp" $E
 g++ $FLAGS $SAN -o "$OUT/namco_tests_san" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
 "$OUT/namco_tests"
 "$OUT/namco_tests_san"
+
+echo "== Atari board tests (6502)"
+g++ $FLAGS -O2 -o "$OUT/atari_tests" "$ROOT/tools/host_tests/atari_tests.cpp" $EMU
+g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cpp" $EMU
+"$OUT/atari_tests"
+"$OUT/atari_tests_san"
 
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" > /dev/null
@@ -136,6 +150,29 @@ if [ $QUICK = 0 ]; then
     "$OUT/i8080_test" "$I80/8080EXM.COM" --expect "Tests complete"
 fi
 
+echo "== 6502 tests"
+# Klaus Dormann's 6502 functional test (GPL) and the decimal mode test
+# (Bruce Clark's, in the same repository), pinned by SHA-256.
+K65=https://raw.githubusercontent.com/Klaus2m5/6502_65C02_functional_tests/master
+fetch65() {
+    if [ ! -s "$M65/$2" ]; then
+        curl -sSfL -o "$M65/$2" "$K65/$1"
+    fi
+    echo "$3  $M65/$2" | sha256sum -c --quiet -
+}
+fetch65 bin_files/6502_functional_test.bin 6502_functional_test.bin \
+    fa12bfc761e6f9057e4cc01a665a7b800ff01ae91f598af1e39a1201d01953fd
+fetch65 6502_decimal_test.a65 6502_decimal_test.a65 \
+    dfbe4b907c5821d47d9f7f74eeb51197cf4b9f5260375bc1c6c48c008220e1a0
+DEC_AT=$(python3 "$ROOT/tools/host_tests/asm6502.py" "$M65/6502_decimal_test.a65" "$M65/decimal.bin" \
+    chk_n=1 chk_v=1 chk_z=1)
+for t in "$OUT/m6502_test" "$OUT/m6502_test_san"; do
+    # 3469: the success trap of this version of the functional test
+    "$t" functional "$M65/6502_functional_test.bin" 3469
+    "$t" decimal "$M65/decimal.bin" "$DEC_AT"
+done
+
 echo "== benchmark"
 "$OUT/zex_test" "$ZEX/zexdoc.com" --bench 3000
 "$OUT/i8080_test" "$I80/8080EXM.COM" --bench 2000
+"$OUT/m6502_test" functional "$M65/6502_functional_test.bin" 3469 --bench 96

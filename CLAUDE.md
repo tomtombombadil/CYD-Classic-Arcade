@@ -127,6 +127,14 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   as 320x411). 240x320 panels stay 1:1.
 - Landscape games (Rally-X first): the panel turns a quarter clockwise
   from the menu's portrait for the game and back after (`screen::landscape()`); scaling as above.
+- 6502 core (`emu/cpu/m6502.*`, for the Atari games and Burger Time):
+  NMOS, documented opcodes with NMOS decimal mode flags, the JMP ($xxFF)
+  wrap, cycle timing with page-cross / branch extras, IRQ delayed one
+  instruction after CLI / PLP, edge NMI. Undocumented opcodes run as NOPs
+  of their length and are counted (`illegal_count`). 256-byte pages
+  (boards bank RAM at that grain). `opcode_hook` sees each opcode fetch
+  and whether the last instruction wrote (Burger Time's DECO CPU-7
+  decryption). PC: ~500 emulated MHz.
 - No room in internal RAM (IRAM) for the CPU cores: v0.3.3 put the Z80 /
   8080 interpreters there (`emu/cpu/hot.h`, EMU_HOT_IRAM) and the link
   overflowed IRAM by 48,428 bytes (Bluetooth uses most of it). EMU_HOT
@@ -292,7 +300,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 
 ## Testing
 - Host: `tools/host_tests/` (Z80 exerciser, 8080 tests 8080PRE / 8080EXM /
-  TST8080 / CPUTEST, unit tests, `namco_tests` for the Galaga-family parts)
+  TST8080 / CPUTEST, Klaus Dormann's 6502 functional test and the 6502
+  decimal test (its source assembled at test time by `asm6502.py`, with the
+  N / V / Z checks on), unit tests, `namco_tests` for the Galaga-family
+  parts, `atari_tests` for the 6502 boards)
   and `tools/host/` (`arcade_host`: runs a game headless with scripted
   inputs, writes PNG frames and a WAV; a game table in it, `--samples` for
   a MAME sample zip). Run them after any
