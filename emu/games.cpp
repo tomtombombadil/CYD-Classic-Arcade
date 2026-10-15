@@ -8,6 +8,7 @@
 #include "machines/invaders.h"
 #include "machines/pacman.h"
 #include "machines/rallyx.h"
+#include "machines/tempest.h"
 
 #include <cstring>
 
@@ -234,6 +235,46 @@ const ButtonName kAsteroidsButtons[] = {
     {"test", asteroids::kTest}, {"step", asteroids::kDiagStep},
 };
 
+// ---- Tempest ----------------------------------------------------------------
+
+class Tempest : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[tempest::kRegionCpu], r[tempest::kRegionVector]}, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    // The left stick's X turns the spinner at a speed in proportion: full
+    // over = kSpinnerFull / 256 counts a frame (the d-pad: a steady
+    // tempest::Machine::kButtonSpin).
+    void set_analog(const Analog& a) override { m_.set_spinner(a.lx * kSpinnerFull / 512); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+    static constexpr int kSpinnerFull = 1024;      // 4 counts a frame
+
+private:
+    tempest::Machine m_;
+};
+
+// D-pad left / right move the player round the tube (counter-clockwise /
+// clockwise on the screen) at a steady speed, the left stick at a speed in
+// proportion; A fires, B is the Superzapper.
+const Control kTempestControls[] = {
+    {kPadLeft, tempest::kSpinLeft}, {kPadRight, tempest::kSpinRight}, {kPadA, tempest::kFire},
+    {kPadB, tempest::kZap}, {kPadSelect, tempest::kCoin}, {kPadStart, tempest::kStart1},
+    {kPadL, tempest::kStart2},
+};
+
+const ButtonName kTempestButtons[] = {
+    {"fire", tempest::kFire}, {"zap", tempest::kZap}, {"left", tempest::kSpinLeft},
+    {"right", tempest::kSpinRight}, {"coin", tempest::kCoin}, {"coin2", tempest::kCoin2},
+    {"start1", tempest::kStart1}, {"start2", tempest::kStart2}, {"test", tempest::kTest},
+    {"step", tempest::kDiagStep},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -264,6 +305,9 @@ const Info kGames[] = {
      Orientation::Landscape, asteroids::kCpuClock, asteroids::kCyclesPerFrame, kAsteroidsControls,
      COUNT(kAsteroidsControls), kAsteroidsButtons, COUNT(kAsteroidsButtons), nullptr, 0, make<Asteroids>,
      false},
+    {"tempest", "Tempest", &tempest::kRomSet, tempest::kScreenW, tempest::kScreenH, Orientation::Portrait,
+     tempest::kCpuClock, tempest::kCyclesPerFrame, kTempestControls, COUNT(kTempestControls),
+     kTempestButtons, COUNT(kTempestButtons), nullptr, 0, make<Tempest>, false},
 };
 
 const int kGameCount = COUNT(kGames);

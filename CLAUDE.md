@@ -134,7 +134,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   of their length and are counted (`illegal_count`). 256-byte pages
   (boards bank RAM at that grain). `opcode_hook` sees each opcode fetch
   and whether the last instruction wrote (Burger Time's DECO CPU-7
-  decryption). PC: ~500 emulated MHz.
+  decryption). PC: ~800 emulated MHz (the loop and its memory helpers
+  inlined, one flag to look at the interrupt lines).
 - No room in internal RAM (IRAM) for the CPU cores: v0.3.3 put the Z80 /
   8080 interpreters there (`emu/cpu/hot.h`, EMU_HOT_IRAM) and the link
   overflowed IRAM by 48,428 bytes (Bluetooth uses most of it). EMU_HOT
@@ -233,6 +234,38 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   exact pitch (the 555 current source estimated from part values) and the
   DVG's per-instruction time (2 clocks a word). Attract mode is silent, as
   on the real game.
+- POKEY (`emu/sound/pokey.*`, our own): event-driven - each sample is
+  the exact average of the level between underflows; dividers (64 / 15
+  kHz, full clock, joined pairs), 4 / 5 / 9 / 17-bit polys (tables
+  generated at compile time, flash), high-pass flip-flops, volume-only,
+  RANDOM timed by the CPU clock passed in. Silent channels' events are
+  skipped. No serial / keyboard / timer IRQs; pot / ALLPOT values are
+  set by the machine.
+- Tempest (`emu/machines/tempest.*`, set `tempest` (rev 3, 4 KB chips)
+  or `tempest3` (Tom's; the same program on 2 KB chips, older MAME's
+  `tempest`) as romset variants; no AVG / math box PROMs): emulated = 6502
+  at 1.512 MHz, IRQ every 6144 cycles cleared by the watchdog write, the
+  AVG (`emu/machines/atari_avg.*`: VCTR / HALT / SVEC / STAT / SCAL /
+  CNTR / JSRL / RTSL / JMPL run directly, normalisation and timing as the
+  hardware's counters, closed form checked against the step-by-step one),
+  the colour RAM, the math box (`emu/machines/atari_mathbox.*`: the
+  microprogram's commands as arithmetic, the same rounding and division
+  loop), 2 POKEYs (sound; ALLPOT = the spinner's 4-bit count / the
+  buttons and switches, read directly as old MAME did), RANDOM (Tempest
+  checks that a read 4 cycles later shows the high nibble in the low
+  one), EAROM in RAM. The AVG loops on its list on the real board; here
+  the list is drawn from its start to its jump back to word 0 every other
+  frame (the game makes ~27 pictures a second). Shown 240 x 320, the AVG's
+  580 x 570 window stretched to fill it as the portrait tube does (as
+  MAME shows it; unsure if a real cabinet's web looks this tall). Spinner:
+  clockwise on the screen counts the knob down; d-pad 1.5 counts a frame
+  (a lane every ~5 frames), the stick up to 4 a frame in proportion
+  (`set_spinner()`; the game reads the 4-bit count's change, so faster
+  would alias). Idle skipping: the main loop's wait for the IRQ count
+  (LDA zp; CMP #n; BCC, found by its code) jumps to the next IRQ. PC ~0.06
+  ms a frame emulated (the game keeps its CPU busy: ~6800 instructions a
+  frame), ~0.025 ms rendered. Sound: the two POKEYs x 4, AC-coupled; game
+  peaks ~20,000.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

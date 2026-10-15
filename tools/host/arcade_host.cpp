@@ -2,7 +2,7 @@
 //
 //   arcade_host <game> <zip | rom file | dir>... [options]
 //     games: the table in emu/games.cpp (pacman, invaders, rallyx, dkong,
-//     galaga, digdug, asteroid, ...)
+//     galaga, digdug, asteroid, tempest, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -20,10 +20,13 @@
 //                         rallyx: up down left right smoke coin coin2 start1
 //                         start2 service;
 //                         dkong: up down left right jump coin start1 start2;
+//                         tempest: fire zap left right coin coin2 start1
+//                         start2 test step;
 //                         galaga, digdug: up down left right fire coin coin2
 //                         start1 start2 service test; asteroid: left right
 //                         thrust fire hyperspace coin coin2 start1 start2
-//                         test step)
+//                         test step; any game: lx=N, the left stick's X
+//                         -512..511, e.g. "1200+60:lx=-300+fire")
 //     --verbose           one timing line per frame
 //
 //   arcade_host --check-table
@@ -169,17 +172,23 @@ struct Event {
     int      frame;
     int      length;     // 0 = set the held state; > 0 = press for this many frames
     uint16_t buttons;
+    int      stick = 0;  // the left stick's X (lx=N), -512..511, while this holds
 };
 
-bool parse_buttons(const GameInfo& g, const std::string& s, uint16_t& out)
+bool parse_buttons(const GameInfo& g, const std::string& s, uint16_t& out, int& stick)
 {
     out = 0;
+    stick = 0;
     size_t pos = 0;
     while (pos < s.size()) {
         size_t end = s.find_first_of("+|", pos);
         if (end == std::string::npos) end = s.size();
         const std::string name = lower(s.substr(pos, end - pos));
         bool found = name == "none";
+        if (name.rfind("lx=", 0) == 0) {
+            stick = std::max(-512, std::min(511, std::atoi(name.c_str() + 3)));
+            found = true;
+        }
         for (int k = 0; k < g.button_count; ++k)
             if (name == g.buttons[k].name) { out |= g.buttons[k].bit; found = true; }
         if (!found && !name.empty()) {
@@ -210,7 +219,7 @@ bool parse_script(const GameInfo& g, const std::string& script, std::vector<Even
         const size_t plus = when.find('+');
         e.frame = std::atoi(when.substr(0, plus).c_str());
         e.length = plus == std::string::npos ? 0 : std::atoi(when.substr(plus + 1).c_str());
-        if (!parse_buttons(g, item.substr(colon + 1), e.buttons)) return false;
+        if (!parse_buttons(g, item.substr(colon + 1), e.buttons, e.stick)) return false;
         events.push_back(e);
     }
     std::stable_sort(events.begin(), events.end(),
@@ -393,7 +402,9 @@ int main(int argc, char** argv)
     std::vector<uint16_t> frame(size_t(gi.width) * gi.height);
     int16_t audio[2048];
     uint16_t held = 0;
+    int stick = 0;
     std::vector<std::pair<int, uint16_t>> releases;     // (frame, buttons)
+    int stick_until = -1;                               // a pressed stick lets go then
     size_t next_event = 0;
     double emu_sum = 0, emu_max = 0, ren_sum = 0, ren_max = 0;
     double sec_emu = 0, sec_ren = 0, sec_emu_max = 0, sec_ren_max = 0;
@@ -406,16 +417,23 @@ int main(int argc, char** argv)
             if (it->first <= f) { held = uint16_t(held & ~it->second); it = releases.erase(it); }
             else ++it;
         }
+        if (stick_until >= 0 && stick_until <= f) { stick = 0; stick_until = -1; }
         while (next_event < events.size() && events[next_event].frame <= f) {
             const Event& e = events[next_event++];
             if (e.length > 0) {
                 held |= e.buttons;
                 releases.push_back({e.frame + e.length, e.buttons});
+                if (e.stick) { stick = e.stick; stick_until = e.frame + e.length; }
             } else {
                 held = e.buttons;
+                stick = e.stick;
+                stick_until = -1;
             }
         }
         m->set_inputs(held);
+        games::Analog analog;
+        analog.lx = int16_t(stick);
+        m->set_analog(analog);
 
         auto t0 = Clock::now();
         const int n = m->run_frame(audio, int(sizeof audio / sizeof audio[0]));

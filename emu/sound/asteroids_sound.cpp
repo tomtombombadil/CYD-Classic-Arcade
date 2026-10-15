@@ -5,7 +5,7 @@
 // mixer makes the explosion and thrust ~20 times louder than the fire
 // sounds (weights 1000 / 600 against ~50), but they sit below ~100 Hz,
 // where a small speaker gives little - so each sound's level here is set
-// for the CYD's speaker: explosion peaks ~18,000, thrust ~11,000, thump and
+// for the CYD's speaker: explosion peaks ~16,000, thrust ~10,000, thump and
 // fire ~9,000, saucer ~7,000, extra life ~5,000.
 #include "asteroids_sound.h"
 
@@ -38,7 +38,7 @@ float thump_frequency(int data)
 
 // Levels (int16 per unit of each circuit's swing).
 constexpr float kThumpLevel = 7000, kSaucerLevel = 7000, kLifeLevel = 5000;
-constexpr float kExplodeLevel = 30000, kThrustLevel = 16000, kFireLevel = 300;
+constexpr float kExplodeLevel = 26000, kThrustLevel = 14000, kFireLevel = 300;
 // The fire sounds' amplitudes: 53 -> 7 (ship), 49.5 -> 7 (saucer).
 constexpr float kShipFireTop = 46.0f, kSaucerFireTop = 42.5f, kFireFloor = 7.0f;
 

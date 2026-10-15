@@ -102,6 +102,7 @@ void Pokey::reset()
     p4_ = p5_ = p9_ = p17_ = 0;
     t_poly_ = t_;
     update_periods();
+    active_ = 0;
 }
 
 void Pokey::update_periods()
@@ -129,6 +130,20 @@ void Pokey::update_periods()
     }
 }
 
+void Pokey::update_active()
+{
+    uint8_t a = 0;
+    for (int c = 0; c < 4; ++c)
+        if ((ch_[c].audc & 15) && !(ch_[c].audc & kVolOnly)) a |= uint8_t(1u << c);
+    if ((a & 1) && (audctl_ & kFilter1)) a |= 4;
+    if ((a & 2) && (audctl_ & kFilter2)) a |= 8;
+    // A channel coming back: its divider goes on from now (the phase lost
+    // while it was silent doesn't matter).
+    for (int c = 0; c < 4; ++c)
+        if ((a & ~active_ & (1u << c)) && int32_t(ch_[c].next - t_) <= 0) ch_[c].next = t_ + ch_[c].period;
+    active_ = a;
+}
+
 void Pokey::write(uint8_t reg, uint8_t v, uint32_t clock)
 {
     switch (reg & 15) {
@@ -139,12 +154,14 @@ void Pokey::write(uint8_t reg, uint8_t v, uint32_t clock)
         break;
     case kAudc1: case kAudc2: case kAudc3: case kAudc4:
         ch_[(reg & 15) >> 1].audc = v;
+        update_active();
         break;
     case kAudctl:
         audctl_ = v;
         update_periods();
         if (!(v & kFilter1)) ch_[0].filter = 1;
         if (!(v & kFilter2)) ch_[1].filter = 1;
+        update_active();
         break;
     case kStimer:
         // Restarts the dividers.
@@ -249,6 +266,7 @@ void Pokey::render(int16_t* out, int n, bool add)
                 int next_c = -1;
                 uint32_t best = end - t_;
                 for (int c = 0; c < 4; ++c) {
+                    if (!(active_ >> c & 1)) continue;
                     const uint32_t d = ch_[c].next - t_;
                     if (d < best) { best = d; next_c = c; }
                 }

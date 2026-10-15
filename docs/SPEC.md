@@ -22,6 +22,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Donkey Kong | Z80 3.072 MHz | i8035 sound CPU + DAC, analog effects | 224x256 portrait | medium |
 | Q\*bert | 8088 5 MHz | 6502 sound CPU + DAC, Votrax SC-01 speech | 240x256 portrait | medium-hard |
 | Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound (our own models) | 320x240 landscape (lines drawn row by row from a segment list) | done: idle-loop skipping, ~0.04 ms a frame on the PC |
+| Tempest | 6502 1.5 MHz | colour vector display (AVG), math box, 2 POKEY (sound, spinner, buttons), EAROM | 240x320 portrait (lines drawn row by row from a segment list) | done: ~0.06 ms a frame on the PC (the game keeps its CPU busy) |
 | Rally-X | Z80 3.072 MHz | Namco wavetable sound (as Pac-Man), analog crash "bang", scrolling + radar | 288x224 landscape | easy (after Pac-Man) |
 | Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM) | 240x256 portrait | medium: light CPUs, but 64 KB of RAM |
 | Star Wars | 6809 1.5 MHz + math box | color vector generator (AVG), 6809 sound CPU, 4 POKEY, TMS5220 speech (the voices are LPC data in the ROMs) | 4:3 landscape | medium-hard: vectors need a frame buffer (4 bpp, ~38 KB) |
@@ -64,7 +65,8 @@ Pro, 8BitDo, most Android pads). Every controller maps to one layout
 (`main/pad.h`): d-pad (the left stick counts too), A B X Y, L, R, Start,
 Select, Home. Per game: Start = start, Select = coin, A = fire / jump,
 others as the game needs (Defender's thrust / smart bomb / hyperspace,
-Asteroids' thrust / hyperspace). Home = the emulator's menu (pause,
+Asteroids' thrust / hyperspace; Tempest's spinner: the left stick's X
+turns it at a speed in proportion, the d-pad at a steady speed). Home = the emulator's menu (pause,
 volume, quit). Two controllers can be paired (`CONFIG_BLUEPAD32_MAX_DEVICES`
 = 2).
 

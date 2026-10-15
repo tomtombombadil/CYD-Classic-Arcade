@@ -11,7 +11,7 @@ Bluetooth controllers and shows their buttons. The emulators come next
 ## Games
 
 Playable: Pac-Man, Space Invaders, Rally-X, Donkey Kong, Galaga, Dig Dug,
-Asteroids.
+Asteroids, Tempest.
 
 Planned: Q\*bert, Qix, Star Wars; later perhaps Defender,
 Stargate, Spy Hunter and Rolling Thunder.

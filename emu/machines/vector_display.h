@@ -54,6 +54,7 @@ private:
         uint16_t last_row;          // the last row it touches
     };
 
+    void store(int ax, int ay, int bx, int by, uint16_t color);
     void draw(const Seg& s, int y, uint16_t* out) const;
 
     int      width_ = 0, height_ = 0;

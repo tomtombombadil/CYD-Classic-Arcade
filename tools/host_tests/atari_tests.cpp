@@ -4,12 +4,17 @@
 // POKEY (dividers, joined / fast clocks, polynomial counters, RANDOM,
 // volume-only, the high-pass flip-flop), the vector display's rasteriser,
 // the DVG's instructions on hand-made display lists, the Asteroids sound
-// models and the Asteroids machine's wiring on a tiny 6502 program.
+// models and the Asteroids machine's wiring on a tiny 6502 program, the
+// AVG's instructions and normalisation, the math box, and the Tempest
+// machine's wiring.
 //
 //   atari_tests
 #include "../../emu/cpu/m6502.h"
 #include "../../emu/machines/asteroids.h"
+#include "../../emu/machines/atari_avg.h"
 #include "../../emu/machines/atari_dvg.h"
+#include "../../emu/machines/atari_mathbox.h"
+#include "../../emu/machines/tempest.h"
 #include "../../emu/machines/vector_display.h"
 #include "../../emu/sound/asteroids_sound.h"
 #include "../../emu/sound/pokey.h"
@@ -547,6 +552,222 @@ void test_asteroids()
     CHECK(m.watchdog_resets() >= 1);
 }
 
+// --- AVG ---------------------------------------------------------------------------
+
+// The hardware's normalisation, step by step (the reference for the
+// closed form in atari_avg).
+int normalise_steps(int& dvx, int& dvy, int bin_scale, bool svec)
+{
+    const int fill = 0x4000 | (svec ? 0x80 : 0);
+    int timer = 0;
+    for (int i = 0; i < 16 && !((dvy ^ (dvy << 1)) & 0x1000) && !((dvx ^ (dvx << 1)) & 0x1000); ++i) {
+        dvy = (dvy & 0x1000) | ((dvy << 1) & 0x1fff);
+        dvx = (dvx & 0x1000) | ((dvx << 1) & 0x1fff);
+        timer = (timer >> 1) | fill;
+    }
+    if (svec) timer &= 0xff;
+    for (int i = bin_scale; i > 0; --i) timer = (timer >> 1) | fill;
+    if (svec) timer &= 0xff;
+    return svec ? 0x100 - (timer & 0xff) : 0x8000 - timer;
+}
+
+struct AvgRig {
+    uint8_t mem[0x4000] = {};
+    struct Line { int32_t x0, y0, x1, y1; int color, level; };
+    std::vector<Line> lines;
+    int at = 0;
+    void w(uint16_t v) { mem[at * 2] = uint8_t(v); mem[at * 2 + 1] = uint8_t(v >> 8); ++at; }
+    static uint8_t rd(void* c, uint16_t a) { return static_cast<AvgRig*>(c)->mem[(a - 0x2000) & 0x3fff]; }
+    static void line(void* c, int32_t x0, int32_t y0, int32_t x1, int32_t y1, int color, int level)
+    {
+        static_cast<AvgRig*>(c)->lines.push_back({x0, y0, x1, y1, color, level});
+    }
+};
+
+void test_avg()
+{
+    // The closed-form normalisation matches the step-by-step one.
+    bool same = true;
+    for (int x = 0; x < 0x2000 && same; x += 7) {
+        for (int y : {0, 1, 2, 3, 0x7f, 0x100, 0x7ff, 0xfff, 0x1000, 0x1800, 0x1f00, 0x1ffe, 0x1fff}) {
+            for (int b = 0; b < 8; b += 3) {
+                for (int sv = 0; sv < 2; ++sv) {
+                    int x1 = x, y1 = y, x2 = x, y2 = y;
+                    const int c1 = atari_avg::Avg::normalise(x1, y1, b, sv);
+                    const int c2 = normalise_steps(x2, y2, b, sv);
+                    same = same && c1 == c2 && x1 == x2 && y1 == y2;
+                }
+            }
+        }
+    }
+    CHECK(same);
+
+    AvgRig r;
+    atari_avg::Avg avg;
+    const int32_t cx = 290 << 16, cy = 285 << 16;
+    avg.init(AvgRig::rd, AvgRig::line, &r, 0x2000, cx, cy);
+    r.w(0x8000);                        // CNTR
+    r.w(0x7000 | 0x0000);               // SCAL binary 0, linear 0
+    r.w(0x6800 | 0x0005);               // STAT colour 5
+    r.w(0x6000 | 0x00c0);               // STAT intensity 12
+    r.w(0x0000 | 100);                  // VCTR y +100
+    r.w(0x2000 | 50);                   //      z 1 (the STAT intensity), x +50
+    r.w(0xa000 | 0x100);                // JSRL 100
+    r.w(0x4000 | 0x0100 | 0x00e2);      // SVEC y +1, z 7, x +2
+    r.w(0xe000);                        // JMPL 0: the picture ends
+    r.at = 0x100;
+    r.w(0x7100);                        // SCAL binary 1 (half size)
+    r.w(0x0000 | 0x1000 | (0x1000 - 40));   // VCTR y -40
+    r.w(0x8000 | 0);                    //      z 4 (intensity 8), x 0
+    r.w(0xc000);                        // RTSL
+    avg.run();
+    CHECK(!avg.halted());
+    CHECK_EQ(avg.color(), 5);
+    CHECK_EQ(int(r.lines.size()), 3);
+    if (r.lines.size() == 3) {
+        // 1 unit of a long vector ~ 1 screen unit x 255 / 256 at linear
+        // scale 0; Y up on the AVG = down the screen.
+        const AvgRig::Line& a = r.lines[0];
+        CHECK(a.x0 == cx && a.y0 == cy);
+        CHECK(std::abs((a.x1 - cx) - 50 * 65280) < 65536 * 2);
+        CHECK(std::abs((cy - a.y1) - 100 * 65280) < 65536 * 2);
+        CHECK_EQ(a.color, 5);
+        CHECK_EQ(a.level, 12);
+        const AvgRig::Line& b = r.lines[1];      // half of 40, downwards
+        CHECK(std::abs((b.y1 - b.y0) - 20 * 65280) < 65536 * 2);
+        CHECK_EQ(b.x1, b.x0);
+        CHECK_EQ(b.level, 8);
+        // SVEC: twice a long vector's unit, binary scale 1 still: (2, 1).
+        const AvgRig::Line& c = r.lines[2];
+        CHECK(std::abs((c.x1 - c.x0) - 2 * 65280) < 65536);
+        CHECK(std::abs((c.y0 - c.y1) - 1 * 65280) < 65536);
+        CHECK_EQ(c.level, 14);
+    }
+    // HALT stops; the VG reset clears the scales and colour.
+    AvgRig h;
+    avg.init(AvgRig::rd, AvgRig::line, &h, 0x2000, cx, cy);
+    h.w(0x7000 | 0x0080);               // linear scale 0x80: half speed
+    h.w(0x0000 | 64);
+    h.w(0xe000 | 0);                    // z 7, x 0
+    h.w(0x2000);                        // HALT
+    avg.run();
+    CHECK(avg.halted());
+    CHECK_EQ(avg.ops(), 3);
+    CHECK_EQ(avg.scale(), 0x80);
+    if (h.lines.size() == 1) CHECK(std::abs((h.lines[0].y0 - h.lines[0].y1) - 64 * 127 * 256) < 65536);
+    avg.reset();
+    CHECK_EQ(avg.scale(), 0);
+}
+
+void test_mathbox()
+{
+    atari_mathbox::Mathbox m;
+    m.reset();
+    // Loads read back; the result is the register loaded.
+    m.go(0x15, 0x34);
+    m.go(0x16, 0x12);
+    CHECK_EQ(uint16_t(m.reg(7)), 0x1234);
+    CHECK_EQ(m.lo(), 0x34);
+    CHECK_EQ(m.hi(), 0x12);
+    // Divide (14): (Rb:Ra) / R7 with R6 + 1 quotient bits, from 2^15 down.
+    auto divide = [&](int hi, int lo, int d, int r6) {
+        m.go(0x15, uint8_t(d)); m.go(0x16, uint8_t(d >> 8));
+        m.go(0x0c, uint8_t(r6));
+        m.go(0x0d, uint8_t(lo)); m.go(0x0e, uint8_t(lo >> 8));
+        m.go(0x0f, uint8_t(hi)); m.go(0x10, uint8_t(hi >> 8));
+        m.go(0x14, 0);
+        return int(m.result());
+    };
+    CHECK_EQ(divide(0x10, 0x0000, 0x40, 15), (0x100000 / 0x40) >> 1);
+    CHECK_EQ(divide(0x03, 0x1234, 0x100, 15), (0x31234 / 0x100) >> 1);
+    CHECK_EQ(divide(0x10, 0x0000, 0x40, 7), (0x100000 / 0x40) >> 9);
+    CHECK_EQ(divide(0x10, 0x0000, -0x40 & 0xffff, 15), -((0x100000 / 0x40) >> 1));
+    // Distance (1D): max + 3/8 min of |x1 - x0|, |y1 - y0|.
+    m.go(0x00, 10); m.go(0x01, 0);      // R0 = 10
+    m.go(0x02, 20); m.go(0x03, 0);      // R1 = 20
+    m.go(0x04, 110); m.go(0x05, 0);     // R2 = 110: dx 100
+    m.go(0x06, 60);                     // R3 low = 60
+    m.go(0x1d, 0);                      // R3 high = 0: dy 40
+    CHECK_EQ(m.result(), 100 + 10 + 5);     // 100 + 40/4 + 40/8
+}
+
+// --- Tempest ------------------------------------------------------------------------
+
+void test_tempest()
+{
+    static uint8_t cpu[0x5000], vec[0x1000];
+    std::memset(cpu, 0xea, sizeof cpu);
+    const uint8_t prog[] = {
+        0xa2, 0xff, 0x9a,                       // 9000 LDX #FF; TXS
+        0xa9, 0x0f, 0x8d, 0xc8, 0x60,           //      POKEY 1 AUDCTL (keeps it busy)
+        0xa9, 0x03, 0x8d, 0xcf, 0x60,           //      POKEY 1 SKCTL: out of reset
+        0xa9, 0xf5, 0x8d, 0x05, 0x08,           //      colour 5 = F5 (bits 1 and 3 low: red + green)
+        0xa9, 0x00, 0x8d, 0x00, 0x48,           //      AVG go
+        0xa9, 0x5a, 0x8d, 0x07, 0x60,           //      EAROM address 7 = 5A
+        0xa9, 0x0c, 0x8d, 0x40, 0x60,           //      EAROM control: write (C1, C2 low, selected)
+        0xa9, 0x09, 0x8d, 0x40, 0x60,           //      read mode, clock high
+        0xa9, 0x08, 0x8d, 0x40, 0x60,           //      clock low: latch
+        0xad, 0x50, 0x60, 0x85, 0x12,           //      EAROM data -> 12
+        0xa9, 0x40, 0x8d, 0x8e, 0x60,           //      math box: Ra high = 40
+        0xad, 0x70, 0x60, 0x85, 0x13,           //      result high -> 13
+        0x58,                                   //      CLI
+        0xad, 0xc8, 0x60, 0x85, 0x10,           // loop: POKEY 1 ALLPOT (spinner) -> 10
+        0xad, 0xd8, 0x60, 0x85, 0x11,           //      POKEY 2 ALLPOT (buttons) -> 11
+        0x4c, 0x3b, 0x90,                       //      JMP loop (903B)
+    };
+    std::memcpy(cpu, prog, sizeof prog);
+    const uint8_t irq[] = {0xe6, 0x20, 0x8d, 0x00, 0x50, 0x40};     // INC 20; ack + watchdog; RTI
+    std::memcpy(cpu + 0x3000, irq, sizeof irq);                     // C000
+    cpu[0x4ffe] = 0x00; cpu[0x4fff] = 0xc0;     // IRQ C000 (DFFE, seen at FFFE)
+    cpu[0x4ffc] = 0x00; cpu[0x4ffd] = 0x90;     // reset 9000
+    // Vector ROM (word 0x800 = 3000): CNTR; STAT colour 5; STAT intensity
+    // 15; VCTR x +100 z 1; JMPL 0. Vector RAM word 0: JMPL 800.
+    const uint16_t list[] = {0x8000, 0x6805, 0x60f0, 0x0000, 0x2000 | 100, 0xe000};
+    for (int i = 0; i < 6; ++i) { vec[i * 2] = uint8_t(list[i]); vec[i * 2 + 1] = uint8_t(list[i] >> 8); }
+
+    static tempest::Machine m;
+    m.init({cpu, vec}, 24000, false);
+    m.cpu().wr(0x2000, 0x00);
+    m.cpu().wr(0x2001, 0xe8);
+    m.set_inputs(tempest::kFire | tempest::kSpinRight);
+    int16_t audio[1024];
+    for (int f = 0; f < 4; ++f) m.run_frame(audio, 1024);
+    CHECK(m.cpu().rd(0x0020) >= 14);            // 4 IRQs a frame, each acknowledged
+    CHECK_EQ(m.watchdog_resets(), 0);
+    CHECK_EQ(m.cpu().rd(0x0012), 0x5a);         // the EAROM kept the byte
+    CHECK_EQ(m.earom()[7], 0x5a);
+    CHECK_EQ(m.cpu().rd(0x0013), 0x40);         // math box result
+    CHECK_EQ(m.cpu().rd(0x0011), 0xef);         // fire: bit 4 low
+    // Clockwise counts the knob down: 4 frames x 1.5 counts.
+    CHECK_EQ(m.knob(), (16 - 6) & 15);
+    CHECK_EQ(m.cpu().rd(0x0010) & 0x0f, m.knob());
+    CHECK_EQ(m.cpu().rd(0x0010) & 0xf0, 0xf0);
+    // The picture: one line from the centre, red + green = yellow.
+    CHECK(m.vg_runs() >= 1);
+    CHECK_EQ(m.display().count(), 1);
+    const int y = 285 * 320 / 570;
+    std::vector<uint16_t> row(tempest::kScreenW);
+    m.render_line(y, row.data());
+    const std::vector<int> px = lit(row);
+    CHECK(!px.empty());
+    if (!px.empty()) {
+        CHECK(std::abs(px.front() - 290 * 240 / 580) <= 1);
+        CHECK(std::abs(px.back() - 390 * 240 / 580) <= 1);
+        const uint16_t c = row[size_t(px.front())];
+        CHECK((c >> 11) > 20 && ((c >> 5) & 63) > 40 && (c & 31) == 0);
+    }
+    // Without the IRQ acknowledged, the watchdog resets the board.
+    m.cpu().wr(0x0000, 0);
+    m.set_inputs(0);
+    static uint8_t cpu2[0x5000];
+    std::memcpy(cpu2, cpu, sizeof cpu2);
+    cpu2[0x3002] = 0xea; cpu2[0x3003] = 0xea; cpu2[0x3004] = 0xea;   // no write to 5000
+    static tempest::Machine w;
+    w.init({cpu2, vec}, 24000, false);
+    for (int f = 0; f < 8; ++f) w.run_frame(audio, 1024);
+    CHECK(w.watchdog_resets() >= 1);
+}
+
 } // namespace
 
 int main()
@@ -559,6 +780,9 @@ int main()
     test_dvg();
     test_asteroids_sound();
     test_asteroids();
+    test_avg();
+    test_mathbox();
+    test_tempest();
     std::printf("atari tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

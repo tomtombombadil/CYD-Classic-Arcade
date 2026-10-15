@@ -85,11 +85,15 @@ private:
     };
 
     void update_periods();
+    void update_active();
     void step_channel(int c, uint32_t at);
     void advance_polys(uint32_t to);
     int  level() const;
 
     Channel  ch_[4];
+    // Channels whose underflows matter (heard, or clocking a heard
+    // channel's high-pass); the others' events are skipped.
+    uint8_t  active_ = 0;
     uint8_t  audctl_ = 0;
     uint8_t  skctl_ = 0;
     uint8_t  pot_[8] = {};
