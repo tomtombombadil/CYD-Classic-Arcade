@@ -79,6 +79,7 @@ void Cpu::reset()
     d_ = false;
     irq_delay_ = false;
     nmi_pending_ = false;
+    check_ = irq_line_;
     pc = uint16_t(rd(0xfffc) | (rd(0xfffd) << 8));
 }
 
@@ -134,13 +135,6 @@ void Cpu::sbc(uint8_t m)
     c_ = carry;
 }
 
-EMU_HOT int Cpu::run(int cycles)
-{
-    done_ = 0;
-    target_ = cycles;
-    while (done_ < target_) done_ += step();
-    return done_;
-}
 
 // Effective addresses. `cyc` collects the page-cross extra of reads.
 #define ZP()    uint16_t(fetch())
@@ -187,176 +181,184 @@ EMU_HOT int Cpu::run(int cycles)
                if (cond) { const uint16_t t = uint16_t(pc + d); cyc += 1 + (((t ^ pc) >> 8) != 0); pc = t; } \
                break; }
 
-EMU_HOT int Cpu::step()
+EMU_HOT int Cpu::run(int cycles)
 {
-    if (nmi_pending_) {
-        nmi_pending_ = false;
-        interrupt(0xfffa, false);
-        return 7;
-    }
-    if (irq_line_ && !i_) {
-        if (!irq_delay_) {
-            interrupt(0xfffe, false);
-            return 7;
+    done_ = 0;
+    target_ = cycles;
+    while (done_ < target_) {
+        if (check_) {
+            if (nmi_pending_) {
+                nmi_pending_ = false;
+                interrupt(0xfffa, false);
+                done_ += 7;
+                continue;
+            }
+            if (irq_line_ && !i_ && !irq_delay_) {
+                interrupt(0xfffe, false);
+                done_ += 7;
+                continue;
+            }
+            irq_delay_ = false;
+            check_ = irq_line_;
         }
+
+        uint8_t op = rd(pc);
+        if (opcode_hook) {
+            op = opcode_hook(ctx, pc, op, wrote_);
+            wrote_ = false;
+        }
+        ++pc;
+        int cyc = kCycles[op];
+        switch (op) {
+        G1(0x00, NZ(a |= m))
+        G1(0x20, NZ(a &= m))
+        G1(0x40, NZ(a ^= m))
+        G1(0x60, adc(m))
+        G1(0xa0, NZ(a = m))
+        G1(0xc0, cmp(a, m))
+        G1(0xe0, sbc(m))
+
+        // STA
+        case 0x81: wr(INDX(), a); break;
+        case 0x85: wr(ZP(), a); break;
+        case 0x8d: wr(ABS(), a); break;
+        case 0x91: wr(INDY(), a); break;
+        case 0x95: wr(ZPX(), a); break;
+        case 0x99: wr(ABSY(), a); break;
+        case 0x9d: wr(ABSX(), a); break;
+        // STX / STY
+        case 0x86: wr(ZP(), x); break;
+        case 0x8e: wr(ABS(), x); break;
+        case 0x96: wr(ZPY(), x); break;
+        case 0x84: wr(ZP(), y); break;
+        case 0x8c: wr(ABS(), y); break;
+        case 0x94: wr(ZPX(), y); break;
+        // LDX
+        case 0xa2: NZ(x = fetch()); break;
+        case 0xa6: NZ(x = rd(ZP())); break;
+        case 0xae: NZ(x = rd(ABS())); break;
+        case 0xb6: NZ(x = rd(ZPY())); break;
+        case 0xbe: NZ(x = rd(ABSY_R())); break;
+        // LDY
+        case 0xa0: NZ(y = fetch()); break;
+        case 0xa4: NZ(y = rd(ZP())); break;
+        case 0xac: NZ(y = rd(ABS())); break;
+        case 0xb4: NZ(y = rd(ZPX())); break;
+        case 0xbc: NZ(y = rd(ABSX_R())); break;
+        // CPX / CPY
+        case 0xe0: cmp(x, fetch()); break;
+        case 0xe4: cmp(x, rd(ZP())); break;
+        case 0xec: cmp(x, rd(ABS())); break;
+        case 0xc0: cmp(y, fetch()); break;
+        case 0xc4: cmp(y, rd(ZP())); break;
+        case 0xcc: cmp(y, rd(ABS())); break;
+        // BIT
+        case 0x24: { const uint8_t m = rd(ZP());  n_ = m; v_ = (m & 0x40) != 0; z_ = a & m; break; }
+        case 0x2c: { const uint8_t m = rd(ABS()); n_ = m; v_ = (m & 0x40) != 0; z_ = a & m; break; }
+
+        // Shifts and rotates
+        case 0x0a: a = asl(a); break;
+        case 0x2a: a = rol(a); break;
+        case 0x4a: a = lsr(a); break;
+        case 0x6a: a = ror(a); break;
+        RMW(0x00, asl)
+        RMW(0x20, rol)
+        RMW(0x40, lsr)
+        RMW(0x60, ror)
+        // INC / DEC
+        case 0xe6: { const uint16_t e = ZP();   const uint8_t v = uint8_t(rd(e) + 1); NZ(v); wr(e, v); break; }
+        case 0xee: { const uint16_t e = ABS();  const uint8_t v = uint8_t(rd(e) + 1); NZ(v); wr(e, v); break; }
+        case 0xf6: { const uint16_t e = ZPX();  const uint8_t v = uint8_t(rd(e) + 1); NZ(v); wr(e, v); break; }
+        case 0xfe: { const uint16_t e = ABSX(); const uint8_t v = uint8_t(rd(e) + 1); NZ(v); wr(e, v); break; }
+        case 0xc6: { const uint16_t e = ZP();   const uint8_t v = uint8_t(rd(e) - 1); NZ(v); wr(e, v); break; }
+        case 0xce: { const uint16_t e = ABS();  const uint8_t v = uint8_t(rd(e) - 1); NZ(v); wr(e, v); break; }
+        case 0xd6: { const uint16_t e = ZPX();  const uint8_t v = uint8_t(rd(e) - 1); NZ(v); wr(e, v); break; }
+        case 0xde: { const uint16_t e = ABSX(); const uint8_t v = uint8_t(rd(e) - 1); NZ(v); wr(e, v); break; }
+        case 0xe8: NZ(++x); break;
+        case 0xc8: NZ(++y); break;
+        case 0xca: NZ(--x); break;
+        case 0x88: NZ(--y); break;
+
+        // Transfers
+        case 0xaa: NZ(x = a); break;
+        case 0xa8: NZ(y = a); break;
+        case 0x8a: NZ(a = x); break;
+        case 0x98: NZ(a = y); break;
+        case 0xba: NZ(x = s); break;
+        case 0x9a: s = x; break;
+
+        // Stack
+        case 0x48: push(a); break;
+        case 0x68: NZ(a = pull()); break;
+        case 0x08: push(uint8_t(p() | BF)); break;
+        case 0x28: {
+            const bool was = i_;
+            set_p(pull());
+            if (was && !i_) irq_delay_ = check_ = true;     // CLI / PLP: the next instruction runs first
+            break;
+        }
+
+        // Flags
+        case 0x18: c_ = 0; break;
+        case 0x38: c_ = 1; break;
+        case 0x58: if (i_) irq_delay_ = check_ = true; i_ = false; break;
+        case 0x78: i_ = true; break;
+        case 0xb8: v_ = false; break;
+        case 0xd8: d_ = false; break;
+        case 0xf8: d_ = true; break;
+
+        // Branches
+        BRANCH(0x10, !(n_ & 0x80))
+        BRANCH(0x30, n_ & 0x80)
+        BRANCH(0x50, !v_)
+        BRANCH(0x70, v_)
+        BRANCH(0x90, !c_)
+        BRANCH(0xb0, c_)
+        BRANCH(0xd0, z_)
+        BRANCH(0xf0, !z_)
+
+        // Jumps, calls, returns
+        case 0x4c: pc = fetch16(); break;
+        case 0x6c: {
+            const uint16_t ptr = fetch16();
+            // NMOS: the high byte comes from the same page (JMP ($10FF) reads 10FF, 1000).
+            pc = uint16_t(rd(ptr) | (rd(uint16_t((ptr & 0xff00) | uint8_t(ptr + 1))) << 8));
+            break;
+        }
+        case 0x20: {
+            const uint16_t t = fetch16();
+            const uint16_t ret = uint16_t(pc - 1);
+            push(uint8_t(ret >> 8));
+            push(uint8_t(ret));
+            pc = t;
+            break;
+        }
+        case 0x60: {
+            const uint8_t lo = pull();
+            pc = uint16_t((lo | (pull() << 8)) + 1);
+            break;
+        }
+        case 0x40: {
+            set_p(pull());
+            const uint8_t lo = pull();
+            pc = uint16_t(lo | (pull() << 8));
+            break;
+        }
+        case 0x00:
+            ++pc;                                   // BRK skips a padding byte
+            interrupt(0xfffe, true);
+            break;
+
+        case 0xea: break;                           // NOP
+
+        default:
+            ++illegal_count;
+            pc = uint16_t(pc + illegal_operands(op));
+            break;
+        }
+        done_ += cyc;
     }
-    irq_delay_ = false;
-
-    uint8_t op = rd(pc);
-    if (opcode_hook) {
-        op = opcode_hook(ctx, pc, op, wrote_);
-        wrote_ = false;
-    }
-    ++pc;
-    int cyc = kCycles[op];
-    switch (op) {
-    G1(0x00, NZ(a |= m))
-    G1(0x20, NZ(a &= m))
-    G1(0x40, NZ(a ^= m))
-    G1(0x60, adc(m))
-    G1(0xa0, NZ(a = m))
-    G1(0xc0, cmp(a, m))
-    G1(0xe0, sbc(m))
-
-    // STA
-    case 0x81: wr(INDX(), a); break;
-    case 0x85: wr(ZP(), a); break;
-    case 0x8d: wr(ABS(), a); break;
-    case 0x91: wr(INDY(), a); break;
-    case 0x95: wr(ZPX(), a); break;
-    case 0x99: wr(ABSY(), a); break;
-    case 0x9d: wr(ABSX(), a); break;
-    // STX / STY
-    case 0x86: wr(ZP(), x); break;
-    case 0x8e: wr(ABS(), x); break;
-    case 0x96: wr(ZPY(), x); break;
-    case 0x84: wr(ZP(), y); break;
-    case 0x8c: wr(ABS(), y); break;
-    case 0x94: wr(ZPX(), y); break;
-    // LDX
-    case 0xa2: NZ(x = fetch()); break;
-    case 0xa6: NZ(x = rd(ZP())); break;
-    case 0xae: NZ(x = rd(ABS())); break;
-    case 0xb6: NZ(x = rd(ZPY())); break;
-    case 0xbe: NZ(x = rd(ABSY_R())); break;
-    // LDY
-    case 0xa0: NZ(y = fetch()); break;
-    case 0xa4: NZ(y = rd(ZP())); break;
-    case 0xac: NZ(y = rd(ABS())); break;
-    case 0xb4: NZ(y = rd(ZPX())); break;
-    case 0xbc: NZ(y = rd(ABSX_R())); break;
-    // CPX / CPY
-    case 0xe0: cmp(x, fetch()); break;
-    case 0xe4: cmp(x, rd(ZP())); break;
-    case 0xec: cmp(x, rd(ABS())); break;
-    case 0xc0: cmp(y, fetch()); break;
-    case 0xc4: cmp(y, rd(ZP())); break;
-    case 0xcc: cmp(y, rd(ABS())); break;
-    // BIT
-    case 0x24: { const uint8_t m = rd(ZP());  n_ = m; v_ = (m & 0x40) != 0; z_ = a & m; break; }
-    case 0x2c: { const uint8_t m = rd(ABS()); n_ = m; v_ = (m & 0x40) != 0; z_ = a & m; break; }
-
-    // Shifts and rotates
-    case 0x0a: a = asl(a); break;
-    case 0x2a: a = rol(a); break;
-    case 0x4a: a = lsr(a); break;
-    case 0x6a: a = ror(a); break;
-    RMW(0x00, asl)
-    RMW(0x20, rol)
-    RMW(0x40, lsr)
-    RMW(0x60, ror)
-    // INC / DEC
-    case 0xe6: { const uint16_t e = ZP();   const uint8_t v = uint8_t(rd(e) + 1); NZ(v); wr(e, v); break; }
-    case 0xee: { const uint16_t e = ABS();  const uint8_t v = uint8_t(rd(e) + 1); NZ(v); wr(e, v); break; }
-    case 0xf6: { const uint16_t e = ZPX();  const uint8_t v = uint8_t(rd(e) + 1); NZ(v); wr(e, v); break; }
-    case 0xfe: { const uint16_t e = ABSX(); const uint8_t v = uint8_t(rd(e) + 1); NZ(v); wr(e, v); break; }
-    case 0xc6: { const uint16_t e = ZP();   const uint8_t v = uint8_t(rd(e) - 1); NZ(v); wr(e, v); break; }
-    case 0xce: { const uint16_t e = ABS();  const uint8_t v = uint8_t(rd(e) - 1); NZ(v); wr(e, v); break; }
-    case 0xd6: { const uint16_t e = ZPX();  const uint8_t v = uint8_t(rd(e) - 1); NZ(v); wr(e, v); break; }
-    case 0xde: { const uint16_t e = ABSX(); const uint8_t v = uint8_t(rd(e) - 1); NZ(v); wr(e, v); break; }
-    case 0xe8: NZ(++x); break;
-    case 0xc8: NZ(++y); break;
-    case 0xca: NZ(--x); break;
-    case 0x88: NZ(--y); break;
-
-    // Transfers
-    case 0xaa: NZ(x = a); break;
-    case 0xa8: NZ(y = a); break;
-    case 0x8a: NZ(a = x); break;
-    case 0x98: NZ(a = y); break;
-    case 0xba: NZ(x = s); break;
-    case 0x9a: s = x; break;
-
-    // Stack
-    case 0x48: push(a); break;
-    case 0x68: NZ(a = pull()); break;
-    case 0x08: push(uint8_t(p() | BF)); break;
-    case 0x28: {
-        const bool was = i_;
-        set_p(pull());
-        if (was && !i_) irq_delay_ = true;      // CLI / PLP: the next instruction runs first
-        break;
-    }
-
-    // Flags
-    case 0x18: c_ = 0; break;
-    case 0x38: c_ = 1; break;
-    case 0x58: if (i_) irq_delay_ = true; i_ = false; break;
-    case 0x78: i_ = true; break;
-    case 0xb8: v_ = false; break;
-    case 0xd8: d_ = false; break;
-    case 0xf8: d_ = true; break;
-
-    // Branches
-    BRANCH(0x10, !(n_ & 0x80))
-    BRANCH(0x30, n_ & 0x80)
-    BRANCH(0x50, !v_)
-    BRANCH(0x70, v_)
-    BRANCH(0x90, !c_)
-    BRANCH(0xb0, c_)
-    BRANCH(0xd0, z_)
-    BRANCH(0xf0, !z_)
-
-    // Jumps, calls, returns
-    case 0x4c: pc = fetch16(); break;
-    case 0x6c: {
-        const uint16_t ptr = fetch16();
-        // NMOS: the high byte comes from the same page (JMP ($10FF) reads 10FF, 1000).
-        pc = uint16_t(rd(ptr) | (rd(uint16_t((ptr & 0xff00) | uint8_t(ptr + 1))) << 8));
-        break;
-    }
-    case 0x20: {
-        const uint16_t t = fetch16();
-        const uint16_t ret = uint16_t(pc - 1);
-        push(uint8_t(ret >> 8));
-        push(uint8_t(ret));
-        pc = t;
-        break;
-    }
-    case 0x60: {
-        const uint8_t lo = pull();
-        pc = uint16_t((lo | (pull() << 8)) + 1);
-        break;
-    }
-    case 0x40: {
-        set_p(pull());
-        const uint8_t lo = pull();
-        pc = uint16_t(lo | (pull() << 8));
-        break;
-    }
-    case 0x00:
-        ++pc;                                   // BRK skips a padding byte
-        interrupt(0xfffe, true);
-        break;
-
-    case 0xea: break;                           // NOP
-
-    default:
-        ++illegal_count;
-        pc = uint16_t(pc + illegal_operands(op));
-        break;
-    }
-    return cyc;
+    return done_;
 }
 
 #undef ZP

@@ -22,6 +22,9 @@
 
 #include "hot.h"
 
+// The memory helpers must inline into the interpreter's loop.
+#define M6502_INLINE inline __attribute__((always_inline))
+
 namespace m6502 {
 
 using read_fn   = uint8_t (*)(void* ctx, uint16_t addr);
@@ -71,9 +74,9 @@ public:
     // instruction running now (for callbacks that need a time stamp).
     int  elapsed() const { return done_; }
 
-    void irq(bool level) { irq_line_ = level; }     // level-triggered
+    void irq(bool level) { irq_line_ = level; check_ = level || nmi_pending_; }   // level-triggered
     bool irq_line() const { return irq_line_; }
-    void nmi() { nmi_pending_ = true; }             // edge: taken once
+    void nmi() { nmi_pending_ = true; check_ = true; }  // edge: taken once
 
     // --- registers (public for tests and debuggers) -----------------------
     uint8_t  a = 0, x = 0, y = 0, s = 0xfd;
@@ -95,12 +98,12 @@ public:
     }
 
     // Memory helpers (also handy for test harnesses).
-    uint8_t rd(uint16_t a)
+    M6502_INLINE uint8_t rd(uint16_t a)
     {
         const uint8_t* p = read_page[a >> kPageShift];
         return p ? p[a & (kPageSize - 1)] : mem_read(ctx, a);
     }
-    void wr(uint16_t a, uint8_t v)
+    M6502_INLINE void wr(uint16_t a, uint8_t v)
     {
         wrote_ = true;
         uint8_t* p = write_page[a >> kPageShift];
@@ -116,17 +119,18 @@ private:
     bool    irq_line_ = false;
     bool    nmi_pending_ = false;
     bool    irq_delay_ = false;     // the I flag just cleared: one more instruction first
+    bool    check_ = false;         // look at the interrupt lines before the next instruction
     bool    wrote_ = false;         // a write since the last opcode fetch
     int     done_ = 0, target_ = 0;
 
-    uint8_t  fetch() { return rd(pc++); }
-    uint16_t fetch16()
+    M6502_INLINE uint8_t  fetch() { return rd(pc++); }
+    M6502_INLINE uint16_t fetch16()
     {
         const uint8_t lo = rd(pc++);
         return uint16_t(lo | (rd(pc++) << 8));
     }
-    void push(uint8_t v) { wr(uint16_t(0x100 | s--), v); }
-    uint8_t pull() { return rd(uint16_t(0x100 | ++s)); }
+    M6502_INLINE void push(uint8_t v) { wr(uint16_t(0x100 | s--), v); }
+    M6502_INLINE uint8_t pull() { return rd(uint16_t(0x100 | ++s)); }
 
     void interrupt(uint16_t vector, bool brk);
     void adc(uint8_t m);
@@ -141,7 +145,6 @@ private:
     uint8_t lsr(uint8_t v) { c_ = v & 1; v >>= 1; n_ = z_ = v; return v; }
     uint8_t rol(uint8_t v) { const uint8_t r = uint8_t(v << 1 | c_); c_ = v >> 7; n_ = z_ = r; return r; }
     uint8_t ror(uint8_t v) { const uint8_t r = uint8_t(v >> 1 | c_ << 7); c_ = v & 1; n_ = z_ = r; return r; }
-    int  step();
 };
 
 } // namespace m6502
