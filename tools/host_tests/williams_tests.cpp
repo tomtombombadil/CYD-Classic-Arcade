@@ -1,8 +1,9 @@
 // Unit tests for the Williams parts that need no ROMs: the 6821 PIA, the
 // SC1 blitter on synthetic data, the sound board (6808 + PIA + DAC) on a
-// hand-made program, and the Robotron board running small hand-assembled
-// 6809 programs: interrupts from the line counter, the video counter, ROM
-// banking, CMOS, palette and video, the sound command, the watchdog.
+// hand-made program, and both boards (Robotron, Defender) running small
+// hand-assembled 6809 programs: interrupts from the line counter, the
+// video counter, ROM banking, CMOS, palette and video, the sound command,
+// the watchdog and Defender's stick.
 //
 //   williams_tests
 #include "../../emu/machines/pia6821.h"
@@ -418,6 +419,68 @@ void test_watchdog()
     CHECK_EQ(b.m->ram()[0x9800], 2);            // RAM kept, the program ran again
 }
 
+void test_defender_board()
+{
+    Board b(williams::Board::Defender);
+    Code c(b.fixed(), 0xd000, 0xd000);
+    c.lds(0xbf00)
+        .lda(0x01).sta(0xd000).lda_ext(0xc000).sta(0x9801)     // bank 1
+        .lda(0x07).sta(0xd000).lda_ext(0xc000).sta(0x9802)     // bank 7
+        .lda(0x05).sta(0xd000).lda_ext(0xc000).sta(0x9803)     // bank 5: empty
+        .lda(0x00).sta(0xd000)                                  // I/O
+        .lda(0x09).sta(0xc410).lda_ext(0xc410).sta(0x9804)      // CMOS
+        .lda(0x04).sta(0xcc05)          // widget PIA: CRA data
+        .lda(0x07).sta(0xcc03)          // ROM PIA: CRB data, CB1 rising, IRQ
+        .b({0x1c, 0xef})
+        .here_loop();
+    Code irq(b.fixed(), 0xd000, 0xd100);
+    irq.lda_ext(0xcc02)                 // clear the flag
+        .lda_ext(0xcc04).sta(0x9810)    // IN0
+        .lda(0x38).sta(0xc3fc)          // watchdog
+        .b({0x3b});
+    c.vec(0xfff8, 0xd100);
+    c.vec(0xfffe, 0xd000);
+    uint8_t* banked = b.regions[williams::defender::kRegionBanked].data();
+    banked[0x0000] = 0x11;              // bank 1
+    banked[0x3000] = 0x77;              // bank 7
+    b.start();
+    b.frames(3);
+    const uint8_t* ram = b.m->ram();
+    CHECK_EQ(ram[0x9801], 0x11);
+    CHECK_EQ(ram[0x9802], 0x77);
+    CHECK_EQ(ram[0x9803], 0x00);
+    CHECK_EQ(ram[0x9804], 0xf9);
+    CHECK_EQ(b.m->watchdog_resets(), 0);
+    b.frames(100);
+    CHECK_EQ(b.m->watchdog_resets(), 0);        // fed by 38 at C3FC
+    // The stick: facing right (A098 = 03), right = thrust (IN0 bit 1).
+    using namespace williams::defender;
+    b.m->ram()[0xa098] = 0x03;
+    b.frames(1, kRight | kFire);
+    CHECK_EQ(ram[0x9810], 0x03);                // fire + thrust
+    // Left while facing right: Reverse (bit 6) in 3-frame presses.
+    uint8_t seen[6];
+    for (int i = 0; i < 6; ++i) {
+        b.frames(1, kLeft);
+        seen[i] = ram[0x9810];
+    }
+    CHECK_EQ(seen[0], 0x40);
+    CHECK_EQ(seen[2], 0x40);
+    CHECK_EQ(seen[3], 0x00);
+    CHECK_EQ(seen[5], 0x00);
+    // Facing left (FD): left thrusts.
+    b.m->ram()[0xa098] = 0xfd;
+    b.frames(1, kLeft);
+    CHECK_EQ(ram[0x9810], 0x02);
+    // Not playing (another value): the stick does nothing.
+    b.m->ram()[0xa098] = 0x00;
+    b.frames(1, kLeft);
+    CHECK_EQ(ram[0x9810], 0x00);
+    // The cabinet's buttons pass straight through.
+    b.frames(1, kReverse | kSmartBomb | kHyperspace | kDown);
+    CHECK_EQ(ram[0x9810], 0x40 | 0x04 | 0x08 | 0x80);
+}
+
 } // namespace
 
 int main()
@@ -427,6 +490,7 @@ int main()
     test_sound_board();
     test_robotron_board();
     test_watchdog();
+    test_defender_board();
     std::printf("williams tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

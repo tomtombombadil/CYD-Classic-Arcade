@@ -2,7 +2,7 @@
 //
 //   arcade_host <game> <zip | rom file | dir>... [options]
 //     games: the table in emu/games.cpp (pacman, invaders, rallyx, dkong,
-//     galaga, digdug, robotron, ...)
+//     galaga, digdug, robotron, defender, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -24,7 +24,10 @@
 //                         start1 start2 service test;
 //                         robotron: up down left right fireup firedown
 //                         fireleft fireright coin coin2 start1 start2
-//                         advance autoup hsreset)
+//                         advance autoup hsreset;
+//                         defender: up down left right (the stick: reverse /
+//                         thrust by the ship's facing) fire thrust bomb hyper
+//                         reverse coin start1 start2 advance autoup hsreset)
 //     --verbose           one timing line per frame
 //
 //   arcade_host --check-table

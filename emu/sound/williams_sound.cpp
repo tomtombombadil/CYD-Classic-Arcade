@@ -48,19 +48,31 @@ uint8_t Board::mem_read(void* ctx, uint16_t addr)
     return 0;
 }
 
+// The DAC is written tens of thousands of times a second: port A's data
+// goes straight to it when the port is all output.
 void Board::mem_write(void* ctx, uint16_t addr, uint8_t v)
 {
     Board& b = *static_cast<Board*>(ctx);
-    if ((addr & 0x7ffc) == 0x0400) b.pia_.write(addr & 3, v);
+    if ((addr & 0x7ffc) != 0x0400) return;
+    if ((addr & 3) == 0 && b.pia_.a_is_output_data()) {
+        b.pia_.set_out_a_reg(v);
+        b.dac_set(v);
+    } else {
+        b.pia_.write(addr & 3, v);
+    }
 }
 
 void Board::dac_write(void* ctx, uint8_t v)
 {
-    Board& b = *static_cast<Board*>(ctx);
-    if (v == b.dac_) return;
-    b.audio_to(b.done_ + b.cpu_.elapsed());
-    b.dac_ = v;
-    ++b.dac_writes_;
+    static_cast<Board*>(ctx)->dac_set(v);
+}
+
+void Board::dac_set(uint8_t v)
+{
+    if (v == dac_) return;
+    audio_to(done_ + cpu_.elapsed());
+    dac_ = v;
+    ++dac_writes_;
 }
 
 void Board::irq_changed(void* ctx)

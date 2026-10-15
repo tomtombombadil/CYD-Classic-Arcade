@@ -47,6 +47,11 @@ public:
     // CA2 / CB2 as outputs (set mode: CRx bits 5 and 4 set, level = bit 3).
     bool ca2_out() const { return (ctl_a_ & 0x38) == 0x38; }
     bool cb2_out() const { return (ctl_b_ & 0x38) == 0x38; }
+    // Port A's data register written by a fast path that skips the
+    // callback (the owner handles the output): only when it is selected
+    // and all output.
+    bool a_is_output_data() const { return (ctl_a_ & 0x04) && ddr_a_ == 0xff; }
+    void set_out_a_reg(uint8_t v) { out_a_reg_ = v; }
     uint8_t ctl_a() const { return ctl_a_; }
     uint8_t ctl_b() const { return ctl_b_; }
     uint8_t ddr_a() const { return ddr_a_; }

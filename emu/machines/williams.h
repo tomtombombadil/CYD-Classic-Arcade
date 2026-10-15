@@ -112,7 +112,7 @@ private:
     uint16_t defender_stick(uint16_t buttons);
     int     now() const { return fc_ + cpu_.elapsed(); }
     void    run_main_to(int cycle);
-    void    skip_idle(int cycle);
+    bool    skip_idle(int cycle);           // true: was in an idle loop
 
     Board          board_ = Board::Robotron;
     const uint8_t* rom_fixed_ = nullptr;    // D000-FFFF
@@ -147,6 +147,7 @@ private:
     uint32_t sound_commands_ = 0;
     uint32_t io_accesses_ = 0;              // reads through the I/O callback (idle-loop check)
     uint32_t idle_skips_ = 0;
+    uint8_t  probe_wait_ = 0, probe_backoff_ = 0;   // slices before the next idle probe
 
     uint16_t pen_[16] = {};                 // the palette as the frame ended, RGB565
     uint16_t rgb565_[256] = {};             // BBGGGRRR -> RGB565

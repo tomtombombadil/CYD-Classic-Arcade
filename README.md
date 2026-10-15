@@ -11,10 +11,10 @@ Bluetooth controllers and shows their buttons. The emulators come next
 ## Games
 
 Playable: Pac-Man, Space Invaders, Rally-X, Donkey Kong, Galaga, Dig Dug,
-Robotron: 2084.
+Robotron: 2084, Defender.
 
-Planned: Q\*bert, Asteroids, Qix, Star Wars; later perhaps Defender,
-Stargate, Spy Hunter and Rolling Thunder.
+Planned: Q\*bert, Asteroids, Qix, Star Wars; later perhaps Stargate, Spy
+Hunter and Rolling Thunder.
 
 ## ROMs - bring your own
 

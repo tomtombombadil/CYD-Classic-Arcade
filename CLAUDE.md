@@ -220,7 +220,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   the CPU is followed for up to 12 instructions; a round trip that leaves
   every register as it was, writes nothing and touches no I/O is skipped
   to the next line event in whole rounds - checked exact (same PNGs and
-  WAV with and without it). Memory: the machine object ~52 KB (48 KB of
+  WAV with and without it); a probe that finds nothing doubles the wait
+  before the next (up to 16 slices), so a busy CPU isn't slowed. Memory: the machine object ~52 KB (48 KB of
   RAM) + Robotron's ROM in RAM 52 KB (blocks of 36 / 12 / 4 KB) = ~104 KB,
   a little over the ~100 KB aimed at (140 KB free, largest block 108 KB
   with Bluetooth) - not yet run on a board.
@@ -233,8 +234,28 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   (`games::kPadRUp`...), and Y / A / X / B fire up / down / left / right
   for pads without a usable right stick. Boot: ~7.5 s of RAM test noise,
   "INITIAL TESTS INDICATE: OPERATIONAL", then the attract mode (silent, as
-  on the real game). PC: emu ~0.035 ms a frame in play (peaks ~0.07),
-  render ~0.035 ms.
+  on the real game). PC: emu ~0.035-0.04 ms a frame in play (393K host
+  instructions a frame by callgrind, Pac-Man 483K), render ~0.035 ms.
+- Defender (set `defender` Red label or `defenderg` Green label - romset
+  variants; Tom's `defendg` is the Green label). The first Williams board:
+  no blitter, ROM banks 1 / 2 / 3 / 7 at C000 (D000 picks), I/O in bank 0.
+  Its watchdog is C3FC with any data (the game writes 38; MAME maps C3FF /
+  39 and never times it out). Boot: ~21 s of RAM test noise (the CPU tests
+  the RAM itself - assumed as on the board), "UNIT OK", then with the
+  empty CMOS "PRESS ADVANCE WITH SWITCH SET FOR AUTO FOR GAME OVER" for
+  ~1 s before the bookkeeping pages: the machine presses Advance with Auto
+  Up 10 frames after the CMOS writes stop, and the attract mode follows.
+  Controls: up / down move; A fire, B thrust, X smart bomb, Y hyperspace,
+  R reverse (the cabinet's buttons); left / right on the stick do what a
+  player means: the way the ship faces = thrust, the other way = Reverse
+  (pressed 3 frames on / 3 off until the ship has turned), then thrust.
+  The facing comes from RAM A098 (03 right, FD left, other values = not
+  playing: the stick does nothing then), found by watching the Green
+  label; the Red label is assumed to keep it there (not checked - no ROMs).
+  PC: emu ~0.04-0.065 ms a frame in play (648K host instructions a frame
+  by callgrind: 1.3x Pac-Man's 483K; the sound CPU is half of it - the
+  game's waveform loops write the DAC ~40,000 times a second), render
+  ~0.035 ms.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
@@ -350,7 +371,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - `williams_tests.cpp`: the 6821 PIA, the SC1 blitter on synthetic data,
   the sound board on a hand-made 6808 program, and the Robotron board
   running hand-assembled 6809 programs (line interrupts, video counter,
-  ROM banking, CMOS, palette / video, sound command, watchdog).
+  ROM banking, CMOS, palette / video, sound command, watchdog), and the
+  Defender board (banks, CMOS, its watchdog, the stick's reverse / thrust).
 - Claude's container can't reach the PlatformIO registry, so firmware
   builds are checked by CI (GitHub Actions) on every push.
 - CI pins PlatformIO 6.1.18: 6.2.0 brings SCons 4.11, which breaks

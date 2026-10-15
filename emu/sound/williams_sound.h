@@ -46,6 +46,7 @@ private:
     static void    mem_write(void* ctx, uint16_t addr, uint8_t v);
     static void    dac_write(void* ctx, uint8_t v);
     static void    irq_changed(void* ctx);
+    void dac_set(uint8_t v);
     void audio_to(int cycle);
 
     m6800::Cpu cpu_;

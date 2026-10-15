@@ -202,7 +202,7 @@ const ButtonName kNamcoButtons[] = {
     {"service", namco_galaga::kService}, {"test", namco_galaga::kTest},
 };
 
-// ---- Williams: Robotron: 2084 -------------------------------------
+// ---- Williams: Robotron: 2084, Defender -------------------------------------
 
 template <williams::Board B> class Williams : public Machine {
 public:
@@ -242,6 +242,30 @@ const ButtonName kRobotronButtons[] = {
     {"hsreset", williams::robotron::kHighScoreReset},
 };
 
+// Up / down move; left / right = the stick (reverse / thrust by the ship's
+// facing, see williams.cpp); A fire, B thrust, X smart bomb, Y hyperspace,
+// R reverse (the cabinet's own buttons).
+const Control kDefenderControls[] = {
+    {kPadUp, williams::defender::kUp}, {kPadDown, williams::defender::kDown},
+    {kPadLeft, williams::defender::kLeft}, {kPadRight, williams::defender::kRight},
+    {kPadA, williams::defender::kFire}, {kPadB, williams::defender::kThrust},
+    {kPadX, williams::defender::kSmartBomb}, {kPadY, williams::defender::kHyperspace},
+    {kPadR, williams::defender::kReverse},
+    {kPadSelect, williams::defender::kCoin}, {kPadStart, williams::defender::kStart1},
+    {kPadL, williams::defender::kStart2},
+};
+
+const ButtonName kDefenderButtons[] = {
+    {"up", williams::defender::kUp}, {"down", williams::defender::kDown},
+    {"left", williams::defender::kLeft}, {"right", williams::defender::kRight},
+    {"fire", williams::defender::kFire}, {"thrust", williams::defender::kThrust},
+    {"bomb", williams::defender::kSmartBomb}, {"hyper", williams::defender::kHyperspace},
+    {"reverse", williams::defender::kReverse}, {"coin", williams::defender::kCoin},
+    {"start1", williams::defender::kStart1}, {"start2", williams::defender::kStart2},
+    {"advance", williams::defender::kAdvance}, {"autoup", williams::defender::kAutoUp},
+    {"hsreset", williams::defender::kHighScoreReset},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -272,6 +296,10 @@ const Info kGames[] = {
      Orientation::Landscape, williams::kCpuClock, williams::kCyclesPerFrame, kRobotronControls,
      COUNT(kRobotronControls), kRobotronButtons, COUNT(kRobotronButtons), nullptr, 0,
      make<Williams<williams::Board::Robotron>>, false},
+    {"defender", "Defender", &williams::defender::kRomSet, williams::kScreenW, williams::kScreenH,
+     Orientation::Landscape, williams::kCpuClock, williams::kCyclesPerFrame, kDefenderControls,
+     COUNT(kDefenderControls), kDefenderButtons, COUNT(kDefenderButtons), nullptr, 0,
+     make<Williams<williams::Board::Defender>>, false},
 };
 
 const int kGameCount = COUNT(kGames);

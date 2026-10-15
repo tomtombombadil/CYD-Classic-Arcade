@@ -446,7 +446,20 @@ void Machine::run_main_to(int cycle)
     while (fc_ < cycle) {
         const int slice = cycle - fc_ < kSliceCycles ? cycle - fc_ : kSliceCycles;
         fc_ += cpu_.run(slice);
-        if (fc_ < cycle) skip_idle(cycle);
+        if (fc_ >= cycle) break;
+        // A busy CPU (Defender draws everything itself) isn't probed after
+        // every slice: each probe that finds no idle loop doubles the wait
+        // before the next one (up to 16 slices).
+        if (probe_wait_) {
+            --probe_wait_;
+            continue;
+        }
+        if (skip_idle(cycle)) {
+            probe_backoff_ = 0;
+        } else {
+            probe_backoff_ = probe_backoff_ ? (probe_backoff_ < 16 ? probe_backoff_ * 2 : 16) : 1;
+            probe_wait_ = probe_backoff_;
+        }
     }
 }
 
@@ -458,18 +471,20 @@ void Machine::run_main_to(int cycle)
 // `cycle` - so the whole rounds that end before `cycle` are counted at once. The RAM
 // only changes by CPU writes (the blitter too runs on a CPU write), so this
 // is exact.
-void Machine::skip_idle(int cycle)
+bool Machine::skip_idle(int cycle)
 {
+    // fc_ moves with every step, so a sound command written meanwhile gets
+    // the right time.
     const uint16_t pc0 = cpu_.pc;
-    int cyc = 0, first = -1;
+    int first = -1;
     uint32_t writes = 0, io = 0;
     uint16_t d = 0, x = 0, y = 0, u = 0, s = 0;
     uint8_t dp = 0, cc = 0;
-    for (int n = 0; n < kIdleProbe && fc_ + cyc < cycle; ++n) {
-        cyc += cpu_.run(1);
+    for (int n = 0; n < kIdleProbe && fc_ < cycle; ++n) {
+        fc_ += cpu_.run(1);
         if (cpu_.pc != pc0) continue;
         if (first < 0) {
-            first = cyc;
+            first = fc_;
             writes = cpu_.writes;
             io = io_accesses_;
             d = cpu_.d; x = cpu_.x; y = cpu_.y; u = cpu_.u; s = cpu_.s; dp = cpu_.dp; cc = cpu_.cc;
@@ -478,15 +493,16 @@ void Machine::skip_idle(int cycle)
         if (cpu_.writes == writes && io_accesses_ == io && cpu_.d == d && cpu_.x == x && cpu_.y == y
             && cpu_.u == u && cpu_.s == s && cpu_.dp == dp && cpu_.cc == cc && !cpu_.in_cwai() && !cpu_.in_sync()) {
             // Whole rounds that end before `cycle`; the last one runs as usual.
-            const int round = cyc - first, left = cycle - (fc_ + cyc);
+            const int round = fc_ - first, left = cycle - fc_;
             if (left > round) {
-                cyc += (left - 1) / round * round;
+                fc_ += (left - 1) / round * round;
                 ++idle_skips_;
             }
+            return true;
         }
         break;
     }
-    fc_ += cyc;
+    return false;
 }
 
 int Machine::run_frame(int16_t* audio, int cap)
