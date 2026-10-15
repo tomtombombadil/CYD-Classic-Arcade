@@ -303,6 +303,8 @@ void test_z80_timing()
     const Case cases[] = {
         {{0x00}, 4, "NOP"},
         {{0x3e, 0x12}, 7, "LD A,n"},
+        {{0x18, 0x00}, 12, "JR e"},
+        {{0xc3, 0x00, 0x20}, 10, "JP nn"},
         {{0xdd, 0x36, 0x05, 0x03}, 19, "LD (IX+5),n"},
         {{0xfd, 0x34, 0x02}, 23, "INC (IY+2)"},
         {{0xdd, 0x7e, 0x01}, 19, "LD A,(IX+1)"},
