@@ -23,6 +23,10 @@
 #      committed; the decimal test's source is assembled by asm6502.py with
 #      the N / V / Z checks on), both builds; atari_tests (6502 timing /
 #      interrupts / opcode hook), -O2 and with the sanitizers
+#   8. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
+#      start of each opcode's file, ~600 tests each, fetched on first use
+#      into build/i8088 by fetch_i8088_tests.py - not ours, never
+#      committed), both builds
 # and the ROM store / USB protocol (core/), with the web page's loader
 # (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
@@ -32,7 +36,8 @@ OUT=$ROOT/build/host_tests
 ZEX=$ROOT/build/zex
 I80=$ROOT/build/i8080
 M65=$ROOT/build/m6502
-mkdir -p "$OUT" "$ZEX" "$I80" "$M65"
+I88=$ROOT/build/i8088
+mkdir -p "$OUT" "$ZEX" "$I80" "$M65" "$I88"
 QUICK=0
 [ "$1" = "--quick" ] && QUICK=1
 
@@ -55,6 +60,8 @@ g++ $FLAGS -O2 -o "$OUT/i8080_test" "$ROOT/tools/host_tests/i8080_test.cpp" "$RO
 g++ $FLAGS $SAN -o "$OUT/i8080_test_san" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
 g++ $FLAGS -O2 -o "$OUT/m6502_test" "$ROOT/tools/host_tests/m6502_test.cpp" "$ROOT/emu/cpu/m6502.cpp"
 g++ $FLAGS $SAN -o "$OUT/m6502_test_san" "$ROOT/tools/host_tests/m6502_test.cpp" "$ROOT/emu/cpu/m6502.cpp"
+g++ $FLAGS -O2 -o "$OUT/i8088_test" "$ROOT/tools/host_tests/i8088_test.cpp" "$ROOT/emu/cpu/i8088.cpp"
+g++ $FLAGS $SAN -o "$OUT/i8088_test_san" "$ROOT/tools/host_tests/i8088_test.cpp" "$ROOT/emu/cpu/i8088.cpp"
 
 echo "== ROM store and USB loading (core/)"
 CORE="$ROOT/core/rom_store.cpp $ROOT/core/usb_import.cpp $ROOT/emu/rom/crc32.cpp"
@@ -172,7 +179,17 @@ for t in "$OUT/m6502_test" "$OUT/m6502_test_san"; do
     "$t" decimal "$M65/decimal.bin" "$DEC_AT"
 done
 
+echo "== 8088 tests"
+# SingleStepTests 8088 (MIT, Daniel Balsom), pinned commit and SHA-256s in
+# fetch_i8088_tests.py / i8088_tests.sha256.
+python3 "$ROOT/tools/host_tests/fetch_i8088_tests.py" "$I88"
+for t in "$OUT/i8088_test" "$OUT/i8088_test_san"; do
+    if python3 "$ROOT/tools/host_tests/fetch_i8088_tests.py" "$I88" --cat | "$t" - > "$OUT/i8088.log" 2>&1
+    then tail -1 "$OUT/i8088.log"; else cat "$OUT/i8088.log"; exit 1; fi
+done
+
 echo "== benchmark"
 "$OUT/zex_test" "$ZEX/zexdoc.com" --bench 3000
 "$OUT/i8080_test" "$I80/8080EXM.COM" --bench 2000
 "$OUT/m6502_test" functional "$M65/6502_functional_test.bin" 3469 --bench 96
+"$OUT/i8088_test" --bench 1000

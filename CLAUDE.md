@@ -135,6 +135,16 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   (boards bank RAM at that grain). `opcode_hook` sees each opcode fetch
   and whether the last instruction wrote (Burger Time's DECO CPU-7
   decryption). PC: ~500 emulated MHz.
+- 8088 core (`emu/cpu/i8088.*`, for Q*bert): real mode, every 8086 opcode
+  with the 8088's quirks (60-6F = Jcc, C0/C1/C8/C9 = RET/RETF, SALC,
+  SETMO, POP CS, PUSH SP = new SP, word wrap at offset FFFF, divide error
+  returns past the instruction, REP before IDIV flips the quotient). Passes
+  the SingleStepTests 8088 suite (defined flags; undefined ones masked).
+  Timing = documented cycles + 4 a word transfer, at least 4 a fetched
+  byte (no prefetch queue): ~1.04x the suite's measured cycles. REP string
+  ops stop between elements when the run budget ends. 20-bit bus with
+  `addr_mask`; the low 64 KB through 256-byte pages. PC: ~1,400 emulated
+  MHz on a simple loop.
 - No room in internal RAM (IRAM) for the CPU cores: v0.3.3 put the Z80 /
   8080 interpreters there (`emu/cpu/hot.h`, EMU_HOT_IRAM) and the link
   overflowed IRAM by 48,428 bytes (Bluetooth uses most of it). EMU_HOT
@@ -302,8 +312,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Host: `tools/host_tests/` (Z80 exerciser, 8080 tests 8080PRE / 8080EXM /
   TST8080 / CPUTEST, Klaus Dormann's 6502 functional test and the 6502
   decimal test (its source assembled at test time by `asm6502.py`, with the
-  N / V / Z checks on), unit tests, `namco_tests` for the Galaga-family
-  parts, `atari_tests` for the 6502 boards)
+  N / V / Z checks on), the SingleStepTests 8088 suite (the first 128 KB
+  of each opcode's file, ~600 tests each, `fetch_i8088_tests.py` with
+  SHA-256s in `i8088_tests.sha256`), unit tests, `namco_tests` for the
+  Galaga-family parts, `atari_tests` for the 6502 boards)
   and `tools/host/` (`arcade_host`: runs a game headless with scripted
   inputs, writes PNG frames and a WAV; a game table in it, `--samples` for
   a MAME sample zip). Run them after any
