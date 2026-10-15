@@ -388,6 +388,58 @@ void test_program()
     CHECK_EQ(r.cpu.pc, 0x1015);
 }
 
+// BRA * passes the rest of the slice; "DECA ; BNE" delay loops run in bulk
+// and must match single steps exactly, whatever the slice size.
+void test_idle_and_delay()
+{
+    Rig r;
+    r.put(0x1000, {0x20, 0xfe});
+    r.cpu.pc = 0x1000;
+    CHECK_EQ(r.cpu.run(100), 100);
+    CHECK_EQ(r.cpu.pc, 0x1000);
+    struct State { int cycles; uint16_t pc; uint8_t a, b, cc; };
+    int bad = 0;
+    for (int dec : {0x4a, 0x5a})
+        for (int start : {1, 2, 3, 7, 0x80, 0x81, 255, 0}) {
+            // LDAA/LDAB #start ; loop: DEC ; BNE loop ; then NOPs
+            auto setup = [&](Rig& q) {
+                q.put(0x1000, {uint8_t(dec == 0x4a ? 0x86 : 0xc6), uint8_t(start), uint8_t(dec), 0x26, 0xfd});
+                for (int i = 0x1005; i < 0x4000; ++i) q.mem[i] = 0x01;
+                q.cpu.pc = 0x1000;
+                q.cpu.cc = 0xc0;
+            };
+            // Reference: one instruction per run (the bulk path needs room).
+            Rig ref;
+            setup(ref);
+            std::vector<State> steps;
+            int total = 0;
+            while (total < 9000) {
+                total += ref.cpu.run(1);
+                steps.push_back({total, ref.cpu.pc, ref.cpu.a, ref.cpu.b, ref.cpu.cc});
+            }
+            for (int slice : {1, 2, 5, 6, 7, 13, 64, 1000, 5000}) {
+                Rig q;
+                setup(q);
+                int t = 0;
+                while (t < 2000) {
+                    t += q.cpu.run(slice);
+                    // Must be at one of the reference's instruction boundaries.
+                    bool found = false;
+                    for (const State& st : steps)
+                        if (st.cycles == t) {
+                            found = st.pc == q.cpu.pc && st.a == q.cpu.a && st.b == q.cpu.b && st.cc == q.cpu.cc;
+                            break;
+                        }
+                    if (!found) {
+                        if (bad++ < 5) std::printf("FAIL delay %02x start %d slice %d at %d\n", dec, start, slice, t);
+                        break;
+                    }
+                }
+            }
+        }
+    CHECK_EQ(bad, 0);
+}
+
 } // namespace
 
 int main()
@@ -399,6 +451,7 @@ int main()
     test_cycles_regs();
     test_interrupts();
     test_program();
+    test_idle_and_delay();
     std::printf("6800 tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

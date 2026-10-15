@@ -76,11 +76,17 @@ public:
     // cycles into the current instruction.
     void add_cycles(int n) { done_ += n; }
 
-    void irq(bool level) { irq_line_ = level; }
-    void firq(bool level) { firq_line_ = level; }
-    void nmi() { nmi_pending_ = true; }     // edge: taken once (after the first LDS)
-    bool irq_line() const { return irq_line_; }
-    bool firq_line() const { return firq_line_; }
+    void irq(bool level) { lines_ = uint8_t(level ? lines_ | kIrq : lines_ & ~kIrq); }
+    void firq(bool level) { lines_ = uint8_t(level ? lines_ | kFirq : lines_ & ~kFirq); }
+    void nmi() { lines_ |= kNmi; }          // edge: taken once (after the first LDS)
+    bool irq_line() const { return lines_ & kIrq; }
+    bool firq_line() const { return lines_ & kFirq; }
+
+    // Waiting for an interrupt in CWAI (state pushed) or SYNC; stopped by
+    // 14 / 15 / CD until a reset.
+    bool in_cwai() const { return wait_ & kCwai; }
+    bool in_sync() const { return wait_ & kSync; }
+    bool halted() const { return wait_ & kHalted; }
 
     // --- registers (public for tests and debuggers) -----------------------
     union {
@@ -89,17 +95,19 @@ public:
     };
     uint16_t x = 0, y = 0, u = 0, s = 0, pc = 0;
     uint8_t  dp = 0, cc = 0;
-    bool     cwai = false;          // waiting in CWAI (state pushed)
-    bool     sync = false;          // waiting in SYNC
-    bool     halted = false;        // 14 / 15 / CD: stopped until reset
 
     uint8_t rd(uint16_t a)
     {
         const uint8_t* p = read_page[a >> kPageShift];
         return p ? p[a & (kPageSize - 1)] : mem_read(ctx, a);
     }
+    // Memory writes so far (any address): a machine looking for idle loops
+    // checks that none happened in one.
+    uint32_t writes = 0;
+
     void wr(uint16_t a, uint8_t v)
     {
+        ++writes;
         uint8_t* p = write_page[a >> kPageShift];
         if (p) p[a & (kPageSize - 1)] = v;
         else   mem_write(ctx, a, v);
@@ -112,7 +120,9 @@ public:
     }
 
 private:
-    bool irq_line_ = false, firq_line_ = false, nmi_pending_ = false;
+    enum : uint8_t { kIrq = 1, kFirq = 2, kNmi = 4 };           // lines_
+    enum : uint8_t { kCwai = 1, kSync = 2, kHalted = 4 };       // wait_
+    uint8_t lines_ = 0, wait_ = 0;
     bool nmi_armed_ = false;        // set by the first load of S
     int  done_ = 0, target_ = 0;
 
@@ -136,10 +146,10 @@ private:
     uint16_t tfr_read(int reg, bool cc_doubled) const;
     void     tfr_write(int reg, uint16_t v);
 
-    void step();
     void page2();
     void page3();
     void exec(uint8_t op);          // one page 1 opcode (its fetch already done)
+    inline void exec_inline(uint8_t op) __attribute__((always_inline));
 
     // 8-bit operations (flags into cc)
     uint8_t op_neg(uint8_t v);
@@ -159,7 +169,6 @@ private:
     uint16_t op_sub16(uint16_t a, uint16_t b);
     uint16_t op_add16(uint16_t a, uint16_t b);
     uint8_t  rmw(uint8_t op, uint8_t v);     // op & 0x0F of the 0x00-0x7F block
-    bool     cond(uint8_t op) const;         // branch condition of 0x20-0x2F
 };
 
 } // namespace m6809

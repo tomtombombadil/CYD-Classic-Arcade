@@ -49,6 +49,44 @@ constexpr uint8_t kCycles[256] = {
     5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6,
 };
 
+
+// Branch conditions: bit k of kBranch[cc & 15] = branch 0x20 + k taken
+// (C = 1, V = 2, Z = 4, N = 8 in the flags' low nibble).
+struct BranchTable {
+    uint16_t m[16];
+    constexpr BranchTable() : m()
+    {
+        for (int f = 0; f < 16; ++f) {
+            const bool c = f & 1, v = f & 2, z = f & 4, n = f & 8;
+            const bool t[8] = {true, !(c || z), !c, !z, !v, !n, n == v, !z && n == v};
+            uint16_t bits = 0;
+            for (int k = 0; k < 16; ++k)
+                if ((k & 1) ? !t[k >> 1] : t[k >> 1]) bits = uint16_t(bits | (1 << k));
+            m[f] = bits;
+        }
+    }
+};
+constexpr BranchTable kBranch;
+
+inline bool taken(uint8_t op, uint8_t cc) { return (kBranch.m[cc & 15] >> (op & 15)) & 1; }
+
+// The A / B / D / X / U groups (0x80-0xFF): addressing mode (bits 4-5 of
+// the opcode: immediate, direct, indexed, extended) and whether an
+// immediate operand has two bytes.
+struct GroupTable {
+    uint8_t info[128];
+    constexpr GroupTable() : info()
+    {
+        for (int i = 0; i < 128; ++i) {
+            const int op = 0x80 + i, low = op & 0x0f;
+            const bool b = op & 0x40;
+            const bool wide = low == 0x3 || low == 0xc || low == 0xe || low == 0xf || (low == 0xd && b);
+            info[i] = uint8_t(((op >> 4) & 3) | (wide ? 4 : 0));
+        }
+    }
+};
+constexpr GroupTable kGroup;
+
 } // namespace
 
 Cpu::Cpu()
@@ -76,8 +114,9 @@ void Cpu::reset()
 {
     dp = 0;
     cc = CC_I | CC_F;
-    cwai = sync = halted = false;
-    nmi_pending_ = nmi_armed_ = false;
+    wait_ = 0;
+    lines_ &= uint8_t(~kNmi);
+    nmi_armed_ = false;
     pc = rd16(kVecReset);
 }
 
@@ -86,12 +125,19 @@ int Cpu::run(int cycles)
     done_ = 0;
     target_ = cycles;
     while (done_ < target_) {
-        if ((nmi_pending_ || firq_line_ || irq_line_) && interrupt()) continue;
-        if (cwai || sync || halted) {           // waiting: the rest of the slice passes
-            if (done_ < target_) done_ = target_;
-            break;
+        if (lines_ && ((lines_ & kNmi) || ((lines_ & kFirq) && !(cc & CC_F)) || ((lines_ & kIrq) && !(cc & CC_I)))
+            && interrupt())
+            continue;
+        if (wait_) {
+            if ((wait_ & kSync) && (lines_ & (kIrq | kFirq))) {     // a masked line ends SYNC too
+                wait_ = 0;
+                done_ += 2;
+            } else {
+                if (done_ < target_) done_ = target_;   // waiting: the rest of the slice passes
+                break;
+            }
         }
-        step();
+        exec_inline(fetch());
     }
     return done_;
 }
@@ -103,28 +149,24 @@ int Cpu::run(int cycles)
 bool Cpu::interrupt()
 {
     uint16_t vec = 0;
-    if (nmi_pending_ && nmi_armed_) {
-        nmi_pending_ = false;
+    if ((lines_ & kNmi) && nmi_armed_) {
+        lines_ &= uint8_t(~kNmi);
         vec = kVecNmi;
-    } else if (firq_line_ && !(cc & CC_F)) {
+    } else if ((lines_ & kFirq) && !(cc & CC_F)) {
         vec = kVecFirq;
-    } else if (irq_line_ && !(cc & CC_I)) {
+    } else if ((lines_ & kIrq) && !(cc & CC_I)) {
         vec = kVecIrq;
     }
     if (!vec) {
-        if (sync && (firq_line_ || irq_line_ || nmi_pending_)) {
-            sync = false;
-            done_ += 2;
-        }
-        if (!nmi_armed_) nmi_pending_ = false;
+        if (!nmi_armed_) lines_ &= uint8_t(~kNmi);      // NMI before the first LDS: ignored
         return false;
     }
-    if (sync) {
-        sync = false;
+    if (wait_ & kSync) {
+        wait_ = 0;
         done_ += 2;
     }
-    if (cwai) {
-        cwai = false;
+    if (wait_ & kCwai) {
+        wait_ = 0;
         cc |= uint8_t(vec == kVecIrq ? CC_I : CC_I | CC_F);
         done_ += 4;
     } else if (vec == kVecFirq) {
@@ -409,32 +451,16 @@ uint8_t Cpu::rmw(uint8_t op, uint8_t v)
     }
 }
 
-bool Cpu::cond(uint8_t op) const
-{
-    const bool c = cc & CC_C, z = cc & CC_Z, n = cc & CC_N, v = cc & CC_V;
-    bool t;
-    switch ((op >> 1) & 7) {
-    case 0: t = true; break;                    // BRA / BRN
-    case 1: t = !(c || z); break;               // BHI / BLS
-    case 2: t = !c; break;                      // BCC / BCS
-    case 3: t = !z; break;                      // BNE / BEQ
-    case 4: t = !v; break;                      // BVC / BVS
-    case 5: t = !n; break;                      // BPL / BMI
-    case 6: t = n == v; break;                  // BGE / BLT
-    default: t = !z && n == v; break;           // BGT / BLE
-    }
-    return (op & 1) ? !t : t;
-}
-
 // --- execution -------------------------------------------------------------------------
 
-EMU_HOT void Cpu::step()
+// One page 1 instruction (the opcode is fetched): inlined into run(); the
+// prefixes' fallback calls the copy below.
+void Cpu::exec(uint8_t op)
 {
-    exec(fetch());
+    exec_inline(op);
 }
 
-// One page 1 instruction (the opcode is fetched).
-EMU_HOT void Cpu::exec(uint8_t op)
+inline void Cpu::exec_inline(uint8_t op)
 {
     done_ += kCycles[op];
     switch (op) {
@@ -451,9 +477,9 @@ EMU_HOT void Cpu::exec(uint8_t op)
     case 0x10: page2(); break;
     case 0x11: page3(); break;
     case 0x12: case 0x1b: break;                // NOP (1B: an alias)
-    case 0x13: sync = true; break;              // SYNC
+    case 0x13: wait_ = kSync; break;            // SYNC
     case 0x14: case 0x15: case 0xcd:            // halt and catch fire
-        halted = true;
+        wait_ = kHalted;
         break;
     case 0x16: { const uint16_t o = fetch16(); pc = uint16_t(pc + o); break; }    // LBRA
     case 0x17: {                                // LBSR
@@ -503,7 +529,11 @@ EMU_HOT void Cpu::exec(uint8_t op)
     case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25: case 0x26: case 0x27:
     case 0x28: case 0x29: case 0x2a: case 0x2b: case 0x2c: case 0x2d: case 0x2e: case 0x2f: {
         const int8_t o = int8_t(fetch());
-        if (cond(op)) pc = uint16_t(pc + o);
+        if (taken(op, cc)) {
+            if (o == -2 && target_ > done_)     // a branch to itself: idle until an interrupt
+                done_ += (target_ - done_ + 2) / 3 * 3;
+            pc = uint16_t(pc + o);
+        }
         break;
     }
 
@@ -538,7 +568,7 @@ EMU_HOT void Cpu::exec(uint8_t op)
         cc &= fetch();
         cc |= CC_E;
         push_entire();
-        cwai = true;
+        wait_ = kCwai;
         done_ += 16;
         break;
     case 0x3d: {                                // MUL
@@ -613,15 +643,12 @@ EMU_HOT void Cpu::exec(uint8_t op)
     default: {
         if (op < 0x80) break;                   // nothing else below 0x80
         // Operand address by mode (bits 4-5): immediate, direct, indexed, extended.
-        const int mode = (op >> 4) & 3;
+        const uint8_t info = kGroup.info[op - 0x80];
         const int low = op & 0x0f;
         const bool is_b = op & 0x40;
-        // 16-bit operand: SUBD / ADDD (3), CMPX / LDD (C), LDX / LDU (E); stores
-        // (D, F except the X-group's 8D / 9D... handled above).
-        const bool wide = low == 0x3 || low == 0xc || low == 0xe || (low == 0xd && is_b) || low == 0xf;
         uint16_t ea = 0;
-        switch (mode) {
-        case 0: ea = pc; pc = uint16_t(pc + (wide ? 2 : 1)); break;
+        switch (info & 3) {
+        case 0: ea = pc; pc = uint16_t(pc + ((info & 4) ? 2 : 1)); break;
         case 1: ea = ea_direct(); break;
         case 2: ea = ea_indexed(); break;
         default: ea = fetch16(); break;
@@ -670,7 +697,7 @@ void Cpu::page2()
     if (op >= 0x20 && op <= 0x2f) {             // LBcc: 5, 6 when taken
         const uint16_t o = fetch16();
         done_ += 5;
-        if (cond(op)) {
+        if (taken(op, cc)) {
             pc = uint16_t(pc + o);
             done_ += 1;
         }

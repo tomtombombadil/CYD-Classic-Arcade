@@ -718,13 +718,13 @@ void test_cwai_sync()
     r.cpu.cc = CC_I | CC_F;
     r.put(0x1000, {0x3c, 0xef});        // CWAI #EF: clear I, push, wait
     CHECK_EQ(r.cpu.run(1), 16);
-    CHECK(r.cpu.cwai);
+    CHECK(r.cpu.in_cwai());
     CHECK_EQ(r.cpu.s, 0x8000 - 12);
     CHECK_EQ(r.cpu.run(100), 100);      // still waiting
     CHECK_EQ(r.cpu.pc, 0x1002);
     r.cpu.firq(true);                   // masked (F set): still waiting
     CHECK_EQ(r.cpu.run(50), 50);
-    CHECK(r.cpu.cwai);
+    CHECK(r.cpu.in_cwai());
     r.cpu.firq(false);
     r.cpu.irq(true);
     CHECK_EQ(r.cpu.run(1), 4);          // straight to the vector
@@ -749,11 +749,11 @@ void test_cwai_sync()
     r.cpu.cc = CC_I | CC_F;
     r.put(0x1004, {0x13, 0x12});
     r.cpu.run(1);
-    CHECK(r.cpu.sync);
+    CHECK(r.cpu.in_sync());
     CHECK_EQ(r.cpu.run(30), 30);
     r.cpu.irq(true);
     r.cpu.run(1);
-    CHECK(!r.cpu.sync);
+    CHECK(!r.cpu.in_sync());
     CHECK_EQ(r.cpu.pc, 0x1006);         // ran the NOP after SYNC
     r.cpu.irq(false);
     // An enabled one is taken.
@@ -843,16 +843,35 @@ void test_halt_reset()
 {
     Rig r;
     r.one({0x14});
-    CHECK(r.cpu.halted);
+    CHECK(r.cpu.halted());
     CHECK_EQ(r.cpu.run(40), 40);
     r.cpu.reset();
-    CHECK(!r.cpu.halted);
+    CHECK(!r.cpu.halted());
     CHECK_EQ(r.cpu.pc, 0x1000);
     CHECK_EQ(r.cpu.cc, CC_I | CC_F);
     // Unknown page 2 code: runs as page 1 with a cycle more.
     r.cpu.r.a = 0;
     CHECK_EQ(r.one({0x10, 0x86, 0x77}), 3);
     CHECK_EQ(r.cpu.r.a, 0x77);
+}
+
+// A branch to itself waits for an interrupt: the rest of the slice passes
+// in whole branches; the interrupt is still taken. Every write is counted.
+void test_idle_branch()
+{
+    IntRig r;
+    r.put(0x1000, {0x20, 0xfe});
+    r.cpu.cc = CC_I;
+    CHECK_EQ(r.cpu.run(100), 102);      // 34 branches of 3 cycles
+    CHECK_EQ(r.cpu.pc, 0x1000);
+    r.cpu.cc = 0;
+    r.cpu.irq(true);
+    CHECK_EQ(r.cpu.run(1), 19);
+    CHECK_EQ(r.cpu.pc, 0x3000);
+    r.cpu.irq(false);
+    const uint32_t w = r.cpu.writes;
+    r.one({0xfd, 0x20, 0x00});          // STD: two writes
+    CHECK_EQ(r.cpu.writes - w, 2u);
 }
 
 } // namespace
@@ -874,6 +893,7 @@ int main()
     test_programs();
     test_io();
     test_halt_reset();
+    test_idle_branch();
     std::printf("6809 tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

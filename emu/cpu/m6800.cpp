@@ -38,6 +38,27 @@ inline int operand_bytes(uint8_t op)
     }
 }
 
+
+// Branch conditions: bit k of kBranch[cc & 15] = branch 0x20 + k taken
+// (C = 1, V = 2, Z = 4, N = 8 in the flags' low nibble).
+struct BranchTable {
+    uint16_t m[16];
+    constexpr BranchTable() : m()
+    {
+        for (int f = 0; f < 16; ++f) {
+            const bool c = f & 1, v = f & 2, z = f & 4, n = f & 8;
+            const bool t[8] = {true, !(c || z), !c, !z, !v, !n, n == v, !z && n == v};
+            uint16_t bits = 0;
+            for (int k = 0; k < 16; ++k)
+                if ((k & 1) ? !t[k >> 1] : t[k >> 1]) bits = uint16_t(bits | (1 << k));
+            m[f] = bits;
+        }
+    }
+};
+constexpr BranchTable kBranch;
+
+inline bool taken(uint8_t op, uint8_t cc) { return (kBranch.m[cc & 15] >> (op & 15)) & 1; }
+
 } // namespace
 
 Cpu::Cpu()
@@ -189,24 +210,29 @@ uint8_t Cpu::rmw(uint8_t op, uint8_t v)
     }
 }
 
-bool Cpu::cond(uint8_t op) const
+// "DECA (or DECB) ; BNE back to it" - the sound programs' delay loop -
+// just taken back to the DEC: runs the whole iterations that the slice
+// would run (both instructions starting before its end) at once. Exact:
+// nothing else changes inside the loop, and the interrupt lines only
+// change between runs.
+void Cpu::delay_loop()
 {
-    const bool c = cc & CC_C, z = cc & CC_Z, n = cc & CC_N, v = cc & CC_V;
-    bool t;
-    switch ((op >> 1) & 7) {
-    case 0: t = true; break;
-    case 1: t = !(c || z); break;
-    case 2: t = !c; break;
-    case 3: t = !z; break;
-    case 4: t = !v; break;
-    case 5: t = !n; break;
-    case 6: t = n == v; break;
-    default: t = !z && n == v; break;
-    }
-    return (op & 1) ? !t : t;
+    const uint8_t dec = rd(pc);
+    if (dec != 0x4a && dec != 0x5a) return;
+    const int room = target_ - done_ - 2;       // an iteration needs its BNE to start in the slice
+    if (room <= 0) return;
+    uint8_t& acc = dec == 0x4a ? a : b;
+    const int left = acc;                       // the branch was taken: not 0
+    int k = (room - 1) / 6 + 1;
+    if (k > left) k = left;
+    done_ += 6 * k;
+    acc = uint8_t(left - k);
+    cc = uint8_t((cc & ~(CC_N | CC_Z | CC_V)) | (acc & 0x80 ? CC_N : 0) | (acc ? 0 : CC_Z)
+                 | (acc == 0x7f ? CC_V : 0));   // DEC from 0x80
+    if (!acc) pc = uint16_t(pc + 3);            // the last BNE falls through
 }
 
-EMU_HOT void Cpu::exec(uint8_t op)
+inline void Cpu::exec(uint8_t op)
 {
     const int cyc = kCycles[op];
     if (!cyc) {                                 // undocumented: skip it
@@ -248,7 +274,12 @@ EMU_HOT void Cpu::exec(uint8_t op)
     case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25: case 0x26: case 0x27:
     case 0x28: case 0x29: case 0x2a: case 0x2b: case 0x2c: case 0x2d: case 0x2e: case 0x2f: {
         const int8_t o = int8_t(fetch());
-        if (cond(op)) pc = uint16_t(pc + o);
+        if (taken(op, cc)) {
+            if (o == -2 && target_ > done_)     // a branch to itself: idle until an interrupt
+                done_ += (target_ - done_ + 3) / 4 * 4;
+            pc = uint16_t(pc + o);
+            if (op == 0x26 && o == -3) delay_loop();
+        }
         break;
     }
 

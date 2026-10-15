@@ -105,7 +105,8 @@ private:
     void push_state();                  // PC X A B CC
     void interrupt(uint16_t vec);
 
-    void exec(uint8_t op);
+    inline void exec(uint8_t op) __attribute__((always_inline));
+    void delay_loop();
 
     void    nz(uint8_t v) { cc = uint8_t((cc & ~(CC_N | CC_Z | CC_V)) | (v & 0x80 ? CC_N : 0) | (v ? 0 : CC_Z)); }
     void    nz16(uint16_t v) { cc = uint8_t((cc & ~(CC_N | CC_Z | CC_V)) | (v & 0x8000 ? CC_N : 0) | (v ? 0 : CC_Z)); }
@@ -113,7 +114,6 @@ private:
     uint8_t op_add(uint8_t x1, uint8_t x2, int carry);
     uint8_t rmw(uint8_t op, uint8_t v);
     void    shift_v() { const bool n = cc & CC_N, c = cc & CC_C; cc = uint8_t((cc & ~CC_V) | (n != c ? CC_V : 0)); }
-    bool    cond(uint8_t op) const;
 };
 
 } // namespace m6800
