@@ -8,10 +8,12 @@ speaker connector.
 Bluetooth controllers and shows their buttons. The emulators come next
 (`docs/SPEC.md`).
 
-## Games planned
+## Games
 
-Pac-Man, Space Invaders, Galaga, Dig Dug, Donkey Kong, Q\*bert, Asteroids;
-later perhaps Defender, Stargate and Spy Hunter.
+Playable: Pac-Man, Space Invaders, Rally-X, Donkey Kong, Galaga, Dig Dug.
+
+Planned: Q\*bert, Asteroids, Qix, Star Wars; later perhaps Defender,
+Stargate, Spy Hunter and Rolling Thunder.
 
 ## ROMs - bring your own
 

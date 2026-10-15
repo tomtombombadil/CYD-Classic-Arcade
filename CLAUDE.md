@@ -201,6 +201,26 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   face, screen, orientation, controller -> panel buttons: Select = coin,
   Start = 1P start, L = 2P start, A = fire). Adding a game = machine +
   entry there.
+- Namco Galaga-family board (`emu/machines/namco_galaga_common.*`): three
+  Z80s sharing RAM, run in 512-cycle slices (main first; interrupts on
+  slice edges), latch / 06XX / WSG / watchdog shared by Galaga and Dig Dug.
+  The custom MCUs' programs aren't in the sets, so the 51XX (coins,
+  credits, sticks) and 53XX (DIPs) are behaviour models (`namco_io.*`, after
+  the old MAME HLE's behaviour). Idle skipping: each game lists its wait
+  loops (`Speedup`: PC range + a check on RAM at points with no decision
+  pending); a CPU that would spin the whole slice skips it, a jump-to-self
+  sleeps to its next interrupt. No Z80 core change. Checked against runs
+  without it: the same picture and WSG state frame for frame (in Galaga's
+  play a score digit can show a frame late now and then; R differs).
+- Galaga: emulated CPUs, WSG, tiles / sprites / 05XX stars (the 256 stars
+  of the LFSR period found once, placed per frame); 54XX explosions are our
+  own noise + band-pass model (`emu/sound/namco54.*`). Speedups: sub / sound
+  main loops, seven RAM-poll loops, and the main CPU's background loop
+  (skipped once its inputs stay unchanged 6000 cycles). Cycles a frame
+  152K -> ~31K attract, ~55K play.
+- Dig Dug: same board; playfield from the map ROM, text layer, sprites
+  (x wraps at 256, kept off the score lines), EAROM high scores (not kept
+  over power-off). Speedups: the three main loops. ~22K attract, ~52K play.
 - `core/`: plain C++ firmware logic, host-tested: `rom_store` (the user's
   zips as they are in the `roms` partition, append-only, directory sector)
   and `usb_import` (protocol of the web page's ROM loader, "CYDA ..."
@@ -231,9 +251,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 
 ## Testing
 - Host: `tools/host_tests/` (Z80 exerciser, 8080 tests 8080PRE / 8080EXM /
-  TST8080 / CPUTEST, unit tests) and `tools/host/` (`arcade_host`: runs a
-  game headless with scripted inputs, writes PNG frames and a WAV; a game
-  table in it, `--samples` for a MAME sample zip). Run them after any
+  TST8080 / CPUTEST, unit tests, `namco_tests` for the Galaga-family parts)
+  and `tools/host/` (`arcade_host`: runs a game headless with scripted
+  inputs, writes PNG frames and a WAV; a game table in it, `--samples` for
+  a MAME sample zip). Run them after any
   emulator change. Test programs that aren't ours (ZEX, the 8080 tests) are
   downloaded into `build/` with pinned SHA-256s, never committed.
 - Claude's container can't reach the PlatformIO registry, so firmware

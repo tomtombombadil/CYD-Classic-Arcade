@@ -55,9 +55,11 @@ AVG PROM - our emulator needs neither.
 
 Notes:
 - **Galaga, Dig Dug:** non-merged sets also hold the Namco custom chips'
-  own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). They are optional:
-  without them the chips are modelled from their known behaviour (Galaga's
-  explosions then come from our own noise model).
+  own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). They aren't needed or
+  used: the chips are modelled from their known behaviour (Galaga's
+  explosions come from our own noise model). Older sets name Galaga's files
+  `gg1-1b.3p` etc. and Dig Dug's partly `136007.1xx`; matching by CRC finds
+  them all.
 - **Rally-X:** older sets name the PROMs `im5623.*` / `m3-7603.11n`
   (same contents). The video layout and timing PROMs (`rx1-2.4n`,
   `rx1-3.7k`) aren't needed, and aren't in every set.

@@ -1,7 +1,8 @@
 // Headless runner for the emulated machines (host only, MIT).
 //
 //   arcade_host <game> <zip | rom file | dir>... [options]
-//     games: the table in emu/games.cpp (pacman, invaders, rallyx, ...)
+//     games: the table in emu/games.cpp (pacman, invaders, rallyx, dkong,
+//     galaga, digdug, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -18,7 +19,9 @@
 //                         start1 start2 left right fire left2 right2 fire2;
 //                         rallyx: up down left right smoke coin coin2 start1
 //                         start2 service;
-//                         dkong: up down left right jump coin start1 start2)
+//                         dkong: up down left right jump coin start1 start2;
+//                         galaga, digdug: up down left right fire coin coin2
+//                         start1 start2 service test)
 //     --verbose           one timing line per frame
 //
 //   arcade_host --list-json
