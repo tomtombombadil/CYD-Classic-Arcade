@@ -77,6 +77,7 @@ for game in pacman invaders rallyx dkong galaga digdug; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"
+"$OUT/arcade_host" --check-table
 
 echo "== the web page's ROM loader (web/roms/loader.js) against a fake board"
 g++ $FLAGS -O2 -o "$OUT/fake_board" "$ROOT/tools/host_tests/fake_board.cpp" \

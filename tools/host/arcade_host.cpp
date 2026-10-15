@@ -24,6 +24,9 @@
 //                         start1 start2 service test)
 //     --verbose           one timing line per frame
 //
+//   arcade_host --check-table
+//     checks the game table against the firmware's limits (ROM regions)
+//
 //   arcade_host --list-json
 //     prints every game's ROM set as JSON (the web page's ROM loader reads
 //     it to pick out the zips worth sending to the board)
@@ -263,9 +266,29 @@ int list_json()
     return 0;
 }
 
+// Checks the game table against the firmware's limits: the ROM loader holds
+// romset::kMaxRegions regions (v0.6.0's Dig Dug had 9 of 8 and wouldn't
+// load on the board). Prints each game's ROM RAM.
+int check_table()
+{
+    int bad = 0;
+    for (int g = 0; g < games::kGameCount; ++g) {
+        const romset::Set& set = *games::kGames[g].set;
+        size_t bytes = 0;
+        for (int r = 0; r < set.region_count; ++r) bytes += set.regions[r].size;
+        std::printf("%-10s %2d regions, %6zu bytes of ROM in RAM\n", games::kGames[g].id, set.region_count, bytes);
+        if (set.region_count > romset::kMaxRegions) {
+            std::printf("  too many regions: the loader holds %d\n", romset::kMaxRegions);
+            ++bad;
+        }
+    }
+    return bad ? 1 : 0;
+}
+
 int main(int argc, char** argv)
 {
     if (argc == 2 && std::strcmp(argv[1], "--list-json") == 0) return list_json();
+    if (argc == 2 && std::strcmp(argv[1], "--check-table") == 0) return check_table();
     if (argc < 3) { usage(); return 2; }
     const std::string game = argv[1];
     const GameInfo* info = nullptr;

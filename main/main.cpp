@@ -54,7 +54,7 @@ void ui_task(void*)
     } else {
         screen::line(screen::line_h() * 3, screen::kRed, "No ROM storage - reinstall");
     }
-    audio::start(audio_fill, nullptr);
+    audio::start(audio_fill, nullptr, settings::get().sound_pwm);
     audio::set_volume(settings::get().volume);
     ESP_LOGI(kTag, "ready: %u KB free, largest block %u KB",
              unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),

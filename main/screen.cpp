@@ -26,17 +26,25 @@ void init()
 void apply_rotation() { s_lcd.setRotation(settings::get().rotate180 ? 0 : 2); }
 void landscape() { s_lcd.setRotation(settings::get().rotate180 ? 1 : 3); }
 
+// A size smaller than v0.6 (Tom: the menu ran into the help text on the
+// 2.8"; "it could all be a little smaller")
 void menu_font()
 {
     if (s_lcd.width() >= 320)
-        s_lcd.setFont(&fonts::Font4);
+        s_lcd.setFont(&fonts::DejaVu18);
     else
-        s_lcd.setFont(&fonts::Font2);
+        s_lcd.setFont(&fonts::DejaVu12);
 }
 
-void small_font() { s_lcd.setFont(&fonts::Font2); }
+void small_font()
+{
+    if (s_lcd.width() >= 320)
+        s_lcd.setFont(&fonts::DejaVu12);
+    else
+        s_lcd.setFont(&fonts::DejaVu9);
+}
 
-int line_h() { return s_lcd.fontHeight() + 6; }
+int line_h() { return s_lcd.fontHeight() + 4; }
 
 void line(int y, uint16_t color, const char* text, uint16_t bg)
 {

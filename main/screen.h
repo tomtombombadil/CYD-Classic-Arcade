@@ -25,7 +25,7 @@ void landscape();
 
 // The menu font for this panel size, and its line height.
 void menu_font();
-void small_font();      // help and news lines (the same on every panel)
+void small_font();      // help and news lines, a size smaller
 int  line_h();
 
 // One line of text across the screen (cleared first).

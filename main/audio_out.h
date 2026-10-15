@@ -13,8 +13,9 @@ constexpr int kRate = 24000;  // samples per second
 // Fills `n` samples (signed 16-bit, mono). Runs on the audio task.
 using Fill = void (*)(int16_t* out, int n, void* ctx);
 
-// Starts the DAC and the audio task (core 1). false = no audio (logged).
-bool start(Fill fill, void* ctx);
+// Starts the output and the audio task (core 1): the DAC, or PWM on the
+// same pin (pwm = true, the Sound Output setting). false = no audio (logged).
+bool start(Fill fill, void* ctx, bool pwm);
 bool running();   // start() succeeded
 
 // 0..100 %, amplitude in proportion; 100 % = the loudest games just under

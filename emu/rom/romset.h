@@ -31,6 +31,10 @@ struct Rom {
     uint8_t     variant = 0;    // 0 = every variant, n = only Set::variants[n - 1]
 };
 
+// The most regions a set may have (the firmware's loader holds this many;
+// a host test checks every game).
+constexpr int kMaxRegions = 12;
+
 struct Set {
     const char*   game;         // short name, e.g. "pacman"
     const char*   parent;       // MAME parent set ("puckman"), or null

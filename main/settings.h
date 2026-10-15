@@ -8,6 +8,8 @@ namespace settings {
 struct Values {
     bool    swap_ab = false;    // Swap A/B and X/Y (buttons by printed letter)
     uint8_t volume = 50;        // 0..100 %
+    bool    sound_pwm = false;  // Sound Output: DAC (false) or PWM (Tom's 2.8"
+                                // ILI9341 was silent with the DAC)
     bool    rotate180 = false;  // Rotate Screen 180 degrees. Off = the USB port
                                 // at the top on most boards (Tom: the board
                                 // stands up, cable out the top); which end is

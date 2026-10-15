@@ -129,6 +129,19 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   40 MHz SPI, so it shows ~12 pictures a second at full game speed.
 - Menu help text at the bottom wraps to the screen (`screen::text_box`),
   in the small font on every panel (Tom: it ran off the right edge).
+- Menu fonts (v0.6.2, Tom: the list ran into the help text on the 2.8";
+  "it could all be a little smaller"): DejaVu12 items / DejaVu9 help on
+  240-wide panels, DejaVu18 / DejaVu12 on 320-wide; the list scrolls (with
+  arrows) when it doesn't fit above the news line.
+- Interrupted draws (v0.6.2, Tom: Galaga's start tune crackled at its end,
+  where the whole screen changes at once): a draw stops at a line boundary
+  when less than a frame of sound is queued, and the next draw goes on
+  from that line (unsent lines keep their old hash). The sound never runs
+  dry for drawing.
+- ROM regions: the firmware's loader holds `romset::kMaxRegions` (12);
+  v0.6.0's Dig Dug had 9 of the old 8 and "Can't load the ROMs" on the
+  boards. `arcade_host --check-table` (run by the host tests) checks
+  every game and prints its ROM RAM.
 - Screen (Tom, 2026-10-14): portrait with the USB port at the TOP by
   default (the board stands up, cable out the top; rotation 2). The 2.8"
   ILI9341 is the other way up (Tom, v0.5.0), so the menu setting is
@@ -139,8 +152,14 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   was ~a fifth of CYD Classic Games' loudness at the same setting; v0.5.2
   reworked it, see Sound) and a
   menu item "Forget Controllers" (drops connections and pairing keys - a
-  controller moved between Tom's boards). Both unconfirmed: need Tom's
-  result / a serial log from that board.
+  controller moved between Tom's boards). Pairing fix unconfirmed.
+  v0.6.1 on the ILI9341: the DAC starts (no "didn't start" note) but not
+  even the Controller Test tone is heard. v0.6.2: menu setting "Sound
+  Output: DAC / PWM" (NVS snd_pwm, restarts the board): PWM = LEDC on
+  GPIO26 (high-speed channel 0 / timer 0; the backlight has channel 7 /
+  timer 3), 10 bits at 78,125 Hz, duty set per sample by a 24,024 Hz
+  gptimer interrupt from an 85 ms FIFO; at rest the pin slides to low (as
+  Classic Games' tones leave it). Waiting on Tom's result on the ILI9341.
 - 4-way games (Pac-Man, Donkey Kong; `games::Info::four_way`): a d-pad
   diagonal counts as the direction pressed last (Tom found Pac-Man hard
   to steer).
@@ -247,6 +266,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   clock; v0.6.1, Tom: Rally-X "too fast" on the 2.8" ST7789 while the PC
   shows one game tick a frame at 60.6 Hz). "No sound: the DAC didn't
   start" if the DAC failed.
+- ESP32-32E amp (BOARD_PIN_AUDIO_EN) off after ~0.2 s of silence, on
+  with the first sound (v0.6.2, Tom: a faint low crackle from the 3.5"
+  at idle) - as CYD Classic Games does.
 - Backlight PWM at 44.1 kHz (v0.5.2): at 12 kHz it whined faintly in the
   2.8" ST7789's speaker (Tom; silent while flashing - backlight off). Machines fill signed 16-bit mono.
 - Flash: 4 MB = app 2.25 MB + `roms` data partition 1.7 MB (ROMs read in

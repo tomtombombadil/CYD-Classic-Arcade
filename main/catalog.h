@@ -18,7 +18,7 @@ void list_ids(char* out, size_t cap);
 
 // A game's ROM regions, unpacked from the stored zips into RAM.
 struct Loaded {
-    uint8_t* regions[8] = {};
+    uint8_t* regions[romset::kMaxRegions] = {};
     int      count = 0;
 };
 // false = a ROM is missing / unreadable or out of memory (logged).

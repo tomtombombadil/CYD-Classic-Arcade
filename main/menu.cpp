@@ -15,6 +15,7 @@
 #include "emu/games.h"
 
 #include <cstdio>
+#include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -24,11 +25,11 @@ namespace {
 
 using namespace screen;
 
-enum Item : int { kTest = 1000, kSwap, kVolume, kRotate, kForget };
+enum Item : int { kTest = 1000, kSwap, kVolume, kSound, kRotate, kForget };
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
-int item_count() { return games::kGameCount + 5; }
+int item_count() { return games::kGameCount + 6; }
 int item_id(int i) { return i < games::kGameCount ? i : kTest + (i - games::kGameCount); }
 
 void item_text(int id, char* buf, size_t cap, uint16_t& color)
@@ -44,6 +45,8 @@ void item_text(int id, char* buf, size_t cap, uint16_t& color)
         std::snprintf(buf, cap, "Swap A/B and X/Y: %s", settings::get().swap_ab ? "On" : "Off");
     } else if (id == kVolume) {
         std::snprintf(buf, cap, "Volume: %d %%", settings::get().volume);
+    } else if (id == kSound) {
+        std::snprintf(buf, cap, "Sound Output: %s", settings::get().sound_pwm ? "PWM" : "DAC");
     } else if (id == kRotate) {
         std::snprintf(buf, cap, "Rotate Screen 180: %s", settings::get().rotate180 ? "On" : "Off");
     } else {
@@ -51,13 +54,37 @@ void item_text(int id, char* buf, size_t cap, uint16_t& color)
     }
 }
 
+// The list scrolls when it doesn't fit above the news line: s_first is
+// the first item shown.
+int s_first = 0;
+int status_y();
+
+int visible_items(int top)
+{
+    const int n = (status_y() - top) / line_h();
+    return n < 1 ? 1 : n;
+}
+
+// true = the window moved (everything needs drawing again)
+bool scroll_to(int sel, int top)
+{
+    const int vis = visible_items(top);
+    const int old = s_first;
+    if (sel < s_first) s_first = sel;
+    if (sel >= s_first + vis) s_first = sel - vis + 1;
+    if (s_first > item_count() - vis) s_first = item_count() - vis;
+    if (s_first < 0) s_first = 0;
+    return s_first != old;
+}
+
 void draw_item(int i, int sel, int top)
 {
+    if (i < s_first || i >= s_first + visible_items(top)) return;
     char buf[64];
     uint16_t color;
     item_text(item_id(i), buf, sizeof buf, color);
     const bool on = i == sel;
-    line(top + i * line_h(), on ? kBg : color, buf, on ? kGold : kBg);
+    line(top + (i - s_first) * line_h(), on ? kBg : color, buf, on ? kGold : kBg);
 }
 
 // The line above the help text, for news (ROMs loaded, receiving).
@@ -78,7 +105,15 @@ void draw_all(int sel, int top, const char* status)
     char buf[64];
     std::snprintf(buf, sizeof buf, "CYD Classic Arcade %s", CYD_ARCADE_VERSION);
     line(0, kGold, buf);
+    scroll_to(sel, top);
     for (int i = 0; i < item_count(); ++i) draw_item(i, sel, top);
+    // more above / below
+    if (s_first > 0) l.fillTriangle(l.width() - 14, top + 2, l.width() - 20, top + 8, l.width() - 8, top + 8, kMuted);
+    const int vis = visible_items(top);
+    if (s_first + vis < item_count()) {
+        const int yb = top + vis * line_h() - 3;
+        l.fillTriangle(l.width() - 14, yb, l.width() - 20, yb - 6, l.width() - 8, yb - 6, kMuted);
+    }
     const char* help = catalog::available_count() == 0
         ? "Add ROM zips: put them in a CYD-Classic-Arcade folder on the SD card, or send them over USB "
           "from the install web page."
@@ -130,6 +165,10 @@ void run(AudioRing& ring)
         if (p & PAD_UP) sel = (sel + item_count() - 1) % item_count();
         if (p & PAD_DOWN) sel = (sel + 1) % item_count();
         if (sel != old) {
+            if (scroll_to(sel, top)) {
+                redraw = true;
+                continue;
+            }
             draw_item(old, sel, top);
             draw_item(sel, sel, top);
         }
@@ -147,6 +186,16 @@ void run(AudioRing& ring)
             audio::set_volume(v);
             settings::save();
             draw_item(sel, sel, top);
+        } else if (id == kSound && (choose || (p & (PAD_LEFT | PAD_RIGHT)))) {
+            // The pin's driver is chosen at start-up: restart with the other
+            settings::get().sound_pwm = !settings::get().sound_pwm;
+            settings::save();
+            draw_item(sel, sel, top);
+            const int sy = status_y();
+            small_font();
+            line(sy, kGold, "Restarting...");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            esp_restart();
         } else if (id == kRotate && (choose || (p & (PAD_LEFT | PAD_RIGHT)))) {
             settings::get().rotate180 = !settings::get().rotate180;
             settings::save();

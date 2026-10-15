@@ -123,6 +123,7 @@ void run(int index, AudioRing& ring)
     const uint32_t frame_samples = uint32_t(24000.0 / games::frame_rate(g) + 0.5);
     const uint32_t queue_max = AudioRing::kSize - kAudioCap;
     uint32_t draw_est = frame_samples;
+    int resume_y = 0;     // where an interrupted draw goes on
 
     Input in;
     games::FourWay four_way;
@@ -158,32 +159,45 @@ void run(int index, AudioRing& ring)
             lines_sent += uint32_t(rows);
             rows = 0;
         };
-        // Output row r shows game line r * height / out_h; a game line is
+        // Game line y fills output rows first_row(y) .. first_row(y + 1) - 1
+        // (output row r shows game line r * height / out_h). A line is
         // rendered and hashed once, and its rows are sent only if it changed.
-        int cur = -1;
-        bool changed = false;
-        for (int r = 0; r < out_h; ++r) {
-            const int y = r * g.height / out_h;
-            if (y != cur) {
-                cur = y;
-                uint16_t* line = scaled ? src : strip + rows * out_w;
-                m->render_line(y, line);
-                const uint32_t h = hash_line(line, g.width);
-                changed = h != line_hash[y];
-                line_hash[y] = h;
+        // The sound must not run dry while drawing: when less than a frame
+        // of it is left, the draw stops at a line boundary and the next one
+        // goes on from there (v0.6.1: Galaga's start tune crackled at its
+        // end, where the whole screen changes at once and one draw outlasted
+        // the queue). Unsent lines keep their old hash, so they still go.
+        auto first_row = [&](int y) { return (y * out_h + g.height - 1) / g.height; };
+        bool complete = true;
+        for (int k = 0; k < g.height; ++k) {
+            const int y = (resume_y + k) % g.height;
+            if (k > 0 && ring.count() < frame_samples) {
+                resume_y = y;
+                complete = false;
+                break;
             }
-            if (!changed) {
+            if (y == 0) flush();          // wrapped round: rows restart at the top
+            const int r0 = first_row(y), r1 = first_row(y + 1);
+            if (r0 >= r1) continue;
+            uint16_t* line = scaled ? src : strip + rows * out_w;
+            m->render_line(y, line);
+            const uint32_t h = hash_line(line, g.width);
+            if (h == line_hash[y]) {
                 flush();
                 continue;
             }
-            uint16_t* row = strip + rows * out_w;
-            if (scaled) {
-                for (int x = 0; x < out_w; ++x) row[x] = src[x_map[x]];
+            line_hash[y] = h;
+            for (int r = r0; r < r1; ++r) {
+                if (!rows) start = r;
+                uint16_t* row = strip + rows * out_w;
+                if (scaled) {
+                    for (int x = 0; x < out_w; ++x) row[x] = src[x_map[x]];
+                }
+                ++rows;
+                if (rows == kStrip) flush();
             }
-            if (!rows) start = r;
-            ++rows;
-            if (rows == kStrip) flush();
         }
+        if (complete) resume_y = 0;
         flush();
         lcd.endWrite();
         const int64_t took_us = esp_timer_get_time() - t1;
@@ -192,7 +206,8 @@ void run(int index, AudioRing& ring)
         // Up at once to a slower draw, down slowly (a quiet screen draws
         // fast, the next scroll doesn't)
         const uint32_t took = uint32_t(took_us * 24 / 1000);
-        draw_est = took > draw_est ? took : draw_est - (draw_est - took) / 8;
+        if (took > draw_est) draw_est = took;
+        else if (complete) draw_est -= (draw_est - took) / 8;
         draw_est = std::min(draw_est, queue_max - frame_samples * 2);
 
         const uint32_t now = now_ms();

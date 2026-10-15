@@ -70,7 +70,10 @@ bool load(const games::Info& game, Loaded& out)
 {
     const romset::Set& set = *game.set;
     out = Loaded{};
-    if (set.region_count > 8) return false;
+    if (set.region_count > romset::kMaxRegions) {
+        ESP_LOGE(kTag, "%s: %d ROM regions, the loader holds %d", game.id, set.region_count, romset::kMaxRegions);
+        return false;
+    }
     for (int r = 0; r < set.region_count; ++r) {
         out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(set.regions[r].size, MALLOC_CAP_8BIT));
         if (!out.regions[r]) {
