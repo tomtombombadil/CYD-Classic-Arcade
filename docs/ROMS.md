@@ -36,6 +36,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Rally-X | `rallyx` | Rally-X (32k Ver.?) | - |
 | Ms. Pac-Man | `mspacman` | Ms. Pac-Man | - |
 | Mr. Do! | `mrdo` | Mr. Do! | - |
+| Tempest | `tempest` (or `tempest3`) | Tempest (rev 3, Revised Hardware) / (rev 3) | - |
 | Qix | `qix` | Qix (Rev 2) | - |
 | Burger Time | `btime` | Burger Time (Data East set 1) | - |
 | Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` |
@@ -49,7 +50,12 @@ the Midway version and a clone of the Japanese `puckman` (Puck Man).
 
 Older MAME versions named the sets differently: their `asteroid` is today's
 `asteroid2` (rev 2), and they leave out the vector generator's PROM
-(`034602-01.c8`), which our emulator doesn't need. Both work.
+(`034602-01.c8`), which our emulator doesn't need. Both work. Their
+`tempest` (twelve 2 KB chips, `136002.113` ... `136002.316`) is today's
+`tempest3`; today's `tempest` holds the same program on 4 KB chips
+(`136002-133.d1` ...). Either works. The vector generator's PROM
+(`136002-125.d7`) and the math box PROMs (`136002-126.a1`, `-127` ...
+`-132`) aren't needed: the emulator does what they do.
 
 Older dumps also work where the data is the same: an old `spyhunt` has
 `cpu_pg5.11d` with its two halves swapped (the loader checks both orders),

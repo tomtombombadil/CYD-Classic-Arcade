@@ -25,7 +25,9 @@
 #      (downloaded on first use into build/m6502 - not ours, never
 #      committed; the decimal test's source is assembled by asm6502.py with
 #      the N / V / Z checks on), both builds; atari_tests (6502 timing /
-#      interrupts / opcode hook), -O2 and with the sanitizers
+#      interrupts / opcode hook, POKEY, the vector display, DVG, Asteroids
+#      sound and wiring, AVG, math box, Tempest wiring), -O2 and with the
+#      sanitizers
 #   9. Burger Time: the AY-3-8910 (tones, noise, envelopes, bus, ports),
 #      the DECO CPU-7 opcode scramble and the board's wiring on hand-made
 #      programs, -O2 and with the sanitizers
@@ -58,7 +60,10 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/dkong.cpp $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp \
      $ROOT/emu/machines/namco_galaga_common.cpp $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp \
      $ROOT/emu/machines/mspacman.cpp $ROOT/emu/machines/mrdo.cpp $ROOT/emu/sound/ay8910.cpp \
-     $ROOT/emu/machines/btime.cpp $ROOT/emu/sound/qbert_sound.cpp $ROOT/emu/machines/qbert.cpp"
+     $ROOT/emu/machines/btime.cpp $ROOT/emu/sound/qbert_sound.cpp $ROOT/emu/machines/qbert.cpp \
+     $ROOT/emu/sound/pokey.cpp $ROOT/emu/sound/asteroids_sound.cpp $ROOT/emu/machines/vector_display.cpp \
+     $ROOT/emu/machines/atari_dvg.cpp $ROOT/emu/machines/asteroids.cpp $ROOT/emu/machines/atari_avg.cpp \
+     $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -97,7 +102,7 @@ g++ $FLAGS -O2 -o "$OUT/mspacman_mrdo_tests" "$ROOT/tools/host_tests/mspacman_mr
 g++ $FLAGS $SAN -o "$OUT/mspacman_mrdo_tests_san" "$ROOT/tools/host_tests/mspacman_mrdo_tests.cpp" $EMU
 "$OUT/mspacman_mrdo_tests"
 "$OUT/mspacman_mrdo_tests_san"
-echo "== Atari board tests (6502)"
+echo "== Atari board tests (6502, POKEY, vector display, DVG, AVG, math box, Asteroids, Tempest)"
 g++ $FLAGS -O2 -o "$OUT/atari_tests" "$ROOT/tools/host_tests/atari_tests.cpp" $EMU
 g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cpp" $EMU
 "$OUT/atari_tests"
@@ -121,7 +126,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

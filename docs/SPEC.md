@@ -21,7 +21,8 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Dig Dug | 3x Z80 3.072 MHz | Namco 51xx/53xx (modelled), wavetable sound, playfield from a map ROM, EAROM | 224x288 portrait | done: ~52K cycles a frame in play |
 | Donkey Kong | Z80 3.072 MHz | i8035 sound CPU + DAC, analog effects | 224x256 portrait | medium |
 | Q\*bert | 8088 5 MHz | 6502 sound CPU + RIOT + DAC, Votrax SC-01 speech (our model), knocker (our model) | 240x256 portrait | done: idle-loop skipping brings 81K 8088 cycles a frame to ~7-12K |
-| Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound | 4:3 landscape | medium |
+| Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound (our own models) | 320x240 landscape (lines drawn row by row from a segment list) | done: idle-loop skipping, ~0.04 ms a frame on the PC |
+| Tempest | 6502 1.5 MHz | colour vector display (AVG), math box, 2 POKEY (sound, spinner, buttons), EAROM | 240x320 portrait (lines drawn row by row from a segment list) | done: ~0.06 ms a frame on the PC (the game keeps its CPU busy) |
 | Rally-X | Z80 3.072 MHz | Namco wavetable sound (as Pac-Man), analog crash "bang", scrolling + radar | 288x224 landscape | easy (after Pac-Man) |
 | Ms. Pac-Man | Z80 3.072 MHz | the Pac-Man board + Midway's aux board (scrambled ROMs laid over the Pac-Man program, a latch set / cleared by trap addresses) | 224x288 portrait | done: as Pac-Man |
 | Mr. Do! | Z80 4.1 MHz | 2 x SN76489, two tile layers (one scrolls) + sprites, a protection PAL | 192x240 portrait | done: ~Pac-Man's cost |
@@ -71,7 +72,8 @@ Pro, 8BitDo, most Android pads). Every controller maps to one layout
 (`main/pad.h`): d-pad (the left stick counts too), A B X Y, L, R, Start,
 Select, Home. Per game: Start = start, Select = coin, A = fire / jump,
 others as the game needs (Defender's thrust / smart bomb / hyperspace,
-Asteroids' thrust / hyperspace). Home = the emulator's menu (pause,
+Asteroids' thrust / hyperspace; Tempest's spinner: the left stick's X
+turns it at a speed in proportion, the d-pad at a steady speed). Home = the emulator's menu (pause,
 volume, quit). Two controllers can be paired (`CONFIG_BLUEPAD32_MAX_DEVICES`
 = 2).
 
