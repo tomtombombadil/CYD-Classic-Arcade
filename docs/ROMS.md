@@ -35,6 +35,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Asteroids | `asteroid` (or `asteroid2`, rev 2) | Asteroids (rev 4) | - |
 | Rally-X | `rallyx` | Rally-X (32k Ver.?) | - |
 | Qix | `qix` | Qix (Rev 2) | - |
+| Burger Time | `btime` | Burger Time (Data East set 1) | - |
 | Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` |
 | Stargate (stretch) | `stargate` | Stargate | - |
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
@@ -63,6 +64,9 @@ Notes:
 - **Rally-X:** older sets name the PROMs `im5623.*` / `m3-7603.11n`
   (same contents). The video layout and timing PROMs (`rx1-2.4n`,
   `rx1-3.7k`) aren't needed, and aren't in every set.
+- **Burger Time:** the Data East set 1 (`aa04.9b` ... `ab9.15k`, 15
+  files). It has no colour PROMs (the palette is in RAM). The other sets
+  (`btime2`, `btime3`, `btimem`) have other program ROMs and aren't read.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

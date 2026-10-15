@@ -1,6 +1,7 @@
 // The game list (see games.h).
 #include "games.h"
 
+#include "machines/btime.h"
 #include "machines/digdug.h"
 #include "machines/dkong.h"
 #include "machines/galaga.h"
@@ -201,6 +202,39 @@ const ButtonName kNamcoButtons[] = {
     {"service", namco_galaga::kService}, {"test", namco_galaga::kTest},
 };
 
+// ---- Burger Time ------------------------------------------------------------
+
+class Btime : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[btime::kRegionCpu], r[btime::kRegionSound], r[btime::kRegionGfx], r[btime::kRegionTiles],
+                 r[btime::kRegionMap]},
+                rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    btime::Machine m_;
+};
+
+// The cabinet's 4-way stick and its one button: A (or B) shakes pepper.
+const Control kBtimeControls[] = {
+    {kPadUp, btime::kUp}, {kPadDown, btime::kDown}, {kPadLeft, btime::kLeft},
+    {kPadRight, btime::kRight}, {kPadA, btime::kPepper}, {kPadB, btime::kPepper},
+    {kPadSelect, btime::kCoin}, {kPadStart, btime::kStart1}, {kPadL, btime::kStart2},
+};
+
+const ButtonName kBtimeButtons[] = {
+    {"up", btime::kUp}, {"down", btime::kDown}, {"left", btime::kLeft}, {"right", btime::kRight},
+    {"pepper", btime::kPepper}, {"coin", btime::kCoin}, {"coin2", btime::kCoin2},
+    {"start1", btime::kStart1}, {"start2", btime::kStart2},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -227,6 +261,9 @@ const Info kGames[] = {
     {"digdug", "Dig Dug", &digdug::kRomSet, digdug::kScreenW, digdug::kScreenH, Orientation::Portrait,
      digdug::kCpuClock, digdug::kCyclesPerFrame, kNamcoControls, COUNT(kNamcoControls), kNamcoButtons,
      COUNT(kNamcoButtons), nullptr, 0, make<Digdug>, true},
+    {"btime", "Burger Time", &btime::kRomSet, btime::kScreenW, btime::kScreenH, Orientation::Portrait,
+     btime::kCpuClock, btime::kCyclesPerFrame, kBtimeControls, COUNT(kBtimeControls), kBtimeButtons,
+     COUNT(kBtimeButtons), nullptr, 0, make<Btime>, true},
 };
 
 const int kGameCount = COUNT(kGames);

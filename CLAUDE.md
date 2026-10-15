@@ -205,6 +205,28 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   output filter is left out (too dull on a small speaker). The upright
   game runs with flip screen ON (that is its normal picture); flip = the
   whole picture turned 180 degrees. Attract mode is silent on the real game.
+- Burger Time (`emu/machines/btime.*`, set `btime` = Data East set 1;
+  portrait 240x240, 57.44 Hz, 4-way, A = pepper; set_dips = DSW2, DSW1
+  fixed at 1 coin 1 credit, upright). Emulated: the DECO CPU-7 = our 6502
+  + `deco7_decrypt` in the opcode hook (an opcode fetched right after a
+  write, at an address with bits 8 and 2 set, has its bits swapped 6 5 3 4
+  2 7 1 0 - no undocumented opcode runs in 4000 frames of play), VBLANK
+  polled in DSW1 bit 7, the coin IRQ (held until the hook sees the
+  handler's first fetch), the sound 6502 (latch IRQ, NMI every 16 lines
+  gated by C000), two AY-3-8910s (`emu/sound/ay8910.*`, our own: counters
+  exact; ones that can't be heard are carried along lazily; tones above
+  ~23 kHz count as their average), characters, 8 sprites, the background
+  map page (4004), palette RAM. Modelled: channel 2A's band-pass (187 Hz,
+  Q 1.88, gain 4.7 - MAME's R51 = 5k, itself a guess) and the speaker's
+  coupling high-pass (~530 Hz, MAME's 3 ohm guess): the caught cook's
+  thump peaks ~19,000, the music in play only ~2,500 - the board's balance
+  as far as known; lower kBandGain if the music is too quiet. Graphics are
+  decoded as drawn into a 255-glyph cache (~0.35 decodes a frame), not
+  30 KB of tables: machine ~22 KB + 52 KB of ROM. Speed: the VBLANK waits
+  (LDA 4003 / BPL or BMI) skip to the read that sees the change, the sound
+  CPU's jump-to-self to its next interrupt (PC in play: emu ~0.05, render
+  ~0.065 ms a frame). Flip screen = the picture turned 180 degrees
+  (unseen: the upright game never sets it). No watchdog on this board.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
