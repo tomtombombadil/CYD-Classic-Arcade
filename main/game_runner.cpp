@@ -45,6 +45,8 @@ constexpr int kAudioCap = 1024;         // samples per frame, at most
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
+Stats s_last;
+
 uint32_t hash_line(const uint16_t* p, int n)
 {
     uint32_t h = 2166136261u;
@@ -126,6 +128,9 @@ void run(int index, AudioRing& ring)
     games::FourWay four_way;
     in.wait_for_release();      // not the press that opened this
     uint32_t stat_t = now_ms(), frames = 0, drawn = 0, lines_sent = 0;
+    const int64_t run_t0 = esp_timer_get_time();
+    uint32_t all_frames = 0, all_drawn = 0;
+    int64_t all_emu_us = 0, all_draw_us = 0;
     int64_t emu_us = 0, draw_us = 0;
     for (;;) {
         in.update(now_ms());
@@ -192,6 +197,10 @@ void run(int index, AudioRing& ring)
 
         const uint32_t now = now_ms();
         if (now - stat_t >= 5000) {
+            all_frames += frames;
+            all_drawn += drawn;
+            all_emu_us += emu_us;
+            all_draw_us += draw_us;
             ESP_LOGI(kTag, "%s: %lu frames, %lu drawn in 5 s; emu %.2f ms, draw %.2f ms a frame; %lu lines sent; queue %lu",
                      g.id, (unsigned long)frames, (unsigned long)drawn, frames ? emu_us / 1000.0 / frames : 0.0,
                      drawn ? draw_us / 1000.0 / drawn : 0.0, (unsigned long)lines_sent,
@@ -201,6 +210,21 @@ void run(int index, AudioRing& ring)
             emu_us = draw_us = 0;
         }
     }
+
+    all_frames += frames;
+    all_drawn += drawn;
+    all_emu_us += emu_us;
+    all_draw_us += draw_us;
+    const float secs = float(esp_timer_get_time() - run_t0) / 1e6f;
+    s_last = Stats{};
+    if (secs > 0.5f) {
+        s_last.frames_per_s = float(all_frames) / secs;
+        s_last.drawn_per_s = float(all_drawn) / secs;
+    }
+    if (all_frames) s_last.emu_ms = float(all_emu_us) / 1000.0f / float(all_frames);
+    if (all_drawn) s_last.draw_ms = float(all_draw_us) / 1000.0f / float(all_drawn);
+    ESP_LOGI(kTag, "%s ran %.1f s: %.1f frames/s, %.1f drawn/s; emu %.2f ms, draw %.2f ms", g.id, double(secs),
+             double(s_last.frames_per_s), double(s_last.drawn_per_s), double(s_last.emu_ms), double(s_last.draw_ms));
 
     ring.clear();
     delete m;
@@ -213,5 +237,7 @@ void run(int index, AudioRing& ring)
     screen::apply_rotation();
     lcd.fillScreen(screen::kBg);
 }
+
+const Stats& last_stats() { return s_last; }
 
 }  // namespace game_runner

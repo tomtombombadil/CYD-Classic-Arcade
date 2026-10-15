@@ -36,6 +36,7 @@ void* s_ctx = nullptr;
 // square law, which clipped above ~65 %).
 constexpr int kGainMax = 400;
 volatile int s_gain = kGainMax / 2;
+bool s_running = false;
 
 void audio_task(void*) {
     static int16_t pcm[kChunk];
@@ -102,7 +103,10 @@ bool start(Fill fill, void* ctx) {
     }
     set_volume(50);
     xTaskCreatePinnedToCore(audio_task, "audio", 3072, nullptr, 10, nullptr, 1);
+    s_running = true;
     return true;
 }
+
+bool running() { return s_running; }
 
 }  // namespace audio

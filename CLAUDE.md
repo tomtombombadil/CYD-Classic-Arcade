@@ -242,6 +242,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   noisy", Pac-Man a little: the sound sat on ~2 DAC steps - in-band noise
   now ~24 dB lower). Volume linear, 100 % = the loudest game peaks
   (~21,000) just under full scale - never clips; default 50 %.
+- After a game the menu's status line shows its measured speed, "Rally-X:
+  60.6 fps, 28 shown/s" (game frames / pictures drawn a second, by the
+  clock; v0.6.1, Tom: Rally-X "too fast" on the 2.8" ST7789 while the PC
+  shows one game tick a frame at 60.6 Hz). "No sound: the DAC didn't
+  start" if the DAC failed.
 - Backlight PWM at 44.1 kHz (v0.5.2): at 12 kHz it whined faintly in the
   2.8" ST7789's speaker (Tom; silent while flashing - backlight off). Machines fill signed 16-bit mono.
 - Flash: 4 MB = app 2.25 MB + `roms` data partition 1.7 MB (ROMs read in

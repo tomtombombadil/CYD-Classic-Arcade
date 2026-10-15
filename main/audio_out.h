@@ -15,6 +15,7 @@ using Fill = void (*)(int16_t* out, int n, void* ctx);
 
 // Starts the DAC and the audio task (core 1). false = no audio (logged).
 bool start(Fill fill, void* ctx);
+bool running();   // start() succeeded
 
 // 0..100 %, amplitude in proportion; 100 % = the loudest games just under
 // the DAC's full scale.

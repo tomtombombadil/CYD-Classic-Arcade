@@ -100,6 +100,7 @@ void run(AudioRing& ring)
     menu_font();
     const int top = line_h() * 2;
     char status[64] = "";
+    if (!audio::running()) std::snprintf(status, sizeof status, "No sound: the DAC didn't start");
     bool redraw = true;
     bool was_busy = false;
     for (;;) {
@@ -165,6 +166,10 @@ void run(AudioRing& ring)
         } else if (choose && id < games::kGameCount && catalog::available(id)) {
             status[0] = 0;
             game_runner::run(id, ring);
+            const game_runner::Stats& st = game_runner::last_stats();
+            if (st.frames_per_s > 0)
+                std::snprintf(status, sizeof status, "%s: %.1f fps, %.0f shown/s", games::kGames[id].title,
+                              double(st.frames_per_s), double(st.drawn_per_s));
             in.wait_for_release();
             menu_font();
             redraw = true;
