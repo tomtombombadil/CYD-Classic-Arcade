@@ -35,6 +35,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Asteroids | `asteroid` (or `asteroid2`, rev 2) | Asteroids (rev 4) | - |
 | Rally-X | `rallyx` | Rally-X (32k Ver.?) | - |
 | Qix | `qix` | Qix (Rev 2) | - |
+| Robotron: 2084 | `robotron` | Robotron: 2084 (Release 5, solid blue label) | - |
 | Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` |
 | Stargate (stretch) | `stargate` | Stargate | - |
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
@@ -63,6 +64,11 @@ Notes:
 - **Rally-X:** older sets name the PROMs `im5623.*` / `m3-7603.11n`
   (same contents). The video layout and timing PROMs (`rx1-2.4n`,
   `rx1-3.7k`) aren't needed, and aren't in every set.
+- **Robotron: 2084:** older sets name the files `robotron.sb1` ...
+  `robotron.sbc` and `robotron.snd` (same contents). The two decoder PROMs
+  (`decoder_rom_4.3g`, `decoder_rom_6.3c`, for the cocktail flip) aren't
+  needed. Other releases (yellow label, the 1987 bug fix, ...) have other
+  program ROMs and aren't supported.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

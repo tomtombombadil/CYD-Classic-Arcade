@@ -197,6 +197,44 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   output filter is left out (too dull on a small speaker). The upright
   game runs with flip screen ON (that is its normal picture); flip = the
   whole picture turned 180 degrees. Attract mode is silent on the real game.
+- Williams boards (`emu/machines/williams.*`; Robotron: 2084 and
+  Defender). Emulated: the 6809 at 1 MHz (260 lines of 64 cycles, 60.10
+  Hz); the 304x256 bitmap of 4-bit pixels in 38 KB of RAM (columns of
+  pixel pairs, 256 bytes apart), shown as MAME's visible 292x240; the 16
+  palette registers (BBGGGRRR, resistor weights); ROM banked over the video
+  RAM for reads (Robotron, C900) or at C000 (Defender, D000); two 6821 PIAs
+  (`pia6821.*`) with the interrupts from the line counter (CB1 = line bit
+  5, CA1 = line >= 240); the video counter; the 4-bit CMOS RAM; the
+  watchdog (60 frames - assumed, the real length isn't documented); and
+  the sound board (`emu/sound/williams_sound.*`: 6808 at 894.9 kHz + PIA
+  + DAC running the sound ROM, so the sound is exact; a 10 Hz DC blocker
+  as the output coupling; full DAC swing = +-10,900, loudest peaks
+  ~21,000). Not drawn: flip screen (cocktail). The picture is the video
+  RAM as the frame ends; frames run from line 128 to line 128 (a test of
+  one-frame dropouts found no difference from line 0 or 240). The CMOS
+  RAM is RAM only (empty at every start): the first boot restores the
+  factory settings and then waits for the operator's Advance button, so
+  the machine presses it once the CMOS writes stop (Robotron: shows
+  "FACTORY SETTINGS RESTORED" ~1 s). Idle loops (Robotron waits for the
+  next interrupt in "LDA <10 ; CMPA #2 ; BCS"): between 128-cycle slices
+  the CPU is followed for up to 12 instructions; a round trip that leaves
+  every register as it was, writes nothing and touches no I/O is skipped
+  to the next line event in whole rounds - checked exact (same PNGs and
+  WAV with and without it). Memory: the machine object ~52 KB (48 KB of
+  RAM) + Robotron's ROM in RAM 52 KB (blocks of 36 / 12 / 4 KB) = ~104 KB,
+  a little over the ~100 KB aimed at (140 KB free, largest block 108 KB
+  with Bluetooth) - not yet run on a board.
+- Robotron: 2084 (set `robotron`, Release 5 / solid blue label; old dumps
+  name the files robotron.sb1 ... sbc, robotron.snd). The SC1 blitter
+  (`williams_blitter.*`): instant, the CPU held ~1 cycle a byte (2 when
+  slow), width / height XOR 4 (the SC1 bug), source reads through the
+  CPU's map (ROM when banked), the old destination byte from RAM. Twin
+  stick: left stick / d-pad moves, the right stick fires
+  (`games::kPadRUp`...), and Y / A / X / B fire up / down / left / right
+  for pads without a usable right stick. Boot: ~7.5 s of RAM test noise,
+  "INITIAL TESTS INDICATE: OPERATIONAL", then the attract mode (silent, as
+  on the real game). PC: emu ~0.035 ms a frame in play (peaks ~0.07),
+  render ~0.035 ms.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
@@ -309,6 +347,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   CPUs): the same kind of own tests in `m6800_tests.cpp` (ALU vs a plain
   model, shifts' V = N xor C, CPX's 6800 flags, cycles, IRQ / NMI / SWI /
   WAI). Undocumented opcodes run as 2-cycle no-ops.
+- `williams_tests.cpp`: the 6821 PIA, the SC1 blitter on synthetic data,
+  the sound board on a hand-made 6808 program, and the Robotron board
+  running hand-assembled 6809 programs (line interrupts, video counter,
+  ROM banking, CMOS, palette / video, sound command, watchdog).
 - Claude's container can't reach the PlatformIO registry, so firmware
   builds are checked by CI (GitHub Actions) on every push.
 - CI pins PlatformIO 6.1.18: 6.2.0 brings SCons 4.11, which breaks
