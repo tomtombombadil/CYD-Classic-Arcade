@@ -34,6 +34,8 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Q\*bert | `qbert` | Q\*bert (US set 1) | - |
 | Asteroids | `asteroid` (or `asteroid2`, rev 2) | Asteroids (rev 4) | - |
 | Rally-X | `rallyx` | Rally-X (32k Ver.?) | - |
+| Ms. Pac-Man | `mspacman` | Ms. Pac-Man | - |
+| Mr. Do! | `mrdo` | Mr. Do! | - |
 | Qix | `qix` | Qix (Rev 2) | - |
 | Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` |
 | Stargate (stretch) | `stargate` | Stargate | - |
@@ -66,6 +68,17 @@ Notes:
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.
+- **Ms. Pac-Man:** a parent set in today's MAME, so even a split
+  `mspacman.zip` holds everything: the four Pac-Man program ROMs
+  (`pacman.6e` ... `6j`), the aux board's `u5` `u6` `u7`, its own
+  graphics `5e` `5f`, and the Pac-Man PROMs. A zip without the Pac-Man
+  chips (from an old split collection) works with `pacman.zip` and
+  `puckman.zip` beside it: chips are found by CRC in any zip. Bootleg sets
+  (`mspacmab` and others, with the program unscrambled in other chips)
+  aren't recognised.
+- **Mr. Do!:** newer sets also have the protection PAL's dump
+  (`u001_pal16r6cn.j2`); it isn't needed (the PAL's answers are modelled)
+  and its absence is fine. The timing PROM `j10--4.bin` isn't needed either.
 - **Q\*bert:** the speech chip (Votrax SC-01) has its own internal ROM,
   `sc01a.bin`; non-merged sets include it. Keep it in the zip.
 

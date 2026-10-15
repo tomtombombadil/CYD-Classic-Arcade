@@ -5,6 +5,8 @@
 #include "machines/dkong.h"
 #include "machines/galaga.h"
 #include "machines/invaders.h"
+#include "machines/mrdo.h"
+#include "machines/mspacman.h"
 #include "machines/pacman.h"
 #include "machines/rallyx.h"
 
@@ -44,6 +46,25 @@ const ButtonName kPacmanButtons[] = {
     {"right", pacman::kRight}, {"coin", pacman::kCoin}, {"coin2", pacman::kCoin2},
     {"start1", pacman::kStart1}, {"start2", pacman::kStart2},
     {"service", pacman::kService}, {"test", pacman::kTest},
+};
+
+// ---- Ms. Pac-Man (the Pac-Man board + Midway's aux board) -------------------
+
+class Mspacman : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[mspacman::kRegionCpu], r[mspacman::kRegionGfx], r[mspacman::kRegionProms],
+                 r[mspacman::kRegionSound]}, r[mspacman::kRegionAux], rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    mspacman::Machine m_;
 };
 
 // ---- Space Invaders ---------------------------------------------------------
@@ -201,6 +222,38 @@ const ButtonName kNamcoButtons[] = {
     {"service", namco_galaga::kService}, {"test", namco_galaga::kTest},
 };
 
+// ---- Mr. Do! ----------------------------------------------------------------
+
+class Mrdo : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[mrdo::kRegionCpu], r[mrdo::kRegionFg], r[mrdo::kRegionBg], r[mrdo::kRegionSprites],
+                 r[mrdo::kRegionProms]}, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    mrdo::Machine m_;
+};
+
+// The 4-way stick and one button: A (or B) throws the power ball.
+const Control kMrdoControls[] = {
+    {kPadUp, mrdo::kUp}, {kPadDown, mrdo::kDown}, {kPadLeft, mrdo::kLeft}, {kPadRight, mrdo::kRight},
+    {kPadA, mrdo::kFire}, {kPadB, mrdo::kFire}, {kPadSelect, mrdo::kCoin}, {kPadStart, mrdo::kStart1},
+    {kPadL, mrdo::kStart2},
+};
+
+const ButtonName kMrdoButtons[] = {
+    {"up", mrdo::kUp}, {"down", mrdo::kDown}, {"left", mrdo::kLeft}, {"right", mrdo::kRight},
+    {"fire", mrdo::kFire}, {"coin", mrdo::kCoin}, {"coin2", mrdo::kCoin2}, {"start1", mrdo::kStart1},
+    {"start2", mrdo::kStart2}, {"tilt", mrdo::kTilt},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -227,6 +280,12 @@ const Info kGames[] = {
     {"digdug", "Dig Dug", &digdug::kRomSet, digdug::kScreenW, digdug::kScreenH, Orientation::Portrait,
      digdug::kCpuClock, digdug::kCyclesPerFrame, kNamcoControls, COUNT(kNamcoControls), kNamcoButtons,
      COUNT(kNamcoButtons), nullptr, 0, make<Digdug>, true},
+    {"mspacman", "Ms. Pac-Man", &mspacman::kRomSet, pacman::kScreenW, pacman::kScreenH, Orientation::Portrait,
+     pacman::kCpuClock, pacman::kCyclesPerFrame, kPacmanControls, COUNT(kPacmanControls),
+     kPacmanButtons, COUNT(kPacmanButtons), nullptr, 0, make<Mspacman>, true},
+    {"mrdo", "Mr. Do!", &mrdo::kRomSet, mrdo::kScreenW, mrdo::kScreenH, Orientation::Portrait,
+     mrdo::kCpuClock, mrdo::kCyclesPerFrame, kMrdoControls, COUNT(kMrdoControls), kMrdoButtons,
+     COUNT(kMrdoButtons), nullptr, 0, make<Mrdo>, true},
 };
 
 const int kGameCount = COUNT(kGames);
