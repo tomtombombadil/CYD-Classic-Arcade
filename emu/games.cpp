@@ -9,6 +9,7 @@
 #include "machines/mrdo.h"
 #include "machines/mspacman.h"
 #include "machines/pacman.h"
+#include "machines/qbert.h"
 #include "machines/rallyx.h"
 
 #include <cstring>
@@ -288,6 +289,42 @@ const ButtonName kBtimeButtons[] = {
     {"start1", btime::kStart1}, {"start2", btime::kStart2},
 };
 
+// ---- Q*bert ---------------------------------------------------------------
+
+class Qbert : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[qbert::kRegionMain], r[qbert::kRegionSound], r[qbert::kRegionTiles],
+                 r[qbert::kRegionSprites]}, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    qbert::Machine m_;
+};
+
+// The stick is turned 45 degrees (Info::diagonal): up = up-right, right =
+// down-right, down = down-left, left = up-left, and held diagonals count
+// as themselves. No buttons in the game: Select = coin, Start = 1 player,
+// L = 2 players (they take turns).
+const Control kQbertControls[] = {
+    {kPadUp, qbert::kUpRight}, {kPadRight, qbert::kDownRight}, {kPadDown, qbert::kDownLeft},
+    {kPadLeft, qbert::kUpLeft}, {kPadSelect, qbert::kCoin}, {kPadStart, qbert::kStart1},
+    {kPadL, qbert::kStart2},
+};
+
+const ButtonName kQbertButtons[] = {
+    {"upright", qbert::kUpRight}, {"downright", qbert::kDownRight}, {"downleft", qbert::kDownLeft},
+    {"upleft", qbert::kUpLeft}, {"coin", qbert::kCoin}, {"coin2", qbert::kCoin2},
+    {"start1", qbert::kStart1}, {"start2", qbert::kStart2}, {"test", qbert::kTest},
+    {"select", qbert::kSelect},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -323,6 +360,9 @@ const Info kGames[] = {
     {"btime", "Burger Time", &btime::kRomSet, btime::kScreenW, btime::kScreenH, Orientation::Portrait,
      btime::kCpuClock, btime::kCyclesPerFrame, kBtimeControls, COUNT(kBtimeControls), kBtimeButtons,
      COUNT(kBtimeButtons), nullptr, 0, make<Btime>, true},
+    {"qbert", "Q*bert", &qbert::kRomSet, qbert::kScreenW, qbert::kScreenH, Orientation::Portrait,
+     qbert::kCpuClock, qbert::kCyclesPerFrame, kQbertControls, COUNT(kQbertControls), kQbertButtons,
+     COUNT(kQbertButtons), nullptr, 0, make<Qbert>, false, true},
 };
 
 const int kGameCount = COUNT(kGames);
@@ -347,8 +387,23 @@ uint32_t FourWay::filter(uint32_t pad)
     return (pad & ~kDirs) | keep;
 }
 
+uint32_t diagonal_pad(uint32_t pad)
+{
+    constexpr uint32_t kDirs = kPadUp | kPadDown | kPadLeft | kPadRight;
+    const uint32_t d = pad & kDirs;
+    uint32_t keep;
+    if ((d & (kPadUp | kPadRight)) == (kPadUp | kPadRight))           keep = kPadUp;
+    else if ((d & (kPadRight | kPadDown)) == (kPadRight | kPadDown))  keep = kPadRight;
+    else if ((d & (kPadDown | kPadLeft)) == (kPadDown | kPadLeft))    keep = kPadDown;
+    else if ((d & (kPadLeft | kPadUp)) == (kPadLeft | kPadUp))        keep = kPadLeft;
+    else if (d == kPadUp || d == kPadRight || d == kPadDown || d == kPadLeft) keep = d;
+    else keep = 0;                                  // none, or opposite ones only
+    return (pad & ~kDirs) | keep;
+}
+
 uint16_t map_pad(const Info& game, uint32_t pad)
 {
+    if (game.diagonal) pad = diagonal_pad(pad);
     uint16_t b = 0;
     for (int i = 0; i < game.control_count; ++i)
         if (pad & game.controls[i].pad) b |= game.controls[i].machine;

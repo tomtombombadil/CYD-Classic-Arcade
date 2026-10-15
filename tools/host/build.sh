@@ -4,7 +4,7 @@ set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=${1:-$ROOT/build/host}
 mkdir -p "$OUT"
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
      $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp \
      $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/sn76489.cpp \
@@ -12,7 +12,8 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/dkong.cpp $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp \
      $ROOT/emu/machines/namco_galaga_common.cpp $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp \
      $ROOT/emu/machines/mspacman.cpp $ROOT/emu/machines/mrdo.cpp $ROOT/emu/games.cpp \
-     $ROOT/emu/sound/ay8910.cpp $ROOT/emu/machines/btime.cpp"
+     $ROOT/emu/sound/ay8910.cpp $ROOT/emu/machines/btime.cpp $ROOT/emu/sound/qbert_sound.cpp \
+     $ROOT/emu/machines/qbert.cpp"
 g++ -std=c++17 -O2 -Wall -Wextra -o "$OUT/arcade_host" \
     "$ROOT/tools/host/arcade_host.cpp" "$ROOT/tools/host/writers.cpp" $EMU
 echo "built $OUT/arcade_host"

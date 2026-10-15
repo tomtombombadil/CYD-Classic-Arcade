@@ -135,6 +135,18 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   (boards bank RAM at that grain). `opcode_hook` sees each opcode fetch
   and whether the last instruction wrote (Burger Time's DECO CPU-7
   decryption). PC: ~500 emulated MHz.
+- 8088 core (`emu/cpu/i8088.*`, for Q*bert): real mode, every 8086 opcode
+  with the 8088's quirks (60-6F = Jcc, C0/C1/C8/C9 = RET/RETF, SALC,
+  SETMO, POP CS, PUSH SP = new SP, word wrap at offset FFFF, divide error
+  returns past the instruction, REP before IDIV flips the quotient). Passes
+  the SingleStepTests 8088 suite (defined flags; undefined ones masked).
+  Timing = documented cycles + 4 a word transfer, at least 4 a fetched
+  byte (no prefetch queue): ~1.04x the suite's measured cycles. REP string
+  ops run to their end in one run() unless an interrupt is pending between
+  elements (then it's taken and the IRET repeats the rest) - so run budget
+  slicing never changes timing. 20-bit bus with
+  `addr_mask`; the low 64 KB through 256-byte pages. PC: ~1,400 emulated
+  MHz on a simple loop.
 - No room in internal RAM (IRAM) for the CPU cores: v0.3.3 put the Z80 /
   8080 interpreters there (`emu/cpu/hot.h`, EMU_HOT_IRAM) and the link
   overflowed IRAM by 48,428 bytes (Bluetooth uses most of it). EMU_HOT
@@ -269,6 +281,37 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   CPU's jump-to-self to its next interrupt (PC in play: emu ~0.05, render
   ~0.065 ms a frame). Flip screen = the picture turned 180 degrees
   (unseen: the upright game never sets it). No watchdog on this board.
+- Q*bert (`emu/machines/qbert.*`, set `qbert` US set 1, portrait 240x256:
+  the monitor is turned like Donkey Kong's, MAME's ROT270). Emulated: the
+  8088 (5 MHz, 318 x 256 clocks a frame = 61.42 Hz, NMI at line 240), RAM
+  (0000-0FFF battery RAM starts as FF; not kept over power-off), tiles
+  from ROM, 64 sprites (MAME's measured -4 / -13 offsets, none in the
+  first 8 columns), 16-colour palette RAM (2K/1K/470/240 ohm weights),
+  background-over-sprites bit, flips, the watchdog (16 frames), and the
+  sound board: 6502 + 6532 RIOT (RAM, ports, PA7 edge IRQ, timer) + DAC,
+  its program from the set - the effects and music are exact. Modelled
+  (`emu/sound/qbert_sound.*`): the Votrax SC-01 speech (Tom's set has no
+  sc01a.bin; the 6502 still sends every phoneme and gets its A/R NMI
+  after about the datasheet's phoneme length): a pitch sawtooth / noise through two
+  formant resonators per phoneme (textbook English formants) - it babbles
+  like Q*bert, but it isn't the chip's voice; the speech clock DAC -> 0.6x
+  to 2x speed and pitch is our own guess. The knocker (5803 bit 5 rising):
+  a click + 60 Hz / 150 Hz damped booms, 0.45 s. Sound mix: DAC +-14K,
+  speech <= 12K, knocker <= 20K, soft knee above 16K (peaks ~19.5K seen).
+  Controls (`games::Info::diagonal`, `diagonal_pad()`): the cabinet's
+  stick is turned 45 degrees, so the d-pad turns a step clockwise - up =
+  up-right, right = down-right, down = down-left, left = up-left (the
+  usual handheld layout) - and a held diagonal (or the stick) moves on that diagonal: up +
+  right = up-right etc.; opposites cancel. Select = coin, Start = 1P, L =
+  2P. Idle skipping, exact (checked frame by frame against runs without
+  it: RAM, picture, sound): the 8088's frame wait at B36D (CMP AX,[0080]
+  / JZ, 35 cycles a turn) and the 6502's command wait at 7035-704C (29
+  cycles a turn), whole turns only, never with an interrupt pending. PC:
+  ~7-12K 8088 + 0-10K 6502 cycles a frame run, emu ~0.02-0.04 ms, render
+  ~0.065 ms a frame. RAM: 68 KB of ROM regions (the sprite ROMs' blank
+  lower halves included - the loader takes whole files) + ~20 KB machine.
+  Unsure: the sprite offsets / clip (MAME calls them a guess), the speech
+  clock mapping, the 8088 timing (no prefetch queue).
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
@@ -366,8 +409,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Host: `tools/host_tests/` (Z80 exerciser, 8080 tests 8080PRE / 8080EXM /
   TST8080 / CPUTEST, Klaus Dormann's 6502 functional test and the 6502
   decimal test (its source assembled at test time by `asm6502.py`, with the
-  N / V / Z checks on), unit tests, `namco_tests` for the Galaga-family
-  parts, `atari_tests` for the 6502 boards)
+  N / V / Z checks on), the SingleStepTests 8088 suite (the first 128 KB
+  of each opcode's file, ~600 tests each, `fetch_i8088_tests.py` with
+  SHA-256s in `i8088_tests.sha256`), unit tests, `namco_tests` for the
+  Galaga-family parts, `atari_tests` for the 6502 boards)
   and `tools/host/` (`arcade_host`: runs a game headless with scripted
   inputs, writes PNG frames and a WAV; a game table in it, `--samples` for
   a MAME sample zip). Run them after any

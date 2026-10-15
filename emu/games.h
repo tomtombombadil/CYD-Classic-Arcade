@@ -84,6 +84,13 @@ struct Info {
     // The cabinet had a 4-way joystick (Pac-Man): never two directions at
     // once - a d-pad's diagonal counts as the direction pressed last.
     bool               four_way;
+    // The cabinet's 4-way joystick was turned 45 degrees (Q*bert): map_pad
+    // turns the d-pad a step clockwise - up = up-right, right = down-right,
+    // down = down-left, left = up-left - and a held diagonal (two
+    // neighbouring directions, or the stick) counts as that diagonal. The
+    // game's Control table maps kPadUp / kPadRight / kPadDown / kPadLeft to
+    // the up-right / down-right / down-left / up-left switches.
+    bool               diagonal = false;
 };
 
 extern const Info kGames[];
@@ -95,8 +102,17 @@ constexpr int kMaxGames = 64;
 // The entry for a set name, or null.
 const Info* find(const char* id);
 
-// The cabinet buttons pressed by these controller buttons.
+// The cabinet buttons pressed by these controller buttons (through
+// diagonal_pad() for a diagonal game).
 uint16_t map_pad(const Info& game, uint32_t pad);
+
+// For a game with a diagonal stick: the one d-pad direction (at most) whose
+// switch the held directions press. A diagonal (two neighbouring
+// directions) counts as the counter-clockwise one of the pair, whose
+// switch is that diagonal: up + right = up (up-right), right + down =
+// right (down-right), down + left = down (down-left), left + up = left
+// (up-left). Opposite directions alone cancel.
+uint32_t diagonal_pad(uint32_t pad);
 
 // Makes a d-pad act like a 4-way joystick: of the directions held, only
 // the one pressed last (see Info::four_way). Keep one per player.

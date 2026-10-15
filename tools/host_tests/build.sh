@@ -29,6 +29,13 @@
 #   9. Burger Time: the AY-3-8910 (tones, noise, envelopes, bus, ports),
 #      the DECO CPU-7 opcode scramble and the board's wiring on hand-made
 #      programs, -O2 and with the sanitizers
+#  10. the Q*bert board (8088 + 6502 sound board, video, the speech and
+#      knocker models, the diagonal stick, idle skipping) on hand-made
+#      programs, -O2 and with the sanitizers
+#  11. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
+#      start of each opcode's file, ~600 tests each, fetched on first use
+#      into build/i8088 by fetch_i8088_tests.py - not ours, never
+#      committed), both builds
 # and the ROM store / USB protocol (core/), with the web page's loader
 # (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
@@ -38,11 +45,12 @@ OUT=$ROOT/build/host_tests
 ZEX=$ROOT/build/zex
 I80=$ROOT/build/i8080
 M65=$ROOT/build/m6502
-mkdir -p "$OUT" "$ZEX" "$I80" "$M65"
+I88=$ROOT/build/i8088
+mkdir -p "$OUT" "$ZEX" "$I80" "$M65" "$I88"
 QUICK=0
 [ "$1" = "--quick" ] && QUICK=1
 
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
      $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp \
      $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/sn76489.cpp \
@@ -50,7 +58,7 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/dkong.cpp $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp \
      $ROOT/emu/machines/namco_galaga_common.cpp $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp \
      $ROOT/emu/machines/mspacman.cpp $ROOT/emu/machines/mrdo.cpp $ROOT/emu/sound/ay8910.cpp \
-     $ROOT/emu/machines/btime.cpp"
+     $ROOT/emu/machines/btime.cpp $ROOT/emu/sound/qbert_sound.cpp $ROOT/emu/machines/qbert.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -63,6 +71,8 @@ g++ $FLAGS -O2 -o "$OUT/i8080_test" "$ROOT/tools/host_tests/i8080_test.cpp" "$RO
 g++ $FLAGS $SAN -o "$OUT/i8080_test_san" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
 g++ $FLAGS -O2 -o "$OUT/m6502_test" "$ROOT/tools/host_tests/m6502_test.cpp" "$ROOT/emu/cpu/m6502.cpp"
 g++ $FLAGS $SAN -o "$OUT/m6502_test_san" "$ROOT/tools/host_tests/m6502_test.cpp" "$ROOT/emu/cpu/m6502.cpp"
+g++ $FLAGS -O2 -o "$OUT/i8088_test" "$ROOT/tools/host_tests/i8088_test.cpp" "$ROOT/emu/cpu/i8088.cpp"
+g++ $FLAGS $SAN -o "$OUT/i8088_test_san" "$ROOT/tools/host_tests/i8088_test.cpp" "$ROOT/emu/cpu/i8088.cpp"
 
 echo "== ROM store and USB loading (core/)"
 CORE="$ROOT/core/rom_store.cpp $ROOT/core/usb_import.cpp $ROOT/emu/rom/crc32.cpp"
@@ -98,6 +108,11 @@ g++ $FLAGS -O2 -o "$OUT/btime_tests" "$ROOT/tools/host_tests/btime_tests.cpp" $E
 g++ $FLAGS $SAN -o "$OUT/btime_tests_san" "$ROOT/tools/host_tests/btime_tests.cpp" $EMU
 "$OUT/btime_tests"
 "$OUT/btime_tests_san"
+echo "== Q*bert board tests"
+g++ $FLAGS -O2 -o "$OUT/qbert_tests" "$ROOT/tools/host_tests/qbert_tests.cpp" $EMU "$ROOT/emu/games.cpp"
+g++ $FLAGS $SAN -o "$OUT/qbert_tests_san" "$ROOT/tools/host_tests/qbert_tests.cpp" $EMU "$ROOT/emu/games.cpp"
+"$OUT/qbert_tests"
+"$OUT/qbert_tests_san"
 
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" > /dev/null
@@ -106,7 +121,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"
@@ -191,7 +206,17 @@ for t in "$OUT/m6502_test" "$OUT/m6502_test_san"; do
     "$t" decimal "$M65/decimal.bin" "$DEC_AT"
 done
 
+echo "== 8088 tests"
+# SingleStepTests 8088 (MIT, Daniel Balsom), pinned commit and SHA-256s in
+# fetch_i8088_tests.py / i8088_tests.sha256.
+python3 "$ROOT/tools/host_tests/fetch_i8088_tests.py" "$I88"
+for t in "$OUT/i8088_test" "$OUT/i8088_test_san"; do
+    if python3 "$ROOT/tools/host_tests/fetch_i8088_tests.py" "$I88" --cat | "$t" - > "$OUT/i8088.log" 2>&1
+    then tail -1 "$OUT/i8088.log"; else cat "$OUT/i8088.log"; exit 1; fi
+done
+
 echo "== benchmark"
 "$OUT/zex_test" "$ZEX/zexdoc.com" --bench 3000
 "$OUT/i8080_test" "$I80/8080EXM.COM" --bench 2000
 "$OUT/m6502_test" functional "$M65/6502_functional_test.bin" 3469 --bench 96
+"$OUT/i8088_test" --bench 1000
