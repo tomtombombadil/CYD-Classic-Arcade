@@ -98,7 +98,7 @@ public:
     uint32_t  frame() const { return frame_; }
     int       watchdog_resets() const { return watchdog_resets_; }
 
-private:
+protected:  // Ms. Pac-Man's auxiliary board (mspacman.h) builds on these
     static uint8_t mem_read(void* ctx, uint16_t addr);
     static void    mem_write(void* ctx, uint16_t addr, uint8_t v);
     static uint8_t port_read(void* ctx, uint16_t port);

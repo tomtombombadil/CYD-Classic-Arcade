@@ -197,6 +197,44 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   output filter is left out (too dull on a small speaker). The upright
   game runs with flip screen ON (that is its normal picture); flip = the
   whole picture turned 180 degrees. Attract mode is silent on the real game.
+- Ms. Pac-Man (`emu/machines/mspacman.*`, a subclass of the Pac-Man
+  machine): emulated = Midway's aux board - U5 / U6 / U7 read through its
+  rewired address and data lines (decoded once at init into 20 KB: U5 + U6
+  at 8000-97FF, U7 at 3000-3FFF, the ten Pac-Man pages that hold the forty
+  8-byte patch windows), and the decode latch with its trap windows (any
+  access to 3FF8-3FFF sets it - every VBLANK's IM 2 vector fetch from 3FFC
+  does; 0038 03B0 1600 3FF0 8000 97F0 clear it). Pages with a window go
+  through the read callback. Left out: the 2120 window (its page runs
+  ~7,000 reads a frame and nothing reaches it with the latch set - logged
+  over a 90 s game: only the boot ROM check, latch already clear, and
+  blue-time random reads below 2000 touch windows). Latch at power-on:
+  set (unknown on the board; the game sets it at its first VBLANK).
+  PC: emu ~0.048 ms (Pac-Man 0.041), render as Pac-Man. Its tunes peak
+  ~13,000 (same WSG scale as Pac-Man, which peaks ~19,700).
+- Mr. Do! (`emu/machines/mrdo.*`, portrait 192x240 - the board's 240x192
+  turned): emulated = Z80 at 4.1 MHz, the VBLANK IRQ held until taken
+  (stepped an instruction at a time while interrupts are off, so it is
+  taken exactly once), two SN76489s (`emu/sound/sn76489.*`, our own: each
+  output sample the average over its time, so tones above 12 kHz fade
+  instead of aliasing; powered up silent - a real chip may beep), both
+  tile layers (back layer scroll X / Y, attribute bit 6 = pixel 0 drawn
+  too), 64 sprites, the palette from the U2 / T2 PROMs through the
+  resistor + diode network (MAME's model of it). Modelled: the protection
+  PAL at 9803 - the game writes a table byte to the front layer, steps HL
+  to the next one and compares bits 1-6 of 9803 with (HL), so 9803 reads
+  the program ROM at HL (the PAL's equations aren't known well enough).
+  Assumed: a ~15 Hz high-pass on the output (the chips only go positive);
+  flip screen (cocktail) not drawn. Idle skip: the game waits in JR $ at
+  0154 after its frame's work; a CPU found there (512-cycle slices) skips
+  to the frame's end, R counted - checked identical (frames, sound, R)
+  with and without it. Attract mode is silent (sound starts with a coin).
+  PC: emu ~0.050 ms, render ~0.067 ms (two layers; tile columns unpacked
+  once per 8 lines); sound peaks ~17,000.
+- Z80 core fix (2026-10-15, found with Mr. Do!'s idle skip): JR e took 17
+  T-states, not 12 (the table had the taken time and the macro added 5
+  more). Every Z80 game ran a little fewer instructions a frame than the
+  real board; `mspacman_mrdo_tests` now checks every unprefixed opcode's
+  time against Zilog's table.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
