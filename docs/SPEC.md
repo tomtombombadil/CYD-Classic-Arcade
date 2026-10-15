@@ -20,7 +20,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Galaga | 3x Z80 3.072 MHz | Namco 51xx (modelled), 54xx (our noise model), 05xx stars, wavetable sound | 224x288 portrait | done: idle-loop skipping brings 152K CPU cycles a frame to ~55K in play |
 | Dig Dug | 3x Z80 3.072 MHz | Namco 51xx/53xx (modelled), wavetable sound, playfield from a map ROM, EAROM | 224x288 portrait | done: ~52K cycles a frame in play |
 | Donkey Kong | Z80 3.072 MHz | i8035 sound CPU + DAC, analog effects | 224x256 portrait | medium |
-| Q\*bert | 8088 5 MHz | 6502 sound CPU + DAC, Votrax SC-01 speech | 240x256 portrait | medium-hard |
+| Q\*bert | 8088 5 MHz | 6502 sound CPU + RIOT + DAC, Votrax SC-01 speech (our model), knocker (our model) | 240x256 portrait | done: idle-loop skipping brings 81K 8088 cycles a frame to ~7-12K |
 | Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound | 4:3 landscape | medium |
 | Rally-X | Z80 3.072 MHz | Namco wavetable sound (as Pac-Man), analog crash "bang", scrolling + radar | 288x224 landscape | easy (after Pac-Man) |
 | Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM) | 240x256 portrait | medium: light CPUs, but 64 KB of RAM |
@@ -43,8 +43,10 @@ its sound one of three ways, and we do what the machine did:
    (i8035), Q\*bert's effects (6502), Defender / Stargate (all of it,
    6800). We run that CPU's program from the ROM set; it writes the DAC
    and the sound is exact. Q\*bert's speech goes through a Votrax SC-01
-   chip - emulated from its own internal ROM (in non-merged sets) if it
-   fits the CPU budget, else the speech is left out.
+   chip whose own ROM isn't in the common sets: the sound CPU's program
+   (and so the phoneme timing) runs as on the board, and our own small
+   source-filter model voices the phonemes (Q\*bert's swearing is random
+   phonemes anyway).
 3. **Analog circuits** - Space Invaders and Asteroids (all of it), Donkey
    Kong's walk / jump / stomp, Q\*bert's knocker (a solenoid hitting the
    cabinet!), Galaga's explosion filters. The ROM only switches these

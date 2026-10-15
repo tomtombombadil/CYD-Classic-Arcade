@@ -66,8 +66,10 @@ Notes:
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.
-- **Q\*bert:** the speech chip (Votrax SC-01) has its own internal ROM,
-  `sc01a.bin`; non-merged sets include it. Keep it in the zip.
+- **Q\*bert:** non-merged sets also hold the speech chip's (Votrax SC-01)
+  own ROM, `sc01a.bin`. It isn't needed or used: the speech is our own
+  model. The sprite ROMs are the 8 KB `qb-fg*.bin` (older dumps of half
+  that size, with other CRCs, aren't recognised).
 
 ## Getting them onto the board
 

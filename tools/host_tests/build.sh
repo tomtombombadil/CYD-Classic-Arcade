@@ -23,7 +23,10 @@
 #      committed; the decimal test's source is assembled by asm6502.py with
 #      the N / V / Z checks on), both builds; atari_tests (6502 timing /
 #      interrupts / opcode hook), -O2 and with the sanitizers
-#   8. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
+#   8. the Q*bert board (8088 + 6502 sound board, video, the speech and
+#      knocker models, the diagonal stick, idle skipping) on hand-made
+#      programs, -O2 and with the sanitizers
+#   9. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
 #      start of each opcode's file, ~600 tests each, fetched on first use
 #      into build/i8088 by fetch_i8088_tests.py - not ours, never
 #      committed), both builds
@@ -41,13 +44,13 @@ mkdir -p "$OUT" "$ZEX" "$I80" "$M65" "$I88"
 QUICK=0
 [ "$1" = "--quick" ] && QUICK=1
 
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
      $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp \
-     $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/samples.cpp \
+     $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/qbert_sound.cpp $ROOT/emu/sound/samples.cpp \
      $ROOT/emu/machines/pacman.cpp $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp $ROOT/emu/machines/dkong.cpp \
      $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp $ROOT/emu/machines/namco_galaga_common.cpp \
-     $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp"
+     $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp $ROOT/emu/machines/qbert.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -87,6 +90,12 @@ g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cp
 "$OUT/atari_tests"
 "$OUT/atari_tests_san"
 
+echo "== Q*bert board tests"
+g++ $FLAGS -O2 -o "$OUT/qbert_tests" "$ROOT/tools/host_tests/qbert_tests.cpp" $EMU "$ROOT/emu/games.cpp"
+g++ $FLAGS $SAN -o "$OUT/qbert_tests_san" "$ROOT/tools/host_tests/qbert_tests.cpp" $EMU "$ROOT/emu/games.cpp"
+"$OUT/qbert_tests"
+"$OUT/qbert_tests_san"
+
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" > /dev/null
 python3 "$ROOT/tools/host_tests/make_fake_romset.py" "$OUT/fake"
@@ -94,7 +103,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug; do
+for game in pacman invaders rallyx dkong galaga digdug qbert; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"
