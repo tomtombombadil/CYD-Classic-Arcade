@@ -2,14 +2,22 @@
 // synthetic data - no ROMs: the 6502 core's timing and interrupts (the
 // instruction set is checked by Klaus Dormann's tests in m6502_test), the
 // POKEY (dividers, joined / fast clocks, polynomial counters, RANDOM,
-// volume-only, the high-pass flip-flop).
+// volume-only, the high-pass flip-flop), the vector display's rasteriser,
+// the DVG's instructions on hand-made display lists, the Asteroids sound
+// models and the Asteroids machine's wiring on a tiny 6502 program.
 //
 //   atari_tests
 #include "../../emu/cpu/m6502.h"
+#include "../../emu/machines/asteroids.h"
+#include "../../emu/machines/atari_dvg.h"
+#include "../../emu/machines/vector_display.h"
+#include "../../emu/sound/asteroids_sound.h"
 #include "../../emu/sound/pokey.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -279,6 +287,266 @@ void test_pokey()
     CHECK_EQ(pk.read(pokey::kAllpot, 0), 0x5a);
 }
 
+// --- vector display ---------------------------------------------------------------
+
+constexpr int S = vector_display::kSub;
+
+std::vector<uint16_t> row(vector_display::Display& d, int y)
+{
+    std::vector<uint16_t> r(size_t(d.width()), 0xdead);
+    d.render_line(y, r.data());
+    return r;
+}
+
+// The x of every pixel set in a row.
+std::vector<int> lit(const std::vector<uint16_t>& r)
+{
+    std::vector<int> x;
+    for (size_t i = 0; i < r.size(); ++i) if (r[i]) x.push_back(int(i));
+    return x;
+}
+
+void test_vector_display()
+{
+    static vector_display::Display d;       // ~20 KB: not on the stack
+    d.init(32, 16);
+    CHECK_EQ(lit(row(d, 3)).size(), 0);
+    d.begin();
+    d.add(2 * S, 3 * S + 8, 10 * S + 8, 3 * S + 8, 1);          // flat
+    d.add(5 * S + 8, 6 * S + 8, 5 * S + 8, 12 * S + 8, 2);      // upright
+    d.add(20 * S + 8, 10 * S + 8, 20 * S + 8, 10 * S + 8, 3);   // dot
+    d.add(-100 * S, 14 * S + 8, 100 * S, 14 * S + 8, 4);        // clipped
+    d.add(0, 0, 15 * S + 15, 15 * S + 15, 5);                   // 45 degrees
+    d.finish();
+    CHECK_EQ(d.count(), 5);
+    std::vector<uint16_t> r = row(d, 3);
+    CHECK_EQ(lit(r).size(), 9);                                 // x 2-10 (the diagonal at x 3)
+    CHECK_EQ(r[2], 1);
+    CHECK_EQ(r[10], 1);
+    CHECK_EQ(r[3], 5);                                          // added later: on top
+    for (int y = 6; y <= 12; ++y) CHECK_EQ(row(d, y)[5], 2);
+    CHECK_EQ(row(d, 13)[5], 0);
+    r = row(d, 10);
+    CHECK_EQ(r[20], 3);
+    CHECK_EQ(r[21], 3);
+    CHECK_EQ(row(d, 11)[20], 3);
+    CHECK_EQ(row(d, 12)[21], 0);
+    CHECK_EQ(lit(row(d, 14)).size(), 32);
+    // The diagonal: one pixel a row, at x = y.
+    bool diag = true;
+    for (int y = 0; y < 16; ++y) {
+        const std::vector<uint16_t> q = row(d, y);
+        diag = diag && q[size_t(y)] == 5 && (y == 0 || q[size_t(y - 1)] != 5) && (y == 15 || q[size_t(y + 1)] != 5);
+    }
+    CHECK(diag);
+    // Rows out of order give the same as in order.
+    const std::vector<uint16_t> a = row(d, 9);
+    row(d, 2);
+    CHECK(row(d, 9) == a);
+    CHECK(row(d, 10) == row(d, 10));
+    // Off the screen entirely: dropped.
+    d.begin();
+    d.add(40 * S, 2 * S, 50 * S, 3 * S, 1);
+    d.finish();
+    CHECK_EQ(d.count(), 0);
+    // Too many: counted.
+    d.begin();
+    for (int i = 0; i < vector_display::Display::kMaxSegments + 5; ++i) d.add(0, 0, S, S, 1);
+    d.finish();
+    CHECK_EQ(d.count(), vector_display::Display::kMaxSegments);
+    CHECK_EQ(d.dropped(), 5);
+}
+
+// --- DVG ------------------------------------------------------------------------
+
+struct DvgRig {
+    uint8_t mem[0x2000] = {};
+    struct Line { int x0, y0, x1, y1, i; };
+    std::vector<Line> lines;
+    int at = 0;                         // next word written
+    void w(uint16_t v) { mem[at * 2] = uint8_t(v); mem[at * 2 + 1] = uint8_t(v >> 8); ++at; }
+    static uint8_t rd(void* c, uint16_t a) { return static_cast<DvgRig*>(c)->mem[(a - 0x4000) & 0x1fff]; }
+    static void line(void* c, int x0, int y0, int x1, int y1, int i)
+    {
+        static_cast<DvgRig*>(c)->lines.push_back({x0, y0, x1, y1, i});
+    }
+};
+
+void test_dvg()
+{
+    DvgRig r;
+    atari_dvg::Dvg dvg;
+    dvg.init(DvgRig::rd, DvgRig::line, &r, 0x4000);
+    r.w(0xa000 | 500);                  // LABS y 500
+    r.w(0x0000 | 300);                  //      x 300, scale 0
+    r.w(0x9000 | 50);                   // VCTR scale 9: dy +50
+    r.w(0x7000 | 100);                  //      intensity 7, dx +100
+    r.w(0x9000 | 0x400 | 20);           // VCTR dy -20
+    r.w(0x0000 | 0x400 | 30);           //      intensity 0 (a move), dx -30
+    r.w(0xc000 | 0x100);                // JSRL 100
+    r.w(0x0000 | 1023);                 // VCTR scale 0: dy (1023 x 2) >> 10 = 1
+    r.w(0xf000 | 1023);                 //      intensity 15, dx 1
+    r.w(0xa000 | 100);                  // LABS y 100
+    r.w(0x7000 | 50);                   //      x 50, global scale 7
+    r.w(0xfdd0);                        // SVEC: y -1 (x 256), scale bit 0; intensity 13
+    r.w(0xb000);                        // HALT
+    r.at = 0x100;
+    r.w(0x8000 | 0x400 | 512);          // VCTR scale 8: dy -(512 x 512 >> 10) = -256
+    r.w(0xf000 | 0);                    //      dx 0
+    r.w(0xd000);                        // RTSL
+    const int clocks = dvg.run();
+    CHECK_EQ(dvg.ops(), 10);
+    CHECK_EQ(int(r.lines.size()), 4);
+    if (r.lines.size() == 4) {
+        CHECK(r.lines[0].x0 == 300 && r.lines[0].y0 == 500 && r.lines[0].x1 == 400 && r.lines[0].y1 == 550);
+        CHECK_EQ(r.lines[0].i, 7);
+        // After the move (-30, -20): 370, 530; the subroutine's line down 256.
+        CHECK(r.lines[1].x0 == 370 && r.lines[1].y0 == 530 && r.lines[1].x1 == 370 && r.lines[1].y1 == 274);
+        CHECK(r.lines[2].x1 == 371 && r.lines[2].y1 == 275);
+        // SVEC: scale 7 + 2 + 1 = 10: no movement at all (the multipliers' input is 0).
+        CHECK(r.lines[3].x0 == 50 && r.lines[3].y0 == 100 && r.lines[3].x1 == 50 && r.lines[3].y1 == 100);
+        CHECK_EQ(r.lines[3].i, 13);
+    }
+    // Clocks: 2 a word (16 words read) + 2^(s+1) per vector: 1024 x 2 + 512 + 2 + 0.
+    CHECK_EQ(clocks, 16 * 2 + 1024 * 2 + 512 + 2);
+
+    // SVEC lengths: scale 2 + bits, magnitude (0-3) x 256.
+    DvgRig q;
+    dvg.init(DvgRig::rd, DvgRig::line, &q, 0x4000);
+    q.w(0xa000 | 400);
+    q.w(0x6000 | 400);                  // global scale 6
+    q.w(0xf000 | 0x0300 | 0x00f1);      // SVEC y +3 (768), x +1 (256), intensity 15; scale 6 + 2
+    q.w(0xf000 | 0x0c00 | 0x008b);      // SVEC y -0, scale bit 0; x +3, scale bit 1: 6 + 5 = 11 -> none
+    q.w(0xb000);
+    dvg.run();
+    CHECK_EQ(int(q.lines.size()), 2);
+    if (q.lines.size() == 2) {
+        // scale 8: 2^9 clocks: 768 x 512 >> 10 = 384, 256 x 512 >> 10 = 128.
+        CHECK(q.lines[0].x1 == 528 && q.lines[0].y1 == 784);
+        CHECK(q.lines[1].x1 == 528 && q.lines[1].y1 == 784);
+    }
+    // Lines entirely off the screen aren't sent; half off ones are.
+    DvgRig o;
+    dvg.init(DvgRig::rd, DvgRig::line, &o, 0x4000);
+    o.w(0xa000 | 500);
+    o.w(0x0000 | 1000);                 // LABS (1000, 500), global scale 0
+    o.w(0x9000 | 0);
+    o.w(0xf000 | 200);                  // x 1000 -> 1200: half off
+    o.w(0x9000 | 0);
+    o.w(0xf000 | 200);                  // 1200 -> 1400: off
+    o.w(0xb000);
+    dvg.run();
+    CHECK_EQ(int(o.lines.size()), 1);
+    if (!o.lines.empty()) CHECK(o.lines[0].x0 == 1000 && o.lines[0].x1 == 1200);
+}
+
+// --- Asteroids ----------------------------------------------------------------------
+
+void test_asteroids_sound()
+{
+    asteroids_sound::Board b;
+    b.init(24000);
+    std::vector<int16_t> v(24000);
+    b.render(v.data(), int(v.size()));
+    int pk = 0;
+    for (int16_t s : v) pk = std::max(pk, std::abs(int(s)));
+    CHECK_EQ(pk, 0);                    // all off: silence
+    // The thump's pitch falls as its data rises (the resistor DAC feeds a
+    // current source): ~207 Hz at 0, ~65 Hz at 15.
+    b.thump(0x10);
+    CHECK(std::abs(b.thump_hz() - 207) < 10);
+    b.thump(0x1f);
+    CHECK(std::abs(b.thump_hz() - 65) < 5);
+    // Each sound alone stays under full scale.
+    const struct { int bit; } bits[] = {{0}, {1}, {3}, {4}, {5}};
+    bool quiet_enough = true, heard = true;
+    for (const auto& e : bits) {
+        b.reset();
+        b.latch(e.bit, true);
+        b.render(v.data(), int(v.size()));
+        int p = 0;
+        for (int16_t s : v) p = std::max(p, std::abs(int(s)));
+        quiet_enough = quiet_enough && p < 24000;
+        heard = heard && p > 3000;
+    }
+    CHECK(quiet_enough);
+    CHECK(heard);
+    b.reset();
+    b.explode(0x3c);
+    b.render(v.data(), int(v.size()));
+    pk = 0;
+    for (int16_t s : v) pk = std::max(pk, std::abs(int(s)));
+    CHECK(pk > 10000 && pk < 26000);
+    // The noise register: reset to 0, XNOR feedback brings ones in.
+    b.noise_reset();
+    CHECK_EQ(b.noise(), 0);
+    b.render(v.data(), 10);
+    CHECK(b.noise() != 0);
+}
+
+void test_asteroids()
+{
+    static uint8_t cpu[0x1800], vec[0x800];
+    std::memset(cpu, 0xea, sizeof cpu);
+    const uint8_t prog[] = {
+        0xa2, 0xff, 0x9a,                       // 6800 LDX #FF; TXS
+        0xa9, 0x00, 0x8d, 0x00, 0x40,           //      vector RAM word 0: JMPL 800 (5000)
+        0xa9, 0xe8, 0x8d, 0x01, 0x40,
+        0x8d, 0x00, 0x30,                       //      VGGO
+        0xad, 0x03, 0x28, 0x85, 0x11,           //      DIP SW2,1 -> 11
+        0xad, 0x02, 0x28, 0x85, 0x12,           //      DIP SW4,3 -> 12
+        0xa9, 0x80, 0x8d, 0x03, 0x3c,           //      thrust sound on
+        0xa9, 0x55, 0x8d, 0x00, 0x02,           //      0200 = 55
+        0xa9, 0x04, 0x8d, 0x00, 0x32,           //      RAMSEL
+        0xa9, 0xaa, 0x8d, 0x00, 0x02,           //      0200 = AA (the other page now)
+        0xad, 0x07, 0x24, 0x85, 0x10,           // loop: rotate left -> 10
+        0x4c, 0x2e, 0x68,                       //      JMP loop (682E)
+    };
+    std::memcpy(cpu, prog, sizeof prog);
+    const uint8_t nmi[] = {0xe6, 0x20, 0x8d, 0x00, 0x34, 0x40};     // INC 20; watchdog; RTI
+    std::memcpy(cpu + 0x1000, nmi, sizeof nmi);                     // 7800
+    cpu[0x17fa] = 0x00; cpu[0x17fb] = 0x78;     // NMI 7800
+    cpu[0x17fc] = 0x00; cpu[0x17fd] = 0x68;     // reset 6800
+    // Vector ROM: LABS (300, 500); VCTR scale 9 dx +100, intensity 15; HALT.
+    const uint16_t list[] = {0xa000 | 500, 300, 0x9000, 0xf000 | 100, 0xb000};
+    for (int i = 0; i < 5; ++i) { vec[i * 2] = uint8_t(list[i]); vec[i * 2 + 1] = uint8_t(list[i] >> 8); }
+
+    static asteroids::Machine m;
+    m.init({cpu, vec}, 24000, false);
+    m.set_inputs(asteroids::kLeft);
+    int16_t audio[1024];
+    for (int f = 0; f < 3; ++f) CHECK(std::abs(m.run_frame(audio, 1024) - 390) <= 1);
+    CHECK_EQ(m.cpu().rd(0x0020), 11);           // 4 NMIs a frame (the 12th taken next frame)
+    CHECK_EQ(m.cpu().rd(0x0010), 0x80);         // rotate left pressed
+    CHECK_EQ(m.cpu().rd(0x0011), 0xfc);         // English: SW2,1 off
+    CHECK_EQ(m.cpu().rd(0x0012), 0xfd);         // 3 ships: SW3 on
+    CHECK_EQ(m.cpu().rd(0x0200), 0xaa);         // RAMSEL: the pages swapped
+    CHECK_EQ(m.cpu().rd(0x0300), 0x55);
+    CHECK_EQ(m.cpu().rd(0x8300), 0x55);         // A15 not decoded
+    CHECK(m.sound().on(asteroids_sound::kThrust));
+    CHECK_EQ(m.watchdog_resets(), 0);
+    CHECK_EQ(m.vg_runs(), 1u);
+    CHECK_EQ(m.display().count(), 1);
+    // The line: DVG y 500 -> row (935 - 500) x 240 / 848 = 123.
+    const std::vector<int> px = lit([&] {
+        std::vector<uint16_t> r(asteroids::kScreenW);
+        m.render_line(123, r.data());
+        return r;
+    }());
+    CHECK(!px.empty());
+    if (!px.empty()) {
+        CHECK(std::abs(px.front() - (15 + 300 * 240 / 848)) <= 1);
+        CHECK(std::abs(px.back() - (15 + 400 * 240 / 848)) <= 1);
+    }
+    m.set_inputs(0);
+    m.run_frame(audio, 1024);
+    CHECK_EQ(m.cpu().rd(0x0010), 0x7f);
+    // No watchdog writes (NMIs off in self-test) for long enough: a reset.
+    m.set_inputs(asteroids::kTest);
+    for (int f = 0; f < 8; ++f) m.run_frame(audio, 1024);
+    CHECK(m.watchdog_resets() >= 1);
+}
+
 } // namespace
 
 int main()
@@ -287,6 +555,10 @@ int main()
     test_6502_interrupts();
     test_6502_hook();
     test_pokey();
+    test_vector_display();
+    test_dvg();
+    test_asteroids_sound();
+    test_asteroids();
     std::printf("atari tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

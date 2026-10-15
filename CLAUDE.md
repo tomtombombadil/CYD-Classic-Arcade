@@ -205,6 +205,34 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   output filter is left out (too dull on a small speaker). The upright
   game runs with flip screen ON (that is its normal picture); flip = the
   whole picture turned 180 degrees. Attract mode is silent on the real game.
+- Vector games: `emu/machines/vector_display.*` keeps each picture as a
+  list of clipped segments in output pixels (1/16 px fixed point, at most
+  1024, ~20 KB with the sort and active lists), sorted by first row, and
+  draws one output line at a time (1-pixel lines, dots 2 x 2, later lines
+  on top) - no frame buffer. The machine builds a whole picture inside one
+  run_frame (begin / add / finish).
+- Asteroids (`emu/machines/asteroids.*`, set `asteroid` (rev 4) or
+  `asteroid2` (rev 2, Tom's; older MAME's `asteroid`) as romset variants,
+  no DVG PROM): emulated = 6502 at 1.512 MHz, NMI every 6144 cycles (off
+  in self-test), RAMSEL page swap, A15 mirror, inputs / DIPs, watchdog, the
+  DVG (`emu/machines/atari_dvg.*`: its instructions VCTR / LABS / HALT /
+  JSRL / RTSL / JMPL / SVEC run directly - no state machine PROM - with the
+  bit-rate multipliers' exact step counts, run at VGGO; busy for its
+  drawing time). The picture: Y 88-935 of the DVG square fills 240 rows,
+  X at the same scale (rocks round), centred - 320 x 240. Idle skipping:
+  the main loop's NMI wait and DVG wait (recognised by their code) jump
+  ahead; PC ~0.04 ms a frame emulated, ~0.01 ms rendered. Modelled
+  (`emu/sound/asteroids_sound.*`): the 12 kHz noise register, explosion
+  (noise held at the pitch clock x volume, 52 Hz RC), thump (555 VCO
+  frequency from the resistor DAC and current source: 207 Hz at 0, 170 Hz
+  at 4 - the two the game alternates - 65 Hz at 15), saucer (triangle VCO
+  swept 8.25 / 5.75 Hz), ship / saucer fire (pitch ramps, RC decay), thrust
+  (noise, RC, 89.5 Hz band-pass, 160 Hz), extra life 3 kHz. Levels are set
+  for a small speaker, not the board's mixer weights (explosion / thrust
+  would be ~20x the fire sounds but sit below 100 Hz). Unsure: the thump's
+  exact pitch (the 555 current source estimated from part values) and the
+  DVG's per-instruction time (2 clocks a word). Attract mode is silent, as
+  on the real game.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

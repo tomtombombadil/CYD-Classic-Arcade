@@ -1,6 +1,7 @@
 // The game list (see games.h).
 #include "games.h"
 
+#include "machines/asteroids.h"
 #include "machines/digdug.h"
 #include "machines/dkong.h"
 #include "machines/galaga.h"
@@ -201,6 +202,38 @@ const ButtonName kNamcoButtons[] = {
     {"service", namco_galaga::kService}, {"test", namco_galaga::kTest},
 };
 
+// ---- Asteroids ------------------------------------------------------------
+
+class Asteroids : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[asteroids::kRegionCpu], r[asteroids::kRegionVector]}, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    asteroids::Machine m_;
+};
+
+// Left / right rotate, A fires, B (or up) thrusts, X hyperspace.
+const Control kAsteroidsControls[] = {
+    {kPadLeft, asteroids::kLeft}, {kPadRight, asteroids::kRight}, {kPadA, asteroids::kFire},
+    {kPadB, asteroids::kThrust}, {kPadUp, asteroids::kThrust}, {kPadX, asteroids::kHyperspace},
+    {kPadSelect, asteroids::kCoin}, {kPadStart, asteroids::kStart1}, {kPadL, asteroids::kStart2},
+};
+
+const ButtonName kAsteroidsButtons[] = {
+    {"left", asteroids::kLeft}, {"right", asteroids::kRight}, {"thrust", asteroids::kThrust},
+    {"fire", asteroids::kFire}, {"hyperspace", asteroids::kHyperspace}, {"coin", asteroids::kCoin},
+    {"coin2", asteroids::kCoin2}, {"start1", asteroids::kStart1}, {"start2", asteroids::kStart2},
+    {"test", asteroids::kTest}, {"step", asteroids::kDiagStep},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -227,6 +260,10 @@ const Info kGames[] = {
     {"digdug", "Dig Dug", &digdug::kRomSet, digdug::kScreenW, digdug::kScreenH, Orientation::Portrait,
      digdug::kCpuClock, digdug::kCyclesPerFrame, kNamcoControls, COUNT(kNamcoControls), kNamcoButtons,
      COUNT(kNamcoButtons), nullptr, 0, make<Digdug>, true},
+    {"asteroid", "Asteroids", &asteroids::kRomSet, asteroids::kScreenW, asteroids::kScreenH,
+     Orientation::Landscape, asteroids::kCpuClock, asteroids::kCyclesPerFrame, kAsteroidsControls,
+     COUNT(kAsteroidsControls), kAsteroidsButtons, COUNT(kAsteroidsButtons), nullptr, 0, make<Asteroids>,
+     false},
 };
 
 const int kGameCount = COUNT(kGames);

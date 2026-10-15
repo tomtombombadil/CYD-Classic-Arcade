@@ -2,7 +2,7 @@
 //
 //   arcade_host <game> <zip | rom file | dir>... [options]
 //     games: the table in emu/games.cpp (pacman, invaders, rallyx, dkong,
-//     galaga, digdug, ...)
+//     galaga, digdug, asteroid, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -21,7 +21,9 @@
 //                         start2 service;
 //                         dkong: up down left right jump coin start1 start2;
 //                         galaga, digdug: up down left right fire coin coin2
-//                         start1 start2 service test)
+//                         start1 start2 service test; asteroid: left right
+//                         thrust fire hyperspace coin coin2 start1 start2
+//                         test step)
 //     --verbose           one timing line per frame
 //
 //   arcade_host --check-table

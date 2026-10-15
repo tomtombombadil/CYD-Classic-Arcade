@@ -21,7 +21,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Dig Dug | 3x Z80 3.072 MHz | Namco 51xx/53xx (modelled), wavetable sound, playfield from a map ROM, EAROM | 224x288 portrait | done: ~52K cycles a frame in play |
 | Donkey Kong | Z80 3.072 MHz | i8035 sound CPU + DAC, analog effects | 224x256 portrait | medium |
 | Q\*bert | 8088 5 MHz | 6502 sound CPU + DAC, Votrax SC-01 speech | 240x256 portrait | medium-hard |
-| Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound | 4:3 landscape | medium |
+| Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound (our own models) | 320x240 landscape (lines drawn row by row from a segment list) | done: idle-loop skipping, ~0.04 ms a frame on the PC |
 | Rally-X | Z80 3.072 MHz | Namco wavetable sound (as Pac-Man), analog crash "bang", scrolling + radar | 288x224 landscape | easy (after Pac-Man) |
 | Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM) | 240x256 portrait | medium: light CPUs, but 64 KB of RAM |
 | Star Wars | 6809 1.5 MHz + math box | color vector generator (AVG), 6809 sound CPU, 4 POKEY, TMS5220 speech (the voices are LPC data in the ROMs) | 4:3 landscape | medium-hard: vectors need a frame buffer (4 bpp, ~38 KB) |
