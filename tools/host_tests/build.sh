@@ -15,7 +15,11 @@
 #      of states with the sanitizers
 #   4. throughput benchmarks (emulated MHz on this host)
 #   5. the host runner end to end on a synthetic ROM set
-#   6. the Namco Galaga-family parts (06XX / 51XX / 53XX, starfield, 54XX
+#   6. the 6809 core (flags, every indexed mode, cycles, interrupts incl.
+#      CWAI / SYNC, small programs), -O2 and with the sanitizers
+#   7. the 6800 / 6802 / 6808 core (flags, cycles, interrupts incl. WAI),
+#      -O2 and with the sanitizers
+#   8. the Namco Galaga-family parts (06XX / 51XX / 53XX, starfield, 54XX
 #      model, the three-CPU board and idle skipping on hand-made programs,
 #      Galaga / Dig Dug video), -O2 and with the sanitizers
 #   7. every unprefixed Z80 opcode's time, the SN76489, Ms. Pac-Man's aux
@@ -52,7 +56,7 @@ mkdir -p "$OUT" "$ZEX" "$I80" "$M65" "$I88"
 QUICK=0
 [ "$1" = "--quick" ] && QUICK=1
 
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp $ROOT/emu/cpu/m6809.cpp $ROOT/emu/cpu/m6800.cpp \
      $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
      $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp \
      $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/sn76489.cpp \
@@ -90,6 +94,18 @@ echo "== unit tests"
 python3 "$ROOT/tools/host_tests/make_fixtures.py" "$OUT/fixtures"
 "$OUT/unit_tests" "$OUT/fixtures"
 "$OUT/unit_tests_san" "$OUT/fixtures"
+
+echo "== 6809 tests"
+g++ $FLAGS -O2 -o "$OUT/m6809_tests" "$ROOT/tools/host_tests/m6809_tests.cpp" "$ROOT/emu/cpu/m6809.cpp"
+g++ $FLAGS $SAN -o "$OUT/m6809_tests_san" "$ROOT/tools/host_tests/m6809_tests.cpp" "$ROOT/emu/cpu/m6809.cpp"
+"$OUT/m6809_tests"
+"$OUT/m6809_tests_san"
+
+echo "== 6800 tests"
+g++ $FLAGS -O2 -o "$OUT/m6800_tests" "$ROOT/tools/host_tests/m6800_tests.cpp" "$ROOT/emu/cpu/m6800.cpp"
+g++ $FLAGS $SAN -o "$OUT/m6800_tests_san" "$ROOT/tools/host_tests/m6800_tests.cpp" "$ROOT/emu/cpu/m6800.cpp"
+"$OUT/m6800_tests"
+"$OUT/m6800_tests_san"
 
 echo "== Namco board tests"
 g++ $FLAGS -O2 -o "$OUT/namco_tests" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
