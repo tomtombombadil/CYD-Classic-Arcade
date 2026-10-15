@@ -13,8 +13,10 @@
 #include "machines/qbert.h"
 #include "machines/rallyx.h"
 #include "machines/tempest.h"
+#include "machines/williams.h"
 
 #include <cstring>
+#include <new>
 
 namespace games {
 namespace {
@@ -399,7 +401,73 @@ const ButtonName kTempestButtons[] = {
     {"step", tempest::kDiagStep},
 };
 
-template <class M> Machine* make() { return new M; }
+// ---- Williams: Robotron: 2084, Defender -------------------------------------
+
+template <williams::Board B> class Williams : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override { m_.init(B, r, rate, swap); }
+    void set_dips(uint8_t) override {}          // no DIP switches: settings are in the CMOS RAM
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    williams::Machine m_;
+};
+
+// Twin stick: the left stick (or d-pad) moves, the right stick fires; the
+// face buttons fire too, by position (Y up, A down, X left, B right), for
+// controllers without a usable right stick.
+const Control kRobotronControls[] = {
+    {kPadUp, williams::robotron::kUp}, {kPadDown, williams::robotron::kDown},
+    {kPadLeft, williams::robotron::kLeft}, {kPadRight, williams::robotron::kRight},
+    {kPadRUp, williams::robotron::kFireUp}, {kPadRDown, williams::robotron::kFireDown},
+    {kPadRLeft, williams::robotron::kFireLeft}, {kPadRRight, williams::robotron::kFireRight},
+    {kPadY, williams::robotron::kFireUp}, {kPadA, williams::robotron::kFireDown},
+    {kPadX, williams::robotron::kFireLeft}, {kPadB, williams::robotron::kFireRight},
+    {kPadSelect, williams::robotron::kCoin}, {kPadStart, williams::robotron::kStart1},
+    {kPadL, williams::robotron::kStart2},
+};
+
+const ButtonName kRobotronButtons[] = {
+    {"up", williams::robotron::kUp}, {"down", williams::robotron::kDown},
+    {"left", williams::robotron::kLeft}, {"right", williams::robotron::kRight},
+    {"fireup", williams::robotron::kFireUp}, {"firedown", williams::robotron::kFireDown},
+    {"fireleft", williams::robotron::kFireLeft}, {"fireright", williams::robotron::kFireRight},
+    {"coin", williams::robotron::kCoin}, {"coin2", williams::robotron::kCoin2},
+    {"start1", williams::robotron::kStart1}, {"start2", williams::robotron::kStart2},
+    {"advance", williams::robotron::kAdvance}, {"autoup", williams::robotron::kAutoUp},
+    {"hsreset", williams::robotron::kHighScoreReset},
+};
+
+// Up / down move; left / right = the stick (reverse / thrust by the ship's
+// facing, see williams.cpp); A fire, B thrust, X smart bomb, Y hyperspace,
+// R reverse (the cabinet's own buttons).
+const Control kDefenderControls[] = {
+    {kPadUp, williams::defender::kUp}, {kPadDown, williams::defender::kDown},
+    {kPadLeft, williams::defender::kLeft}, {kPadRight, williams::defender::kRight},
+    {kPadA, williams::defender::kFire}, {kPadB, williams::defender::kThrust},
+    {kPadX, williams::defender::kSmartBomb}, {kPadY, williams::defender::kHyperspace},
+    {kPadR, williams::defender::kReverse},
+    {kPadSelect, williams::defender::kCoin}, {kPadStart, williams::defender::kStart1},
+    {kPadL, williams::defender::kStart2},
+};
+
+const ButtonName kDefenderButtons[] = {
+    {"up", williams::defender::kUp}, {"down", williams::defender::kDown},
+    {"left", williams::defender::kLeft}, {"right", williams::defender::kRight},
+    {"fire", williams::defender::kFire}, {"thrust", williams::defender::kThrust},
+    {"bomb", williams::defender::kSmartBomb}, {"hyper", williams::defender::kHyperspace},
+    {"reverse", williams::defender::kReverse}, {"coin", williams::defender::kCoin},
+    {"start1", williams::defender::kStart1}, {"start2", williams::defender::kStart2},
+    {"advance", williams::defender::kAdvance}, {"autoup", williams::defender::kAutoUp},
+    {"hsreset", williams::defender::kHighScoreReset},
+};
+
+// nothrow: on the board a failed plain new aborts (no exceptions) - the
+// runner says "Not enough memory" instead.
+template <class M> Machine* make() { return new (std::nothrow) M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
 
@@ -444,6 +512,14 @@ const Info kGames[] = {
     {"tempest", "Tempest", &tempest::kRomSet, tempest::kScreenW, tempest::kScreenH, Orientation::Portrait,
      tempest::kCpuClock, tempest::kCyclesPerFrame, kTempestControls, COUNT(kTempestControls),
      kTempestButtons, COUNT(kTempestButtons), nullptr, 0, make<Tempest>, false},
+    {"robotron", "Robotron: 2084", &williams::robotron::kRomSet, williams::kScreenW, williams::kScreenH,
+     Orientation::Landscape, williams::kCpuClock, williams::kCyclesPerFrame, kRobotronControls,
+     COUNT(kRobotronControls), kRobotronButtons, COUNT(kRobotronButtons), nullptr, 0,
+     make<Williams<williams::Board::Robotron>>, false},
+    {"defender", "Defender", &williams::defender::kRomSet, williams::kScreenW, williams::kScreenH,
+     Orientation::Landscape, williams::kCpuClock, williams::kCyclesPerFrame, kDefenderControls,
+     COUNT(kDefenderControls), kDefenderButtons, COUNT(kDefenderButtons), nullptr, 0,
+     make<Williams<williams::Board::Defender>>, false},
 };
 
 const int kGameCount = COUNT(kGames);

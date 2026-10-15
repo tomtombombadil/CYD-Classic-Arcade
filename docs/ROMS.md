@@ -40,6 +40,8 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Qix | `qix` | Qix (Rev 2) | - |
 | Burger Time | `btime` | Burger Time (Data East set 1) | - |
 | Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` |
+| Robotron: 2084 | `robotron` | Robotron: 2084 (Release 5, solid blue label) | - |
+| Defender | `defender` or `defenderg` | Defender (Red label) / (Green label) | `defender` for `defenderg` |
 | Stargate (stretch) | `stargate` | Stargate | - |
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
@@ -75,6 +77,16 @@ Notes:
 - **Burger Time:** the Data East set 1 (`aa04.9b` ... `ab9.15k`, 15
   files). It has no colour PROMs (the palette is in RAM). The other sets
   (`btime2`, `btime3`, `btimem`) have other program ROMs and aren't read.
+- **Robotron: 2084:** older sets name the files `robotron.sb1` ...
+  `robotron.sbc` and `robotron.snd` (same contents). The two decoder PROMs
+  (`decoder_rom_4.3g`, `decoder_rom_6.3c`, for the cocktail flip) aren't
+  needed. Other releases (yellow label, the 1987 bug fix, ...) have other
+  program ROMs and aren't supported.
+- **Defender:** the Green label set (`defenderg`; older collections call
+  it `defendg`, files `defeng01.bin` ...) shares its sound ROM with the
+  Red label: a split `defenderg.zip` needs `defender.zip` beside it. With
+  both sets present, the Red label is used. The decoder PROMs aren't
+  needed.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

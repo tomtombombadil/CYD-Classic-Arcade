@@ -2,7 +2,8 @@
 //
 //   arcade_host <game> <zip | rom file | dir>... [options]
 //     games: the table in emu/games.cpp (pacman, invaders, rallyx, dkong,
-//     galaga, digdug, mspacman, mrdo, btime, qbert, asteroid, tempest, ...)
+//     galaga, digdug, mspacman, mrdo, btime, qbert, asteroid, tempest,
+//     robotron, defender, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -31,8 +32,15 @@
 //                         qbert: upright downright downleft upleft coin
 //                         coin2 start1 start2 test select; asteroid: left
 //                         right thrust fire hyperspace coin coin2 start1 start2
-//                         test step; any game: lx=N, the left stick's X
-//                         -512..511, e.g. "1200+60:lx=-300+fire")
+//                         test step;
+//                         robotron: up down left right fireup firedown
+//                         fireleft fireright coin coin2 start1 start2
+//                         advance autoup hsreset;
+//                         defender: up down left right (the stick: reverse /
+//                         thrust by the ship's facing) fire thrust bomb hyper
+//                         reverse coin start1 start2 advance autoup hsreset; any game: lx=N,
+//                         the left stick's X -512..511, e.g.
+//                         "1200+60:lx=-300+fire")
 //     --verbose           one timing line per frame
 //
 //   arcade_host --check-table

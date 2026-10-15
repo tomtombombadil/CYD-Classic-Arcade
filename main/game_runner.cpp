@@ -39,7 +39,7 @@ namespace game_runner {
 namespace {
 
 constexpr const char* kTag = "game";
-constexpr int kStrip = 16;              // lines per strip sent
+constexpr int kStrip = 8;               // lines per strip sent (7.5 KB at 480 wide)
 constexpr int kMaxLines = 512;
 constexpr int kAudioCap = 1024;         // samples per frame, at most
 
@@ -71,12 +71,21 @@ void message(const char* a, const char* b)
 void run(int index, AudioRing& ring)
 {
     const games::Info& g = games::kGames[index];
-    catalog::Loaded roms;
-    if (!catalog::load(g, roms)) {
-        message("Can't load the ROMs", "Reload them, see the web page");
+    // The machine first: it's the biggest block (Robotron's ~52 KB), so
+    // it gets the heap's largest free block before the ROMs split it.
+    games::Machine* m = g.make();
+    if (!m) {
+        ESP_LOGE(kTag, "%s: no memory for the machine (largest block %u)", g.id,
+                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
+        message("Not enough memory", g.title);
         return;
     }
-    games::Machine* m = g.make();
+    catalog::Loaded roms;
+    if (!catalog::load(g, roms)) {
+        delete m;
+        message("Can't load the ROMs", "Reload them, or not enough memory");
+        return;
+    }
     LGFX& lcd = screen::lcd();
     if (g.orientation == games::Orientation::Landscape) screen::landscape();
     // Scale: as large as fits with the shape kept, never smaller than 1:1

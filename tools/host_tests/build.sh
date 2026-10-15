@@ -15,26 +15,33 @@
 #      of states with the sanitizers
 #   4. throughput benchmarks (emulated MHz on this host)
 #   5. the host runner end to end on a synthetic ROM set
-#   6. the Namco Galaga-family parts (06XX / 51XX / 53XX, starfield, 54XX
+#   6. the 6809 core (flags, every indexed mode, cycles, interrupts incl.
+#      CWAI / SYNC, small programs), -O2 and with the sanitizers
+#   7. the 6800 / 6802 / 6808 core (flags, cycles, interrupts incl. WAI),
+#      -O2 and with the sanitizers
+#   8. the Williams parts (6821 PIA, SC1 blitter, sound board, the Robotron
+#      and Defender boards on hand-made programs), -O2 and with the
+#      sanitizers
+#   9. the Namco Galaga-family parts (06XX / 51XX / 53XX, starfield, 54XX
 #      model, the three-CPU board and idle skipping on hand-made programs,
 #      Galaga / Dig Dug video), -O2 and with the sanitizers
-#   7. every unprefixed Z80 opcode's time, the SN76489, Ms. Pac-Man's aux
+#  10. every unprefixed Z80 opcode's time, the SN76489, Ms. Pac-Man's aux
 #      board and the Mr. Do! machine on hand-made programs and synthetic
 #      graphics, -O2 and with the sanitizers
-#   8. the 6502: Klaus Dormann's functional test and the decimal test
+#  11. the 6502: Klaus Dormann's functional test and the decimal test
 #      (downloaded on first use into build/m6502 - not ours, never
 #      committed; the decimal test's source is assembled by asm6502.py with
 #      the N / V / Z checks on), both builds; atari_tests (6502 timing /
 #      interrupts / opcode hook, POKEY, the vector display, DVG, Asteroids
 #      sound and wiring, AVG, math box, Tempest wiring), -O2 and with the
 #      sanitizers
-#   9. Burger Time: the AY-3-8910 (tones, noise, envelopes, bus, ports),
+#  12. Burger Time: the AY-3-8910 (tones, noise, envelopes, bus, ports),
 #      the DECO CPU-7 opcode scramble and the board's wiring on hand-made
 #      programs, -O2 and with the sanitizers
-#  10. the Q*bert board (8088 + 6502 sound board, video, the speech and
+#  13. the Q*bert board (8088 + 6502 sound board, video, the speech and
 #      knocker models, the diagonal stick, idle skipping) on hand-made
 #      programs, -O2 and with the sanitizers
-#  11. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
+#  14. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
 #      start of each opcode's file, ~600 tests each, fetched on first use
 #      into build/i8088 by fetch_i8088_tests.py - not ours, never
 #      committed), both builds
@@ -52,18 +59,21 @@ mkdir -p "$OUT" "$ZEX" "$I80" "$M65" "$I88"
 QUICK=0
 [ "$1" = "--quick" ] && QUICK=1
 
-EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp \
-     $ROOT/emu/rom/romset.cpp $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp \
-     $ROOT/emu/sound/invaders_sound.cpp $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp \
-     $ROOT/emu/sound/namco54.cpp $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/sn76489.cpp \
-     $ROOT/emu/machines/pacman.cpp $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp \
-     $ROOT/emu/machines/dkong.cpp $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp \
+EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp \
+     $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp $ROOT/emu/rom/romset.cpp \
+     $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp $ROOT/emu/sound/invaders_sound.cpp \
+     $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp $ROOT/emu/sound/namco54.cpp \
+     $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/sn76489.cpp $ROOT/emu/machines/pacman.cpp \
+     $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp $ROOT/emu/machines/dkong.cpp \
+     $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp \
      $ROOT/emu/machines/namco_galaga_common.cpp $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp \
      $ROOT/emu/machines/mspacman.cpp $ROOT/emu/machines/mrdo.cpp $ROOT/emu/sound/ay8910.cpp \
      $ROOT/emu/machines/btime.cpp $ROOT/emu/sound/qbert_sound.cpp $ROOT/emu/machines/qbert.cpp \
      $ROOT/emu/sound/pokey.cpp $ROOT/emu/sound/asteroids_sound.cpp $ROOT/emu/machines/vector_display.cpp \
      $ROOT/emu/machines/atari_dvg.cpp $ROOT/emu/machines/asteroids.cpp $ROOT/emu/machines/atari_avg.cpp \
-     $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp"
+     $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp $ROOT/emu/cpu/m6809.cpp \
+     $ROOT/emu/cpu/m6800.cpp $ROOT/emu/machines/pia6821.cpp $ROOT/emu/machines/williams_blitter.cpp \
+     $ROOT/emu/sound/williams_sound.cpp $ROOT/emu/machines/williams.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -90,6 +100,24 @@ echo "== unit tests"
 python3 "$ROOT/tools/host_tests/make_fixtures.py" "$OUT/fixtures"
 "$OUT/unit_tests" "$OUT/fixtures"
 "$OUT/unit_tests_san" "$OUT/fixtures"
+
+echo "== 6809 tests"
+g++ $FLAGS -O2 -o "$OUT/m6809_tests" "$ROOT/tools/host_tests/m6809_tests.cpp" "$ROOT/emu/cpu/m6809.cpp"
+g++ $FLAGS $SAN -o "$OUT/m6809_tests_san" "$ROOT/tools/host_tests/m6809_tests.cpp" "$ROOT/emu/cpu/m6809.cpp"
+"$OUT/m6809_tests"
+"$OUT/m6809_tests_san"
+
+echo "== 6800 tests"
+g++ $FLAGS -O2 -o "$OUT/m6800_tests" "$ROOT/tools/host_tests/m6800_tests.cpp" "$ROOT/emu/cpu/m6800.cpp"
+g++ $FLAGS $SAN -o "$OUT/m6800_tests_san" "$ROOT/tools/host_tests/m6800_tests.cpp" "$ROOT/emu/cpu/m6800.cpp"
+"$OUT/m6800_tests"
+"$OUT/m6800_tests_san"
+
+echo "== Williams board tests"
+g++ $FLAGS -O2 -o "$OUT/williams_tests" "$ROOT/tools/host_tests/williams_tests.cpp" $EMU
+g++ $FLAGS $SAN -o "$OUT/williams_tests_san" "$ROOT/tools/host_tests/williams_tests.cpp" $EMU
+"$OUT/williams_tests"
+"$OUT/williams_tests_san"
 
 echo "== Namco board tests"
 g++ $FLAGS -O2 -o "$OUT/namco_tests" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
@@ -126,7 +154,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

@@ -29,7 +29,8 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM) | 240x256 portrait | medium: light CPUs, but 64 KB of RAM |
 | Burger Time | DECO CPU-7 (6502 with scrambled opcodes) 1.5 MHz | 6502 sound CPU + 2 AY-3-8910, a band-pass on one channel; characters, 8 sprites, background map from ROM, palette RAM | 240x240 portrait | done: VBLANK waits and the sound CPU's idle loop skipped (~6-9K main CPU cycles a frame in play) |
 | Star Wars | 6809 1.5 MHz + math box | color vector generator (AVG), 6809 sound CPU, 4 POKEY, TMS5220 speech (the voices are LPC data in the ROMs) | 4:3 landscape | medium-hard: vectors need a frame buffer (4 bpp, ~38 KB) |
-| Defender (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
+| Robotron: 2084 | 6809 1 MHz | SC1 blitter, 6808 sound CPU + DAC, 304x256 4-bit bitmap (38 KB) | 292x240 landscape | done: idle loops skipped (exact), ~104 KB of RAM with the ROMs |
+| Defender | 6809 1 MHz | 6808 sound CPU + DAC, ROM banked at C000 | 292x240 landscape | done: the stick reverses / thrusts by the ship's facing |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
 | Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
@@ -74,6 +75,7 @@ Select, Home. Per game: Start = start, Select = coin, A = fire / jump,
 others as the game needs (Defender's thrust / smart bomb / hyperspace,
 Asteroids' thrust / hyperspace; Tempest's spinner: the left stick's X
 turns it at a speed in proportion, the d-pad at a steady speed). Home = the emulator's menu (pause,
+Asteroids' thrust / hyperspace; Robotron's right stick fires). Home = the emulator's menu (pause,
 volume, quit). Two controllers can be paired (`CONFIG_BLUEPAD32_MAX_DEVICES`
 = 2).
 
