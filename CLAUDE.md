@@ -298,6 +298,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   a MAME sample zip). Run them after any
   emulator change. Test programs that aren't ours (ZEX, the 8080 tests) are
   downloaded into `build/` with pinned SHA-256s, never committed.
+- 6809 core (`emu/cpu/m6809.*`): no public 6809 test program was found,
+  so `tools/host_tests/m6809_tests.cpp` checks it on its own: every 8-bit
+  ALU result / flag against a plain signed / unsigned model for all
+  operands, 16-bit ALU on random operands, DAA by decimal sums, every
+  branch, every indexed mode (address, side effect, cycles), the
+  datasheet's cycle counts, TFR / EXG, the stack, IRQ / FIRQ / NMI (armed
+  by the first LDS), CWAI, SYNC, SWI 1-3 and small programs.
 - Claude's container can't reach the PlatformIO registry, so firmware
   builds are checked by CI (GitHub Actions) on every push.
 - CI pins PlatformIO 6.1.18: 6.2.0 brings SCons 4.11, which breaks
