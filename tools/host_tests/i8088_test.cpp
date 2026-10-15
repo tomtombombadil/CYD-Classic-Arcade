@@ -25,7 +25,13 @@ namespace {
 uint8_t g_mem[1 << 20];
 
 uint8_t mem_read(void*, uint32_t a) { return g_mem[a & 0xfffff]; }
-void mem_write(void*, uint32_t a, uint8_t v) { g_mem[a & 0xfffff] = v; }
+i8088::Cpu* g_nmi_cpu = nullptr;    // unit(): a write to g_nmi_at raises its NMI
+uint32_t g_nmi_at = 0;
+void mem_write(void*, uint32_t a, uint8_t v)
+{
+    g_mem[a & 0xfffff] = v;
+    if (g_nmi_cpu && (a & 0xfffff) == g_nmi_at) g_nmi_cpu->nmi();
+}
 
 uint32_t le32(const uint8_t* p) { return uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24); }
 uint16_t le16(const uint8_t* p) { return uint16_t(p[0] | p[1] << 8); }
@@ -296,7 +302,9 @@ int unit()
     cpu.step_instruction();
     CHECK(cpu.r[i8088::AX] == 0x1234);
 
-    // REP STOSB stops between elements when the budget ends and resumes.
+    // REP STOSB runs to its end whatever the budget; an NMI raised between
+    // two elements (here by a write to 2000:0031) is taken there, and the
+    // IRET repeats the rest.
     load(cpu, 0x400, {0xf3, 0xaa, 0xf4});       // REP STOSB; HLT
     cpu.sreg[i8088::ES] = 0x2000;
     cpu.r[i8088::DI] = 0;
@@ -305,10 +313,20 @@ int unit()
     cpu.set_flags(0);
     cpu.ip = 0x400;
     cpu.run(50);
-    CHECK(cpu.r[i8088::CX] > 0 && cpu.r[i8088::CX] < 100 && cpu.ip == 0x400);
-    cpu.run(5000);
     CHECK(cpu.r[i8088::CX] == 0 && g_mem[0x20000] == 0x55 && g_mem[0x20063] == 0x55 && g_mem[0x20064] == 0);
-    CHECK(cpu.halted());
+    CHECK(cpu.ip == 0x402);
+    load(cpu, 0x200, {0x43, 0xcf});             // the NMI handler: INC BX; IRET
+    std::memset(g_mem + 0x20000, 0, 0x100);
+    g_nmi_cpu = &cpu;
+    g_nmi_at = 0x20031;
+    cpu.r[i8088::DI] = 0;
+    cpu.r[i8088::CX] = 100;
+    cpu.r[i8088::BX] = 0;
+    cpu.ip = 0x400;
+    cpu.run(5000);
+    CHECK(cpu.r[i8088::BX] == 1 && cpu.r[i8088::CX] == 0 && cpu.halted());
+    CHECK(g_mem[0x20031] == 0x55 && g_mem[0x20032] == 0x55 && g_mem[0x20063] == 0x55 && g_mem[0x20064] == 0);
+    g_nmi_cpu = nullptr;
 
     // The low 64 KB through the page table, with a 16-bit address mask.
     static uint8_t page[256];

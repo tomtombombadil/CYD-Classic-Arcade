@@ -19,9 +19,11 @@
 // fetches); returns and far / near jumps take what the real chip measures
 // (the queue refills). The prefetch queue itself isn't modelled: against
 // the SingleStepTests suite's measured cycles our counts come out within a
-// few percent on average. REP string instructions run one element at a
-// time against the run budget and resume (IP back at the prefixes) when it
-// runs out, as the chip does when interrupted.
+// few percent on average. A REP string instruction runs to its end in one
+// go unless an interrupt is pending between two elements: then IP goes
+// back to the prefixes, the interrupt is taken and the IRET repeats the
+// rest, as on the chip (whose resume keeps only the last prefix - a known
+// 8086 bug - while ours keeps them all).
 //
 // Memory: a 20-bit bus masked by `addr_mask` (a board that decodes only
 // A0-A15 sets 0xFFFF). Addresses below 64 KB go through a table of 256-byte
@@ -85,10 +87,9 @@ public:
     // --- control ----------------------------------------------------------
     // CS = FFFF, IP = 0, the other segments 0, flags clear.
     void reset();
-    // Runs at least `cycles` cycles (finishing the instruction, except a REP
-    // string instruction, which stops between elements) and returns the
-    // cycles run. A halted CPU spends the whole budget. A callback may call
-    // stop() to end the run after the current instruction (or element).
+    // Runs at least `cycles` cycles (finishing the instruction) and returns
+    // the cycles run. A halted CPU spends the whole budget. A callback may call
+    // stop() to end the run after the current instruction.
     EMU_HOT int run(int cycles);
     void stop() { target_ = 0; }
     // Runs exactly one instruction (a REP string instruction to its end; no
@@ -101,6 +102,7 @@ public:
     void nmi() { nmi_pending_ = true; }             // edge
     void irq(bool level) { intr_ = level; }         // INTR level (IF masks it)
     bool halted() const { return halted_; }
+    bool nmi_pending() const { return nmi_pending_; }
 
     // --- registers --------------------------------------------------------
     uint16_t r[8] = {};         // AX CX DX BX SP BP SI DI

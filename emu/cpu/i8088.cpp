@@ -759,8 +759,8 @@ int Cpu::step()
             const bool go_on = string_op(op);
             r[CX] = uint16_t(r[CX] - 1);
             if (!go_on || r[CX] == 0) break;
-            if (done_ + cyc_ >= target_ || nmi_pending_ || (intr_ && if_)) {
-                ip = start_ip_;     // resume the repetition later
+            if (nmi_pending_ || (intr_ && if_)) {
+                ip = start_ip_;     // take the interrupt, then repeat the rest
                 break;
             }
         }

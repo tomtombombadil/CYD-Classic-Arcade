@@ -142,7 +142,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   the SingleStepTests 8088 suite (defined flags; undefined ones masked).
   Timing = documented cycles + 4 a word transfer, at least 4 a fetched
   byte (no prefetch queue): ~1.04x the suite's measured cycles. REP string
-  ops stop between elements when the run budget ends. 20-bit bus with
+  ops run to their end in one run() unless an interrupt is pending between
+  elements (then it's taken and the IRET repeats the rest) - so run budget
+  slicing never changes timing. 20-bit bus with
   `addr_mask`; the low 64 KB through 256-byte pages. PC: ~1,400 emulated
   MHz on a simple loop.
 - No room in internal RAM (IRAM) for the CPU cores: v0.3.3 put the Z80 /
