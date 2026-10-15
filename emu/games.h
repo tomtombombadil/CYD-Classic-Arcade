@@ -88,6 +88,9 @@ struct Info {
 
 extern const Info kGames[];
 extern const int  kGameCount;
+// The most games the firmware's catalog holds (arcade_host --check-table
+// checks kGameCount against it).
+constexpr int kMaxGames = 64;
 
 // The entry for a set name, or null.
 const Info* find(const char* id);

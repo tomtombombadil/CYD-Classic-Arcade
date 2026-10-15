@@ -73,7 +73,7 @@ void start()
         return;
     }
     s_session.init(flash_store::store(), send, games, nullptr, CYD_ARCADE_VERSION);
-    xTaskCreatePinnedToCore(task, "usb", 4096, nullptr, 4, nullptr, 0);
+    xTaskCreatePinnedToCore(task, "usb", 6144, nullptr, 4, nullptr, 0);
 }
 
 bool take_changed() { return s_changed.exchange(false); }

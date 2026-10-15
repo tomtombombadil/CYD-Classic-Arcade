@@ -23,7 +23,7 @@ void Session::init(rom_store::Store& store, Send send, GameList games, void* ctx
 
 void Session::reply(const char* fmt, ...)
 {
-    char buf[256];
+    char buf[640];      // the GAMES list is the longest
     std::memcpy(buf, "CYDA ", 5);
     va_list ap;
     va_start(ap, fmt);
@@ -136,7 +136,7 @@ void Session::line(char* text)
         reply("READY %u", unsigned(kChunk));
     } else if (std::strcmp(cmd, "DONE") == 0) {
         done_ = true;
-        char list[200] = {};
+        char list[600] = {};    // ~40 games' ids
         if (games_) games_(ctx_, list, sizeof list);
         reply("GAMES %s", list);
     } else {

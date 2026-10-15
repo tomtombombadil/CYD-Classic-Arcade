@@ -284,6 +284,10 @@ int check_table()
             ++bad;
         }
     }
+    if (games::kGameCount > games::kMaxGames) {
+        std::printf("%d games: the firmware's catalog holds %d\n", games::kGameCount, games::kMaxGames);
+        ++bad;
+    }
     return bad ? 1 : 0;
 }
 

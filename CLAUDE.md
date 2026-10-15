@@ -149,6 +149,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   when less than a frame of sound is queued, and the next draw goes on
   from that line (unsent lines keep their old hash). The sound never runs
   dry for drawing.
+- Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
+  checked by `arcade_host --check-table`; the USB loader's GAMES reply has
+  room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).
 - ROM regions: the firmware's loader holds `romset::kMaxRegions` (12);
   v0.6.0's Dig Dug had 9 of the old 8 and "Can't load the ROMs" on the
   boards. `arcade_host --check-table` (run by the host tests) checks

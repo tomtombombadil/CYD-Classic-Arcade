@@ -15,7 +15,7 @@ namespace {
 constexpr const char* kTag = "catalog";
 constexpr int kMaxSources = rom_store::kMaxEntries;
 
-bool s_available[16] = {};      // games past 16 would need this raised
+bool s_available[games::kMaxGames] = {};
 
 // The live stored zips as ROM matcher sources (store locked by the caller).
 int sources(romset::Source* out)
@@ -39,18 +39,18 @@ void refresh()
     static romset::Source src[kMaxSources];
     flash_store::Lock lock;
     const int n = sources(src);
-    for (int g = 0; g < games::kGameCount && g < 16; ++g) {
+    for (int g = 0; g < games::kGameCount && g < games::kMaxGames; ++g) {
         s_available[g] = romset::available(*games::kGames[g].set, src, n);
         ESP_LOGI(kTag, "%-10s %s", games::kGames[g].id, s_available[g] ? "ready" : "no ROMs");
     }
 }
 
-bool available(int game) { return game >= 0 && game < 16 && s_available[game]; }
+bool available(int game) { return game >= 0 && game < games::kMaxGames && s_available[game]; }
 
 int available_count()
 {
     int n = 0;
-    for (int g = 0; g < games::kGameCount && g < 16; ++g) n += s_available[g];
+    for (int g = 0; g < games::kGameCount && g < games::kMaxGames; ++g) n += s_available[g];
     return n;
 }
 
@@ -58,7 +58,7 @@ void list_ids(char* out, size_t cap)
 {
     size_t used = 0;
     if (cap) out[0] = 0;
-    for (int g = 0; g < games::kGameCount && g < 16; ++g) {
+    for (int g = 0; g < games::kGameCount && g < games::kMaxGames; ++g) {
         if (!s_available[g]) continue;
         const int k = std::snprintf(out + used, cap - used, "%s%s", used ? " " : "", games::kGames[g].id);
         if (k < 0 || size_t(k) >= cap - used) break;
