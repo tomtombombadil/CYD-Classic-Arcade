@@ -28,6 +28,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   cpu_pg5.11d halves swapped vs today's 88aa1e99), rthunder (rev 3).
   Stargate: Tom is still looking. No Namco MCU
   ROMs (51xx/53xx/54xx). Support these revisions.
+  Added 2026-10-15 (Tom: "here's five more games"): mspacman (non-merged,
+  with the aux board's u5 u6 u7), btime (Burger Time, aa/ab names),
+  tempest (136002.xxx), robotron (old robotron.sb* names, no decoder
+  PROMs), mrdo (a4-01.bin ... u8-10.bin).
 - **No ROMs in the repo, ever** (nor sample WAVs, nor ROM-derived data such
   as converted headers). Users add their own standard MAME sets. `roms/`
   and `samples/` are git-ignored for local testing; never commit from them.
@@ -78,6 +82,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   button, which never arrives.
 - Controller test also confirmed by Tom on the 2.8" ILI9341, 3.2" ST7789,
   3.5" and 4.0" ST7796 (2026-10-14): every supported board is tested.
+- SPI 80 MHz on the ST7796 boards too (v0.6.3; Tom: "almost positive all
+  the ST7789 and ST7796 will do the increased display rates"). The ILI9341
+  stays at 40 MHz.
+- Right stick and analog (v0.6.3): PAD_RUP..PAD_RRIGHT (bits 13-16,
+  `games::kPadRUp`...) for twin-stick games (Robotron), and
+  `Machine::set_analog(games::Analog)` - both sticks -512..511, both
+  controllers added - every frame for spinners / trackballs (Tempest).
 - Measured on Tom's 2.8" ST7789 (v0.1.0, Bluetooth on): RAM 142 KB free,
   biggest block 108 KB, lowest 142 KB. A 224x288 frame takes 25.9 ms at
   40 MHz SPI (38 fps max) - too slow for 60 fps, so: SPI at 80 MHz where the
@@ -159,7 +170,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   GPIO26 (high-speed channel 0 / timer 0; the backlight has channel 7 /
   timer 3), 10 bits at 78,125 Hz, duty set per sample by a 24,024 Hz
   gptimer interrupt from an 85 ms FIFO; at rest the pin slides to low (as
-  Classic Games' tones leave it). Waiting on Tom's result on the ILI9341.
+  Classic Games' tones leave it). Tom, 2026-10-15: his 2.8" ILI9341
+  has no sound in ANY firmware (his PoolRad too) - the board's own fault
+  (he had no speaker for it before). Don't chase it further; the PWM
+  setting stays for boards that need it.
 - 4-way games (Pac-Man, Donkey Kong; `games::Info::four_way`): a d-pad
   diagonal counts as the direction pressed last (Tom found Pac-Man hard
   to steer).

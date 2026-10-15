@@ -92,6 +92,10 @@ static void on_data(uni_hid_device_t* d, uni_controller_t* ctl) {
     if ((gp->dpad & DPAD_DOWN) || gp->axis_y > STICK_DIR) b |= PAD_DOWN;
     if ((gp->dpad & DPAD_LEFT) || gp->axis_x < -STICK_DIR) b |= PAD_LEFT;
     if ((gp->dpad & DPAD_RIGHT) || gp->axis_x > STICK_DIR) b |= PAD_RIGHT;
+    if (gp->axis_ry < -STICK_DIR) b |= PAD_RUP;
+    if (gp->axis_ry > STICK_DIR) b |= PAD_RDOWN;
+    if (gp->axis_rx < -STICK_DIR) b |= PAD_RLEFT;
+    if (gp->axis_rx > STICK_DIR) b |= PAD_RRIGHT;
     const bool swap = s_swap_ab;
     if (gp->buttons & BUTTON_A) b |= swap ? PAD_B : PAD_A;
     if (gp->buttons & BUTTON_B) b |= swap ? PAD_A : PAD_B;
@@ -106,6 +110,8 @@ static void on_data(uni_hid_device_t* d, uni_controller_t* ctl) {
     s_pads[i].buttons = b;
     s_pads[i].lx = (int16_t)gp->axis_x;
     s_pads[i].ly = (int16_t)gp->axis_y;
+    s_pads[i].rx = (int16_t)gp->axis_rx;
+    s_pads[i].ry = (int16_t)gp->axis_ry;
     s_pads[i].reports++;
     taskEXIT_CRITICAL(&s_lock);
 }

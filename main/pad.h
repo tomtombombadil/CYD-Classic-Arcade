@@ -25,6 +25,10 @@ enum {
     PAD_START = 1 << 10,  // Start / Options / +
     PAD_SELECT = 1 << 11, // Select / Share / Create / -
     PAD_HOME = 1 << 12,   // PS / Xbox / Home
+    PAD_RUP = 1 << 13,    // the right stick pushed past a third
+    PAD_RDOWN = 1 << 14,
+    PAD_RLEFT = 1 << 15,
+    PAD_RRIGHT = 1 << 16,
 };
 
 #define PAD_MAX 2
@@ -32,6 +36,7 @@ enum {
 typedef struct {
     uint32_t buttons;  // PAD_* bits
     int16_t lx, ly;    // left stick, -512..511 (down / right positive)
+    int16_t rx, ry;    // right stick
     uint8_t connected;
     char name[32];     // controller model, shown on this board only
     uint32_t reports;  // reports received since it connected

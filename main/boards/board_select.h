@@ -47,12 +47,14 @@
   class LGFX : public LGFX_Esp32_32E<lgfx::Panel_ST7789P3, 240, 320, true, true> {};
 
 #elif defined(CYD_BOARD_35_ST7796_RES)
+  #define CYD_SPI_WRITE_HZ 80000000   // v0.7.0 (Tom: ST7796 panels take it)
   #include "esp32_32e_display.hpp"
   #define BOARD_NAME "3.5\" ST7796 Resistive"
   #define BOARD_PORTRAIT_W 320
   class LGFX : public LGFX_Esp32_32E<lgfx::Panel_ST7796, 320, 480, false, false> {};
 
 #elif defined(CYD_BOARD_40_ST7796_RES)
+  #define CYD_SPI_WRITE_HZ 80000000   // v0.7.0 (Tom: ST7796 panels take it)
   #include "esp32_32e_display.hpp"
   #define BOARD_NAME "4.0\" ST7796 Resistive"
   #define BOARD_PORTRAIT_W 320

@@ -138,6 +138,7 @@ void run(int index, AudioRing& ring)
         if (in.back()) break;
         const uint32_t pad = g.four_way ? four_way.filter(in.game()) : in.game();
         m->set_inputs(games::map_pad(g, pad));
+        m->set_analog(in.analog());
 
         const uint32_t queue_target = std::min(queue_max, std::max(frame_samples * 3, draw_est + frame_samples * 2));
         while (ring.count() > queue_target) vTaskDelay(1);

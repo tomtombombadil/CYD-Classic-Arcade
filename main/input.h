@@ -10,6 +10,8 @@
 
 #include "pad.h"
 
+#include "emu/games.h"
+
 #include <cstdint>
 
 class Input {
@@ -26,6 +28,8 @@ public:
     // The back gesture completed this update.
     bool back() const { return back_; }
     int  connected() const { return connected_; }
+    // Both controllers' sticks added together (one is usually centred)
+    const games::Analog& analog() const { return analog_; }
 
     // Ignore every button until all are let go (after leaving a game: the
     // Start that ended it must not start the next one).
@@ -42,4 +46,5 @@ private:
     bool     back_ = false;
     bool     wait_release_ = false;
     int      connected_ = 0;
+    games::Analog analog_;
 };

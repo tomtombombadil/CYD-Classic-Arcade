@@ -14,11 +14,21 @@ void Input::update(uint32_t now)
 {
     uint32_t h = 0;
     int conn = 0;
+    int lx = 0, ly = 0, rx = 0, ry = 0;
     for (int i = 0; i < PAD_MAX; ++i) {
         pad_state_t p;
         pad_get(i, &p);
-        if (p.connected) { h |= p.buttons; ++conn; }
+        if (p.connected) {
+            h |= p.buttons;
+            ++conn;
+            lx += p.lx; ly += p.ly; rx += p.rx; ry += p.ry;
+        }
     }
+    auto clamp = [](int v) { return int16_t(v < -512 ? -512 : v > 511 ? 511 : v); };
+    analog_.lx = clamp(lx);
+    analog_.ly = clamp(ly);
+    analog_.rx = clamp(rx);
+    analog_.ry = clamp(ry);
     connected_ = conn;
     prev_ = held_;
     held_ = h;

@@ -19,6 +19,14 @@ enum Pad : uint32_t {
     kPadA = 1u << 4, kPadB = 1u << 5, kPadX = 1u << 6, kPadY = 1u << 7,
     kPadL = 1u << 8, kPadR = 1u << 9,
     kPadStart = 1u << 10, kPadSelect = 1u << 11, kPadHome = 1u << 12,
+    // The right stick pushed past a third (twin-stick games: Robotron)
+    kPadRUp = 1u << 13, kPadRDown = 1u << 14, kPadRLeft = 1u << 15, kPadRRight = 1u << 16,
+};
+
+// Both sticks as numbers, -512..511 (down / right positive); 0 = centred
+// or no controller. For spinners, trackballs and analog sticks.
+struct Analog {
+    int16_t lx = 0, ly = 0, rx = 0, ry = 0;
 };
 
 // One emulated machine. Regions are filled by romset::load() in the order
@@ -30,6 +38,9 @@ public:
     virtual void init(const uint8_t* const* regions, uint32_t audio_rate, bool swap_rgb565_bytes) = 0;
     virtual void set_dips(uint8_t dips) = 0;
     virtual void set_inputs(uint16_t buttons) = 0;
+    // The sticks, every frame (before run_frame); games with only buttons
+    // ignore it.
+    virtual void set_analog(const Analog&) {}
     // One frame: emulates it, writes its audio (signed 16-bit mono, up to
     // `cap` samples) and returns the sample count.
     virtual int  run_frame(int16_t* audio, int cap) = 0;
