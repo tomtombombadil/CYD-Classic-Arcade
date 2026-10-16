@@ -3,8 +3,9 @@
 
 namespace atari_avg {
 
-void Avg::init(read_fn rd, line_fn line, void* ctx, uint16_t base, int32_t cx, int32_t cy)
+void Avg::init(read_fn rd, line_fn line, void* ctx, uint16_t base, int32_t cx, int32_t cy, Variant variant)
 {
+    variant_ = variant;
     rd_ = rd;
     line_ = line;
     ctx_ = ctx;
@@ -25,8 +26,14 @@ void Avg::reset()
 
 uint16_t Avg::word()
 {
-    const uint16_t a = uint16_t(base_ + (pc_ << 1));
+    const uint16_t off = uint16_t(pc_ << 1);
+    const uint16_t a = uint16_t(base_ + off);
     pc_ = (pc_ + 1) & 0x1fff;
+    if (const uint8_t* p = page_[off >> 12]) {
+        p += off & 0xfff;
+        return variant_ == Variant::StarWars ? uint16_t((p[0] << 8) | p[1]) : uint16_t(p[0] | (p[1] << 8));
+    }
+    if (variant_ == Variant::StarWars) return uint16_t((rd_(ctx_, a) << 8) | rd_(ctx_, uint16_t(a + 1)));
     return uint16_t(rd_(ctx_, a) | (rd_(ctx_, uint16_t(a + 1)) << 8));
 }
 
@@ -71,7 +78,15 @@ int Avg::vector(int dvx, int dvy, int z, bool svec)
     const int64_t rate = int64_t(clocks) * (scale_ ^ 0xff);
     const int32_t x1 = x_ + int32_t((vx * rate) >> 4);
     const int32_t y1 = y_ - int32_t((vy * rate) >> 4);
-    const int level = z == 1 ? intensity_ : z * 2;
+    int level;
+    if (variant_ == Variant::StarWars) {
+        // The intensity DAC: z's bits 2 / 1 / 0 through 12k / 24k / 47k,
+        // full scale 1 + 1/2 + 12/47, times STAT's 8-bit intensity.
+        static constexpr int kDac[8] = {0, 2051, 4017, 6069, 8034, 10086, 12052, 14103};  // x 14103
+        level = (kDac[z & 7] * intensity_ + 14103 / 2) / 14103;
+    } else {
+        level = z == 1 ? intensity_ : z * 2;
+    }
     if (level) line_(ctx_, x_, y_, x1, y1, color_, level);
     x_ = x1;
     y_ = y1;
@@ -104,6 +119,9 @@ int Avg::run(int max_ops)
             if (w0 & 0x1000) {          // SCAL
                 scale_ = w0 & 0xff;
                 bin_scale_ = (w0 >> 8) & 7;
+            } else if (variant_ == Variant::StarWars) {     // STAT: colour + intensity
+                color_ = (w0 >> 8) & 0xf;
+                intensity_ = w0 & 0xff;
             } else if (w0 & 0x800) {    // STAT: colour
                 color_ = w0 & 0xf;
             } else {                    // STAT: intensity

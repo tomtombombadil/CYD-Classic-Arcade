@@ -41,7 +41,10 @@
 #  13. the Q*bert board (8088 + 6502 sound board, video, the speech and
 #      knocker models, the diagonal stick, idle skipping) on hand-made
 #      programs, -O2 and with the sanitizers
-#  14. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
+#  14. the Star Wars board (TMS5220, matrix processor on synthetic PROMs,
+#      divider, LFSR, RIOT, the AVG's Star Wars variant, wiring on hand-made
+#      6809 programs), -O2 and with the sanitizers
+#  15. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
 #      start of each opcode's file, ~600 tests each, fetched on first use
 #      into build/i8088 by fetch_i8088_tests.py - not ours, never
 #      committed), both builds
@@ -65,16 +68,18 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp $ROOT/emu/sound/namco54.cpp \
      $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/sn76489.cpp $ROOT/emu/machines/pacman.cpp \
      $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp $ROOT/emu/machines/dkong.cpp \
-     $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp \
+     $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp $ROOT/emu/cpu/m6809.cpp \
+     $ROOT/emu/cpu/m6800.cpp
      $ROOT/emu/machines/namco_galaga_common.cpp $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp \
      $ROOT/emu/machines/mspacman.cpp $ROOT/emu/machines/mrdo.cpp $ROOT/emu/sound/ay8910.cpp \
      $ROOT/emu/machines/btime.cpp $ROOT/emu/sound/qbert_sound.cpp $ROOT/emu/machines/qbert.cpp \
      $ROOT/emu/sound/pokey.cpp $ROOT/emu/sound/asteroids_sound.cpp $ROOT/emu/machines/vector_display.cpp \
      $ROOT/emu/machines/atari_dvg.cpp $ROOT/emu/machines/asteroids.cpp $ROOT/emu/machines/atari_avg.cpp \
-     $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp $ROOT/emu/cpu/m6809.cpp \
-     $ROOT/emu/cpu/m6800.cpp $ROOT/emu/machines/pia6821.cpp $ROOT/emu/machines/williams_blitter.cpp \
-     $ROOT/emu/sound/williams_sound.cpp $ROOT/emu/machines/williams.cpp \
-     $ROOT/emu/sound/qix_sound.cpp $ROOT/emu/machines/qix.cpp"
+     $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp \
+     $ROOT/emu/machines/pia6821.cpp $ROOT/emu/machines/williams_blitter.cpp \
+     $ROOT/emu/sound/williams_sound.cpp $ROOT/emu/machines/williams.cpp $ROOT/emu/sound/qix_sound.cpp \
+     $ROOT/emu/machines/qix.cpp $ROOT/emu/sound/tms5220.cpp $ROOT/emu/machines/riot6532.cpp \
+     $ROOT/emu/machines/starwars_mathbox.cpp $ROOT/emu/machines/starwars.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -143,6 +148,12 @@ g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cp
 "$OUT/atari_tests"
 "$OUT/atari_tests_san"
 
+echo "== Star Wars tests (TMS5220, matrix processor, divider, LFSR, RIOT, AVG variant, board wiring)"
+g++ $FLAGS -O2 -o "$OUT/starwars_tests" "$ROOT/tools/host_tests/starwars_tests.cpp" $EMU
+g++ $FLAGS $SAN -o "$OUT/starwars_tests_san" "$ROOT/tools/host_tests/starwars_tests.cpp" $EMU
+"$OUT/starwars_tests"
+"$OUT/starwars_tests_san"
+
 echo "== Burger Time tests (AY-3-8910, DECO CPU-7, board wiring)"
 g++ $FLAGS -O2 -o "$OUT/btime_tests" "$ROOT/tools/host_tests/btime_tests.cpp" $EMU
 g++ $FLAGS $SAN -o "$OUT/btime_tests_san" "$ROOT/tools/host_tests/btime_tests.cpp" $EMU
@@ -161,7 +172,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

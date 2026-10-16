@@ -72,6 +72,8 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes
     swap_ = swap_rgb565_bytes;
     display_.init(kScreenW, kScreenH);
     avg_.init(vec_read, vec_line, this, 0x2000, kCenterX, kCenterY);
+    avg_.map(0, vram_);             // 2000-2FFF
+    avg_.map(1, roms_.vector);      // 3000-3FFF
     for (pokey::Pokey& p : pokey_) p.init(kCpuClock, audio_rate_);
     dc_r_ = 1.0f - 6.2831853f * 15.0f / float(audio_rate_);
 

@@ -5,7 +5,7 @@
 
 namespace vector_display {
 
-void Display::init(int width, int height)
+void Base::init(int width, int height)
 {
     width_ = std::min(width, 512);
     height_ = std::min(height, 512);
@@ -13,14 +13,14 @@ void Display::init(int width, int height)
     finish();
 }
 
-void Display::begin()
+void Base::begin()
 {
     count_ = 0;
     dropped_ = 0;
     last_y_ = -2;
 }
 
-void Display::add(int x0, int y0, int x1, int y1, uint16_t color)
+void Base::add(int x0, int y0, int x1, int y1, uint16_t color)
 {
     const int xlim = width_ * kSub - 1, ylim = height_ * kSub - 1;
     if (x0 >= 0 && x1 >= 0 && y0 >= 0 && y1 >= 0 && x0 <= xlim && x1 <= xlim && y0 <= ylim && y1 <= ylim) {
@@ -48,9 +48,9 @@ void Display::add(int x0, int y0, int x1, int y1, uint16_t color)
     store(ax, ay, bx, by, color);
 }
 
-void Display::store(int ax, int ay, int bx, int by, uint16_t color)
+void Base::store(int ax, int ay, int bx, int by, uint16_t color)
 {
-    if (count_ >= kMaxSegments) {
+    if (count_ >= cap_) {
         ++dropped_;
         return;
     }
@@ -61,14 +61,13 @@ void Display::store(int ax, int ay, int bx, int by, uint16_t color)
     s.bx = int16_t(bx);
     s.by = int16_t(by);
     // dx << 16 fits 32 bits: |dx| < 512 x 16.
-    s.slope = by > ay ? int32_t(((bx - ax) * 65536) / (by - ay)) : 0;
+    const int32_t slope = by > ay ? int32_t(((bx - ax) * 65536) / (by - ay)) : 0;
+    s.slope_lo = uint16_t(uint32_t(slope));
+    s.slope_hi = int16_t(uint32_t(slope) >> 16);
     s.color = color;
-    s.last_row = uint16_t(by / kSub);
-    // A dot covers the next row too (if there is one).
-    if (ax == bx && ay == by && s.last_row + 1 < height_) ++s.last_row;
 }
 
-void Display::finish()
+void Base::finish()
 {
     // Counting sort of the segments by their first row.
     uint16_t start[513] = {};
@@ -78,7 +77,7 @@ void Display::finish()
     last_y_ = -2;
 }
 
-void Display::draw(const Seg& s, int y, uint16_t* out) const
+void Base::draw(const Seg& s, int y, uint16_t* out) const
 {
     int xa, xb;
     if (s.ay == s.by) {
@@ -89,15 +88,16 @@ void Display::draw(const Seg& s, int y, uint16_t* out) const
         // Where the line enters and leaves this row.
         const int y0 = std::max<int>(s.ay, y * kSub);
         const int y1 = std::min<int>(s.by, y * kSub + kSub - 1);
-        xa = s.ax + int((int64_t(s.slope) * (y0 - s.ay)) >> 16);
-        xb = s.ax + int((int64_t(s.slope) * (y1 - s.ay)) >> 16);
+        const int32_t slope = s.slope();
+        xa = s.ax + int((int64_t(slope) * (y0 - s.ay)) >> 16);
+        xb = s.ax + int((int64_t(slope) * (y1 - s.ay)) >> 16);
     }
     if (xa > xb) std::swap(xa, xb);
     const int p0 = std::max(xa / kSub, 0), p1 = std::min(xb / kSub, width_ - 1);
     for (int x = p0; x <= p1; ++x) out[x] = s.color;
 }
 
-void Display::render_line(int y, uint16_t* out)
+void Base::render_line(int y, uint16_t* out)
 {
     for (int x = 0; x < width_; ++x) out[x] = 0;
     if (y < 0 || y >= height_) return;
@@ -106,7 +106,7 @@ void Display::render_line(int y, uint16_t* out)
         active_n_ = 0;
         next_ = 0;
         while (next_ < count_ && seg_[order_[next_]].ay / kSub < y) {
-            if (seg_[order_[next_]].last_row >= y) active_[active_n_++] = order_[next_];
+            if (last_row(seg_[order_[next_]]) >= y && active_n_ < active_cap_) active_[active_n_++] = order_[next_];
             ++next_;
         }
         std::sort(active_, active_ + active_n_);
@@ -114,12 +114,13 @@ void Display::render_line(int y, uint16_t* out)
         // Drop the ones that ended above this row.
         int n = 0;
         for (int i = 0; i < active_n_; ++i)
-            if (seg_[active_[i]].last_row >= y) active_[n++] = active_[i];
+            if (last_row(seg_[active_[i]]) >= y) active_[n++] = active_[i];
         active_n_ = n;
     }
     // New ones join in the order the lines were added (later lines on top).
     while (next_ < count_ && seg_[order_[next_]].ay / kSub == y) {
         const uint16_t v = order_[next_++];
+        if (active_n_ >= active_cap_) continue;
         int i = active_n_++;
         for (; i > 0 && active_[i - 1] > v; --i) active_[i] = active_[i - 1];
         active_[i] = v;
