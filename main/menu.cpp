@@ -1,20 +1,32 @@
-// The start menu (see menu.h).
+// The menus (see menu.h): Home (the games), Settings and text pages, drawn
+// by ui.* from menu_model.*'s rows, driven by touch and the controllers
+// alike.
+//
+// Touch: tap a row, a key, the header's < (back) or gear (Settings); < >
+// keys change pages. Controller: up / down move the gold frame (pages
+// follow), A or Start chooses, B goes back, left / right change a setting
+// or the page, L / R change the page.
 #include "menu.h"
 
 #include "audio_out.h"
 #include "catalog.h"
+#include "flash_store.h"
 #include "game_runner.h"
 #include "input.h"
+#include "menu_model.h"
 #include "pad.h"
 #include "pad_test.h"
 #include "screen.h"
 #include "serial_link.h"
 #include "settings.h"
+#include "touch.h"
+#include "ui.h"
 #include "version_gen.h"
 
 #include "emu/games.h"
 
 #include <cstdio>
+#include <cstring>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_timer.h>
@@ -24,225 +36,408 @@
 namespace menu {
 namespace {
 
-using namespace screen;
-
-enum Item : int { kTest = 1000, kSwap, kVolume, kSound, kRotate, kForget };
+using menu_model::kMaxItems;
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
-// The settings after the games; Sound Output only where there's a choice
-// (not on the codec boards)
-constexpr int kSettings[] = {kTest, kSwap, kVolume, kSound, kRotate, kForget};
-int settings_count() { return audio::has_output_choice() ? 6 : 5; }
-int item_count() { return games::kGameCount + settings_count(); }
-int item_id(int i)
-{
-    if (i < games::kGameCount) return i;
-    int k = i - games::kGameCount;
-    if (!audio::has_output_choice() && k >= 3) ++k;
-    return kSettings[k];
-}
+enum class Page { Home, Settings, Text };
 
-void item_text(int id, char* buf, size_t cap, uint16_t& color)
-{
-    color = kText;
-    if (id < games::kGameCount) {
-        const bool ok = catalog::available(id);
-        std::snprintf(buf, cap, "%s%s", games::kGames[id].title, ok ? "" : "  (no ROMs)");
-        color = ok ? kText : kMuted;
-    } else if (id == kTest) {
-        std::snprintf(buf, cap, "Controller Test");
-    } else if (id == kSwap) {
-        std::snprintf(buf, cap, "Swap A/B and X/Y: %s", settings::get().swap_ab ? "On" : "Off");
-    } else if (id == kVolume) {
-        std::snprintf(buf, cap, "Volume: %d %%", settings::get().volume);
-    } else if (id == kSound) {
-        std::snprintf(buf, cap, "Sound Output: %s", settings::get().sound_pwm ? "PWM" : "DAC");
-    } else if (id == kRotate) {
-        std::snprintf(buf, cap, "Rotate Screen 180: %s", settings::get().rotate180 ? "On" : "Off");
-    } else {
-        std::snprintf(buf, cap, "Forget Controllers");
+struct Menu {
+    AudioRing* ring = nullptr;
+    Input in;
+    Page page = Page::Home;
+
+    ui::Item home_items[kMaxItems];
+    int home_what[kMaxItems] = {};
+    ui::ListPage home;
+
+    ui::Item set_items[kMaxItems];
+    int set_what[kMaxItems] = {};
+    ui::ListPage settings;
+
+    // The open text page and where its < goes
+    ui::TextPage text;
+    Page text_back = Page::Home;
+    const char* text_lines[24] = {};
+    char text_buf[16][96] = {};
+
+    ui::Footer footer;
+    char news[72] = "";
+    bool receiving = false;
+
+    // Touch: what the press started on
+    ui::Target down;
+
+    LGFX& g() { return screen::lcd(); }
+    ui::ListPage* list() { return page == Page::Home ? &home : page == Page::Settings ? &settings : nullptr; }
+
+    menu_model::SettingsState settings_state() const
+    {
+        menu_model::SettingsState s;
+        const settings::Values& v = settings::get();
+        s.volume = v.volume;
+        s.swap_ab = v.swap_ab;
+        s.rotate180 = v.rotate180;
+        s.sound_pwm = v.sound_pwm;
+        s.has_sound_choice = audio::has_output_choice();
+        s.has_calibration = touch::needs_calibration();
+        return s;
     }
-}
 
-// The list scrolls when it doesn't fit above the news line: s_first is
-// the first item shown.
-int s_first = 0;
-int status_y();
-
-int visible_items(int top)
-{
-    const int n = (status_y() - top) / line_h();
-    return n < 1 ? 1 : n;
-}
-
-// true = the window moved (everything needs drawing again)
-bool scroll_to(int sel, int top)
-{
-    const int vis = visible_items(top);
-    const int old = s_first;
-    if (sel < s_first) s_first = sel;
-    if (sel >= s_first + vis) s_first = sel - vis + 1;
-    if (s_first > item_count() - vis) s_first = item_count() - vis;
-    if (s_first < 0) s_first = 0;
-    return s_first != old;
-}
-
-void draw_item(int i, int sel, int top)
-{
-    if (i < s_first || i >= s_first + visible_items(top)) return;
-    char buf[64];
-    uint16_t color;
-    item_text(item_id(i), buf, sizeof buf, color);
-    const bool on = i == sel;
-    line(top + (i - s_first) * line_h(), on ? kBg : color, buf, on ? kGold : kBg);
-}
-
-// The line above the help text, for news (ROMs loaded, receiving).
-int status_y()
-{
-    const char* longest = "Add ROM zips: put them in a CYD-Classic-Arcade folder on the SD card, or send them over "
-                          "USB from the install web page.";
-    small_font();
-    const int y = lcd().height() - text_box(0, kMuted, longest, false) - 4 - line_h();
-    menu_font();
-    return y;
-}
-
-void draw_all(int sel, int top, const char* status)
-{
-    LGFX& l = lcd();
-    l.fillScreen(kBg);
-    char buf[64];
-    std::snprintf(buf, sizeof buf, "CYD Classic Arcade %s", CYD_ARCADE_VERSION);
-    line(0, kGold, buf);
-    // Free RAM (a game needs its machine + ROMs in it; ROMs go to flash
-    // when it's short)
-    std::snprintf(buf, sizeof buf, "RAM %u KB free, largest block %u KB",
-                  unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
-                  unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
-    const int title_h = line_h();
-    small_font();
-    line(title_h, kMuted, buf);
-    menu_font();
-    scroll_to(sel, top);
-    for (int i = 0; i < item_count(); ++i) draw_item(i, sel, top);
-    // more above / below
-    if (s_first > 0) l.fillTriangle(l.width() - 14, top + 2, l.width() - 20, top + 8, l.width() - 8, top + 8, kMuted);
-    const int vis = visible_items(top);
-    if (s_first + vis < item_count()) {
-        const int yb = top + vis * line_h() - 3;
-        l.fillTriangle(l.width() - 14, yb, l.width() - 20, yb - 6, l.width() - 8, yb - 6, kMuted);
+    void build_home()
+    {
+        bool avail[games::kMaxGames] = {};
+        for (int i = 0; i < games::kGameCount && i < games::kMaxGames; i++) avail[i] = catalog::available(i);
+        home.title = "CYD Classic Arcade";
+        home.gear = true;
+        home.items = home_items;
+        home.count = menu_model::build_home(home_items, home_what, avail);
+        if (home.focus >= home.count) home.focus = home.count - 1;
+        if (home.focus < 0) home.focus = 0;
+        const ui::Metrics m = ui::metrics(g());
+        home.page = ui::page_of(m, home.focus);
     }
-    const char* help = catalog::available_count() == 0
-        ? "Add ROM zips: put them in a CYD-Classic-Arcade folder on the SD card, or send them over USB "
-          "from the install web page."
-        : "A: play. In a game, hold Select and press Start twice to come back here.";
-    const int sy = status_y();
-    small_font();
-    const int y = l.height() - text_box(0, kMuted, help, false) - 4;
-    text_box(y, kMuted, help);
-    if (status && status[0]) line(sy, kGold, status);
-    menu_font();
-}
+
+    void build_settings()
+    {
+        settings.title = "Settings";
+        settings.back = true;
+        settings.items = set_items;
+        settings.count = menu_model::build_settings(set_items, set_what, settings_state());
+        if (settings.focus < 0 || settings.focus >= settings.count) settings.focus = 0;
+    }
+
+    void read_pads(bool force)
+    {
+        bool changed = force;
+        for (int i = 0; i < 2 && i < PAD_MAX; i++) {
+            pad_state_t p;
+            pad_get(i, &p);
+            ui::Pad& d = footer.pads[i];
+            if (d.connected != bool(p.connected) || std::strcmp(d.name, p.name) != 0) {
+                d.connected = p.connected;
+                std::snprintf(d.name, sizeof d.name, "%s", p.name);
+                changed = true;
+            }
+        }
+        footer.news = shown_news();
+        if (changed && !force) ui::draw_footer(g(), footer);
+    }
+
+    const char* shown_news() const { return receiving ? "Receiving ROMs over USB..." : news; }
+
+    void set_news(const char* s, bool draw = true)
+    {
+        std::snprintf(news, sizeof news, "%s", s);
+        footer.news = shown_news();
+        if (draw) ui::draw_footer(g(), footer);
+    }
+
+    void draw()
+    {
+        footer.news = shown_news();
+        if (page == Page::Text) ui::draw_text(g(), text, footer);
+        else ui::draw_list(g(), *list(), footer);
+    }
+
+    void open(Page p)
+    {
+        page = p;
+        if (p == Page::Settings) build_settings();
+        draw();
+    }
+
+    void open_text(const char* title, const char* const* lines, int count, Page back)
+    {
+        text.title = title;
+        text.lines = lines;
+        text.count = count;
+        text_back = back;
+        page = Page::Text;
+        draw();
+    }
+
+    void open_about()
+    {
+        static char buf[16][64];
+        menu_model::AboutInfo a;
+        a.version = CYD_ARCADE_VERSION;
+        a.board = BOARD_NAME;
+        a.ram_free_kb = unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024);
+        a.ram_block_kb = unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024);
+        a.psram_kb = unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
+        {
+            flash_store::Lock lock;
+            a.rom_free_kb = unsigned(flash_store::store().free_bytes() / 1024);
+        }
+        a.games_ready = catalog::available_count();
+        a.games_total = games::kGameCount;
+        const int n = menu_model::build_about(a, buf, text_lines, 16);
+        open_text("About", text_lines, n, Page::Settings);
+    }
+
+    void open_game_info(int game)
+    {
+        const int n = menu_model::build_game_info(game, text_buf, text_lines, 16);
+        open_text(games::kGames[game].title, text_lines, n, Page::Home);
+    }
+
+    // Moves the controller's frame; the page follows
+    void move_focus(ui::ListPage& l, int to)
+    {
+        if (l.count == 0) return;
+        to = (to + l.count) % l.count;
+        const int old = l.focus;
+        l.focus = to;
+        const ui::Metrics m = ui::metrics(g());
+        if (ui::page_of(m, to) != l.page) {
+            l.page = ui::page_of(m, to);
+            draw();
+        } else {
+            ui::draw_row(g(), l, old);
+            ui::draw_row(g(), l, to);
+        }
+    }
+
+    void turn_page(ui::ListPage& l, int dir)
+    {
+        const ui::Metrics m = ui::metrics(g());
+        const int pages = ui::page_count(m, l.count);
+        const int p = l.page + dir;
+        if (p < 0 || p >= pages) return;
+        l.page = p;
+        l.focus = p * m.rows;
+        draw();
+    }
+
+    // ---- actions ----
+
+    void play(int game)
+    {
+        if (footer.pads[0].connected + footer.pads[1].connected == 0) {
+            ui::message(g(), "No controller",
+                        "Put one in pairing mode to play. To leave a game, touch and hold the screen.");
+            const uint32_t t0 = now_ms();
+            while (now_ms() - t0 < 3500) {
+                if (touch::poll().kind == touch::Event::Up) break;
+                vTaskDelay(pdMS_TO_TICKS(16));
+            }
+        }
+        news[0] = 0;
+        game_runner::run(game, *ring);
+        const game_runner::Stats& st = game_runner::last_stats();
+        if (st.frames_per_s > 0)
+            std::snprintf(news, sizeof news, "%s: %.1f fps, %.0f shown/s", games::kGames[game].title,
+                          double(st.frames_per_s), double(st.drawn_per_s));
+        in.wait_for_release();
+        touch::wait_release();
+        read_pads(true);
+        draw();
+    }
+
+    void choose_home(int i)
+    {
+        if (i < 0 || i >= home.count) return;
+        const int what = home_what[i];
+        if (what == menu_model::kHelpRow)
+            open_text("How to Add Games", menu_model::kRomsHelp, menu_model::kRomsHelpCount, Page::Home);
+        else if (catalog::available(what)) play(what);
+        else open_game_info(what);
+    }
+
+    void change_setting(int i, int dir)   // dir: -1 / +1 (stepper), 0 = chosen
+    {
+        if (i < 0 || i >= settings.count) return;
+        settings::Values& v = settings::get();
+        switch (set_what[i]) {
+        case menu_model::kVolume: {
+            int vol = v.volume + (dir < 0 ? -10 : dir > 0 ? 10 : 0);
+            vol = vol < 0 ? 0 : vol > 100 ? 100 : vol;
+            if (vol == v.volume) return;
+            v.volume = uint8_t(vol);
+            audio::set_volume(vol);
+            break;
+        }
+        case menu_model::kSwap:
+            v.swap_ab = !v.swap_ab;
+            pad_set_swap_ab(v.swap_ab);
+            break;
+        case menu_model::kRotate:
+            v.rotate180 = !v.rotate180;
+            settings::save();
+            screen::apply_rotation();
+            menu_model::refresh_settings(set_items, set_what, settings.count, settings_state());
+            draw();
+            return;
+        case menu_model::kSound:
+            // The pin's driver is chosen at start-up: restart with the other
+            v.sound_pwm = !v.sound_pwm;
+            settings::save();
+            ui::message(g(), "Restarting", v.sound_pwm ? "Sound by PWM" : "Sound by the DAC");
+            vTaskDelay(pdMS_TO_TICKS(800));
+            esp_restart();
+            return;
+        default:
+            return;
+        }
+        settings::save();
+        menu_model::refresh_settings(set_items, set_what, settings.count, settings_state());
+        ui::draw_row(g(), settings, i);
+    }
+
+    void choose_setting(int i)
+    {
+        if (i < 0 || i >= settings.count) return;
+        switch (set_what[i]) {
+        case menu_model::kVolume:
+            return;   // the - + keys
+        case menu_model::kSwap:
+        case menu_model::kRotate:
+        case menu_model::kSound:
+            change_setting(i, 0);
+            return;
+        case menu_model::kTest:
+            pad_test::run(*ring);
+            in.wait_for_release();
+            touch::wait_release();
+            draw();
+            return;
+        case menu_model::kForget:
+            pad_forget_all();
+            set_news("Controllers forgotten: pair them again");
+            return;
+        case menu_model::kCalibrate:
+            touch::calibrate();
+            draw();
+            return;
+        case menu_model::kRoms:
+            open_text("How to Add Games", menu_model::kRomsHelp, menu_model::kRomsHelpCount, Page::Settings);
+            return;
+        case menu_model::kAbout:
+            open_about();
+            return;
+        default:
+            return;
+        }
+    }
+
+    void choose(int i)
+    {
+        if (page == Page::Home) choose_home(i);
+        else if (page == Page::Settings) choose_setting(i);
+    }
+
+    void back()
+    {
+        if (page == Page::Settings) open(Page::Home);
+        else if (page == Page::Text) open(text_back);
+    }
+
+    // ---- touch ----
+
+    void on_touch(const touch::Event& e)
+    {
+        ui::ListPage* l = list();
+        if (e.kind == touch::Event::Down) {
+            down = l ? ui::hit_list(g(), *l, e.x, e.y) : ui::hit_text(g(), e.x, e.y);
+            if (l && down.hit == ui::Hit::Row) {
+                l->pressed = down.index;
+                ui::draw_row(g(), *l, down.index);
+            }
+            return;
+        }
+        if (e.kind != touch::Event::Up) return;
+        const ui::Target t = down;
+        down = ui::Target{};
+        if (l && l->pressed >= 0) {
+            const int was = l->pressed;
+            l->pressed = -1;
+            if (t.hit == ui::Hit::Row) {
+                const int old = l->focus;
+                l->focus = was;          // the frame follows the finger
+                ui::draw_row(g(), *l, old);
+                ui::draw_row(g(), *l, was);
+            } else {
+                ui::draw_row(g(), *l, was);
+            }
+        }
+        switch (t.hit) {
+        case ui::Hit::Back: back(); break;
+        case ui::Hit::Gear: open(Page::Settings); break;
+        case ui::Hit::Prev: if (l) turn_page(*l, -1); break;
+        case ui::Hit::Next: if (l) turn_page(*l, +1); break;
+        case ui::Hit::Minus: change_setting(t.index, -1); break;
+        case ui::Hit::Plus: change_setting(t.index, +1); break;
+        case ui::Hit::Row: choose(t.index); break;
+        case ui::Hit::None: break;
+        }
+    }
+
+    // ---- controller ----
+
+    void on_buttons(uint32_t p)
+    {
+        if (!p) return;
+        if (page == Page::Text) {
+            if (p & (PAD_A | PAD_B | PAD_START)) back();
+            return;
+        }
+        ui::ListPage& l = *list();
+        if (p & PAD_UP) move_focus(l, l.focus - 1);
+        else if (p & PAD_DOWN) move_focus(l, l.focus + 1);
+        else if (p & PAD_L) turn_page(l, -1);
+        else if (p & PAD_R) turn_page(l, +1);
+        else if (p & (PAD_LEFT | PAD_RIGHT)) {
+            const int dir = (p & PAD_RIGHT) ? 1 : -1;
+            const bool setting = page == Page::Settings && l.focus >= 0 && l.focus < l.count &&
+                                 l.items[l.focus].widget != ui::Widget::Chevron &&
+                                 l.items[l.focus].widget != ui::Widget::None;
+            if (setting) change_setting(l.focus, dir);
+            else turn_page(l, dir);
+        } else if (p & (PAD_A | PAD_START)) {
+            choose(l.focus);
+        } else if (p & PAD_B) {
+            back();
+        }
+    }
+
+    // ---- news from the USB loader ----
+
+    void poll_usb()
+    {
+        const bool busy = serial_link::busy();
+        if (busy != receiving) {
+            receiving = busy;
+            footer.news = shown_news();
+            ui::draw_footer(g(), footer);
+        }
+        if (serial_link::take_changed()) {
+            char buf[48];
+            const int n = catalog::available_count();
+            std::snprintf(buf, sizeof buf, "ROMs loaded: %d game%s ready", n, n == 1 ? "" : "s");
+            set_news(buf, false);
+            build_home();
+            draw();
+        }
+    }
+};
 
 }  // namespace
 
 void run(AudioRing& ring)
 {
-    int sel = 0;
-    Input in;
-    menu_font();
-    const int top = line_h() * 2;
-    char status[64] = "";
-    if (!audio::running()) std::snprintf(status, sizeof status, "No sound: the DAC didn't start");
-    bool redraw = true;
-    bool was_busy = false;
+    static Menu m;
+    m.ring = &ring;
+    if (!audio::running()) std::snprintf(m.news, sizeof m.news, "No sound: the audio output didn't start");
+    m.build_home();
+    m.read_pads(true);
+    m.draw();
     for (;;) {
-        if (redraw) {
-            draw_all(sel, top, status);
-            redraw = false;
-        }
-        // ROMs arriving over USB
-        const bool busy = serial_link::busy();
-        if (busy != was_busy) {
-            const int sy = status_y();
-            small_font();
-            line(sy, kGold, busy ? "Receiving ROMs over USB..." : "");
-            menu_font();
-            was_busy = busy;
-        }
-        if (serial_link::take_changed()) {
-            std::snprintf(status, sizeof status, "ROMs loaded: %d game%s ready", catalog::available_count(),
-                          catalog::available_count() == 1 ? "" : "s");
-            redraw = true;
-            continue;
-        }
-
-        in.update(now_ms());
-        const uint32_t p = in.pressed();
-        const int old = sel;
-        if (p & PAD_UP) sel = (sel + item_count() - 1) % item_count();
-        if (p & PAD_DOWN) sel = (sel + 1) % item_count();
-        if (sel != old) {
-            if (scroll_to(sel, top)) {
-                redraw = true;
-                continue;
-            }
-            draw_item(old, sel, top);
-            draw_item(sel, sel, top);
-        }
-        const int id = item_id(sel);
-        const bool choose = p & (PAD_A | PAD_START);
-        if (id == kSwap && (choose || (p & (PAD_LEFT | PAD_RIGHT)))) {
-            settings::get().swap_ab = !settings::get().swap_ab;
-            pad_set_swap_ab(settings::get().swap_ab);
-            settings::save();
-            draw_item(sel, sel, top);
-        } else if (id == kVolume && (p & (PAD_LEFT | PAD_RIGHT))) {
-            int v = settings::get().volume + ((p & PAD_RIGHT) ? 10 : -10);
-            v = v < 0 ? 0 : v > 100 ? 100 : v;
-            settings::get().volume = uint8_t(v);
-            audio::set_volume(v);
-            settings::save();
-            draw_item(sel, sel, top);
-        } else if (id == kSound && (choose || (p & (PAD_LEFT | PAD_RIGHT)))) {
-            // The pin's driver is chosen at start-up: restart with the other
-            settings::get().sound_pwm = !settings::get().sound_pwm;
-            settings::save();
-            draw_item(sel, sel, top);
-            const int sy = status_y();
-            small_font();
-            line(sy, kGold, "Restarting...");
-            vTaskDelay(pdMS_TO_TICKS(500));
-            esp_restart();
-        } else if (id == kRotate && (choose || (p & (PAD_LEFT | PAD_RIGHT)))) {
-            settings::get().rotate180 = !settings::get().rotate180;
-            settings::save();
-            apply_rotation();
-            redraw = true;
-        } else if (choose && id == kForget) {
-            // Pairings this board keeps: a controller paired since with
-            // another board can fail to reconnect here until forgotten
-            pad_forget_all();
-            std::snprintf(status, sizeof status, "Controllers forgotten: pair them again");
-            in.wait_for_release();
-            redraw = true;
-        } else if (choose && id == kTest) {
-            pad_test::run(ring);
-            in.wait_for_release();
-            redraw = true;
-        } else if (choose && id < games::kGameCount && catalog::available(id)) {
-            status[0] = 0;
-            game_runner::run(id, ring);
-            const game_runner::Stats& st = game_runner::last_stats();
-            if (st.frames_per_s > 0)
-                std::snprintf(status, sizeof status, "%s: %.1f fps, %.0f shown/s", games::kGames[id].title,
-                              double(st.frames_per_s), double(st.drawn_per_s));
-            in.wait_for_release();
-            menu_font();
-            redraw = true;
-        }
+        m.read_pads(false);
+        m.poll_usb();
+        m.in.update(now_ms());
+        m.on_buttons(m.in.pressed());
+        m.on_touch(touch::poll());
         vTaskDelay(pdMS_TO_TICKS(16));
     }
 }

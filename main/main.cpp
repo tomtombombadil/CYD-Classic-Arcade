@@ -20,6 +20,8 @@
 #include "sd_import.h"
 #include "serial_link.h"
 #include "settings.h"
+#include "touch.h"
+#include "ui.h"
 #include "version_gen.h"
 
 namespace {
@@ -40,8 +42,22 @@ void ui_task(void*)
     const int copied = store ? sd_import::run(sd_status) : 0;
 
     screen::init();
-    screen::line(0, screen::kGold, "CYD Classic Arcade");
-    screen::line(screen::line_h(), screen::kMuted, CYD_ARCADE_VERSION);
+    // Touch first: a resistive panel is calibrated once (first start)
+    touch::init();
+    {
+        LGFX& g = screen::lcd();
+        const ui::Metrics m = ui::metrics(g);
+        g.fillScreen(ui::kBg);
+        g.setTextDatum(textdatum_t::middle_center);
+        g.setFont(m.title);
+        g.setTextColor(ui::kGold);
+        g.drawString("CYD Classic Arcade", m.w / 2, m.h / 2 - m.header_h / 3);
+        g.setFont(m.text);
+        g.setTextColor(ui::kSub);
+        g.drawString(CYD_ARCADE_VERSION, m.w / 2, m.h / 2 + m.header_h / 3);
+        g.setTextDatum(textdatum_t::top_left);
+        screen::menu_font();
+    }
     if (store) {
         if (copied > 0) {
             char buf[48];

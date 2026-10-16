@@ -24,6 +24,8 @@
 #include "catalog.h"
 #include "input.h"
 #include "screen.h"
+#include "touch.h"
+#include "ui.h"
 
 #include "emu/games.h"
 
@@ -59,12 +61,10 @@ uint32_t hash_line(const uint16_t* p, int n)
 void message(const char* a, const char* b)
 {
     LGFX& lcd = screen::lcd();
-    lcd.fillScreen(screen::kBg);
-    screen::menu_font();
-    const int lh = screen::line_h();
-    screen::line(lcd.height() / 2 - lh, screen::kRed, a);
-    screen::line(lcd.height() / 2, screen::kText, b);
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    lcd.fillScreen(ui::kBg);
+    ui::message(lcd, a, b, ui::kRed);
+    const uint32_t t0 = now_ms();
+    while (now_ms() - t0 < 4000 && touch::poll().kind != touch::Event::Up) vTaskDelay(pdMS_TO_TICKS(16));
 }
 
 }  // namespace
@@ -156,7 +156,9 @@ void run(int index, AudioRing& ring)
     int64_t emu_us = 0, draw_us = 0;
     for (;;) {
         in.update(now_ms());
-        if (in.back()) break;
+        // Back to the menu: the controller's gesture, or the screen held
+        // for a second (a game started without a controller)
+        if (in.back() || touch::held_long()) break;
         const uint32_t pad = g.four_way ? four_way.filter(in.game()) : in.game();
         m->set_inputs(games::map_pad(g, pad));
         m->set_analog(in.analog());

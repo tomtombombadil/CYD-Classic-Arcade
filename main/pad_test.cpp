@@ -3,6 +3,8 @@
 
 #include "input.h"
 #include "screen.h"
+#include "touch.h"
+#include "ui.h"
 
 #include <cstdio>
 #include <cstring>
@@ -108,21 +110,23 @@ void draw_memory(int y)
 void run(AudioRing& ring)
 {
     LGFX& l = lcd();
-    l.setFont(l.width() >= 320 ? static_cast<const lgfx::IFont*>(&fonts::Font2)
-                               : static_cast<const lgfx::IFont*>(&fonts::Font0));
     l.fillScreen(kBg);
     const int ms10 = measure_frame_push();
+    ui::draw_header(l, "Controller Test", true, false);
+    const int top = ui::metrics(l).header_h + 4;
+    l.setFont(l.width() >= 320 ? static_cast<const lgfx::IFont*>(&fonts::Font2)
+                               : static_cast<const lgfx::IFont*>(&fonts::Font0));
+    l.setTextDatum(textdatum_t::top_left);
     const int h = lh();
     char buf[64];
-    text(0, kGold, "Controller Test");
-    text(h, kMuted, BOARD_NAME);
+    text(top, kMuted, BOARD_NAME);
     std::snprintf(buf, sizeof buf, "224x288 frame: %d.%d ms (%d fps max)", ms10 / 10, ms10 % 10,
                   ms10 ? 10000 / ms10 : 0);
-    text(h * 3, kText, buf);
+    text(top + h * 2, kText, buf);
     const int band = h * 2 + 2 * (h + 6) + 6;
-    const int pad_y = h * 5;
+    const int pad_y = top + h * 4;
     text(pad_y + band * PAD_MAX, kMuted, "Hold A for a tone, B for a higher one");
-    text(pad_y + band * PAD_MAX + h, kMuted, "Hold Select, press Start twice: back");
+    text(pad_y + band * PAD_MAX + h, kMuted, "Back: tap <, or Select + Start twice");
 
     pad_state_t was[PAD_MAX] = {};
     bool first = true;
@@ -134,6 +138,8 @@ void run(AudioRing& ring)
         const uint32_t now = now_ms();
         in.update(now);
         if (in.back()) break;
+        const touch::Event te = touch::poll();
+        if (te.kind == touch::Event::Up && ui::hit_text(l, te.x, te.y).hit == ui::Hit::Back) break;
         int hz = 0;
         for (int i = 0; i < PAD_MAX; i++) {
             pad_state_t p;
@@ -153,7 +159,7 @@ void run(AudioRing& ring)
         while (ring.count() > 960) vTaskDelay(1);
         ring.push(tone, 480);
         if (int32_t(now - next_mem) >= 0) {
-            draw_memory(h * 2);
+            draw_memory(top + h);
             next_mem = now + 1000;
         }
         vTaskDelay(pdMS_TO_TICKS(10));

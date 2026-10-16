@@ -91,6 +91,9 @@ struct Info {
     // game's Control table maps kPadUp / kPadRight / kPadDown / kPadLeft to
     // the up-right / down-right / down-left / up-left switches.
     bool               diagonal = false;
+    // Shown in the menu under the title: "Namco 1980"
+    const char*        maker = "";
+    int                year = 0;
 };
 
 extern const Info kGames[];

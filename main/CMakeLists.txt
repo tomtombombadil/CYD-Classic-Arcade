@@ -6,7 +6,7 @@ if(IDF_TARGET STREQUAL "esp32")
     list(APPEND MAIN_REQUIRES esp_driver_dac)
 else()
     # ESP32-S3 boards: ES8311 codec (I2S + I2C), SDMMC card slot, native USB
-    list(APPEND MAIN_REQUIRES esp_driver_i2s esp_driver_i2c esp_driver_sdmmc esp_driver_usb_serial_jtag)
+    list(APPEND MAIN_REQUIRES esp_driver_i2s esp_driver_sdmmc esp_driver_usb_serial_jtag)
 endif()
 idf_component_register(
     SRCS ${MAIN_SRCS}

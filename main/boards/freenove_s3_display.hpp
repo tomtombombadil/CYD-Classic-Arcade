@@ -6,7 +6,9 @@
 // is CC BY-NC-SA: read for the pins only, no code taken):
 //   Display on SPI2 : SCLK 12, MOSI 11, MISO 13 (2.8" only), CS 10, DC 46,
 //                     RST = EN; backlight 45 (high = on); inversion on
-//   Touch FT6336    : I2C SDA 16, SCL 15, INT 17, RST 18 (not used here)
+//   Touch FT6336    : I2C SDA 16, SCL 15, INT 17, RST 18, address 0x38; it
+//                     reports in the panel's own portrait coordinates
+//                     (Freenove's sample maps it that way)
 //   Audio ES8311    : I2C SDA 16, SCL 15 (address 0x18); I2S MCLK 4, BCLK 5,
 //                     WS 7, DOUT 8, DIN 6; speaker amp enable 1 (low = on)
 //   SD card (SDMMC) : CLK 38, CMD 40, D0 39, D1 41, D2 48, D3 47
@@ -18,7 +20,7 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 
-#define BOARD_TOUCH_RESISTIVE   0
+#define BOARD_TOUCH_RESISTIVE   0    // capacitive: no calibration
 #define BOARD_PIN_BOOT_BTN      0
 #define BOARD_SD_USABLE         1
 #define BOARD_SD_SDMMC          1    // 4-bit SDMMC, not SPI
@@ -35,6 +37,7 @@
 #define BOARD_PIN_I2S_DOUT      8
 #define BOARD_PIN_I2C_SDA       16
 #define BOARD_PIN_I2C_SCL       15
+#define BOARD_I2C_PORT          0    // shared by touch and the codec (LovyanGFX's I2C)
 #define BOARD_I2C_CODEC_ADDR    0x18
 #define BOARD_PIN_AUDIO_EN      1    // low = amplifier on
 #define BOARD_PIN_BATTERY_ADC   9
@@ -46,6 +49,7 @@ class LGFX_FreenoveS3 : public lgfx::LGFX_Device
     PanelT          _panel;
     lgfx::Bus_SPI   _bus;
     lgfx::Light_PWM _light;
+    lgfx::Touch_FT5x06 _touch;
 
 public:
     LGFX_FreenoveS3()
@@ -93,6 +97,24 @@ public:
             cfg.pwm_channel = 7;
             _light.config(cfg);
             _panel.setLight(&_light);
+        }
+        {   // FT6336 (FT5x06 family) on the I2C bus the audio codec shares
+            auto cfg = _touch.config();
+            cfg.i2c_port        = BOARD_I2C_PORT;
+            cfg.i2c_addr        = 0x38;
+            cfg.pin_sda         = BOARD_PIN_I2C_SDA;
+            cfg.pin_scl         = BOARD_PIN_I2C_SCL;
+            cfg.pin_int         = -1;   // INT is on GPIO17; polled instead (its polarity unchecked)
+            cfg.pin_rst         = 18;
+            cfg.freq            = 400000;
+            cfg.x_min           = 0;
+            cfg.x_max           = kWidth - 1;
+            cfg.y_min           = 0;
+            cfg.y_max           = kHeight - 1;
+            cfg.bus_shared      = false;
+            cfg.offset_rotation = 0;
+            _touch.config(cfg);
+            _panel.setTouch(&_touch);
         }
         setPanel(&_panel);
     }

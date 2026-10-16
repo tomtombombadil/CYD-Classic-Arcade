@@ -30,7 +30,6 @@
 #include <freertos/task.h>
 
 #if BOARD_AUDIO_I2S
-#include <driver/i2c_master.h>
 #include <driver/i2s_std.h>
 #else
 #include <driver/dac_continuous.h>
@@ -84,23 +83,10 @@ void amp(bool on) {
 i2s_chan_handle_t s_tx = nullptr;
 
 bool codec_init() {
-    i2c_master_bus_config_t bc = {};
-    bc.i2c_port = I2C_NUM_0;
-    bc.sda_io_num = gpio_num_t(BOARD_PIN_I2C_SDA);
-    bc.scl_io_num = gpio_num_t(BOARD_PIN_I2C_SCL);
-    bc.clk_source = I2C_CLK_SRC_DEFAULT;
-    bc.glitch_ignore_cnt = 7;
-    bc.flags.enable_internal_pullup = 1;
-    i2c_master_bus_handle_t bus = nullptr;
-    esp_err_t err = i2c_new_master_bus(&bc, &bus);
-    i2c_master_dev_handle_t dev = nullptr;
-    if (err == ESP_OK) {
-        i2c_device_config_t dc = {};
-        dc.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-        dc.device_address = BOARD_I2C_CODEC_ADDR;
-        dc.scl_speed_hz = 100000;
-        err = i2c_master_bus_add_device(bus, &dc, &dev);
-    }
+    // The touch controller shares this bus: LovyanGFX's I2C driver owns it
+    // (the display started first), so the codec is written through it too
+    auto res = lgfx::i2c::init(BOARD_I2C_PORT, BOARD_PIN_I2C_SDA, BOARD_PIN_I2C_SCL);
+    bool ok = res.has_value();
     struct Reg { uint8_t reg, val; uint8_t wait_ms; };
     static const Reg kInit[] = {
         {0x00, 0x1F, 20},   // reset
@@ -126,13 +112,12 @@ bool codec_init() {
         {0x32, 0xBF, 0},    // DAC volume 0 dB (the volume setting is ours)
     };
     for (const Reg& r : kInit) {
-        if (err != ESP_OK) break;
-        const uint8_t b[2] = {r.reg, r.val};
-        err = i2c_master_transmit(dev, b, 2, 50);
+        if (!ok) break;
+        ok = lgfx::i2c::writeRegister8(BOARD_I2C_PORT, BOARD_I2C_CODEC_ADDR, r.reg, r.val, 0, 100000).has_value();
         if (r.wait_ms) vTaskDelay(pdMS_TO_TICKS(r.wait_ms));
     }
-    if (err != ESP_OK) ESP_LOGE(kTag, "ES8311 codec not set up: %s", esp_err_to_name(err));
-    return err == ESP_OK;
+    if (!ok) ESP_LOGE(kTag, "ES8311 codec not set up (no answer on I2C)");
+    return ok;
 }
 
 bool start_i2s() {

@@ -99,9 +99,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   menu for players who want the printed letters (`pad_set_swap_ab()`).
 - SD card layout (Tom, 2026-10-14): ROM zips as they are in
   `/CYD-Classic-Arcade/` at the card's root, on every board (the 2.8"
-  too, v0.3.0: touch isn't attached there, so VSPI is the SD card's - port
-  CYD-BYOG-PoolRadSeries' software touch driver when touch is needed).
-  Or over USB from the web page.
+  too, v0.3.0: the card is read at start-up and its VSPI bus freed; since
+  v0.13.0 the 2.8"'s touch controller takes VSPI after that - its own pins
+  25 / 32 / 39 / 33, as in CYD Classic Games). Or over USB from the web
+  page.
 - v0.2.0 on the ESP32-32E boards (Tom): no picture in games, then none in
   the menu - the display's DMA broke once the SD card's SPI bus (IDF
   sdspi, DMA) had run. Fix (v0.3.0): the SD card is read and its bus
@@ -159,12 +160,41 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   The queue grows to cover the slowest recent draw (max ~128 ms). A
   scrolling Rally-X shown 411x320 on the 4.0" is ~50 ms a full picture at
   40 MHz SPI, so it shows ~12 pictures a second at full game speed.
-- Menu help text at the bottom wraps to the screen (`screen::text_box`),
-  in the small font on every panel (Tom: it ran off the right edge).
-- Menu fonts (v0.6.2, Tom: the list ran into the help text on the 2.8";
-  "it could all be a little smaller"): DejaVu12 items / DejaVu9 help on
-  240-wide panels, DejaVu18 / DejaVu12 on 320-wide; the list scrolls (with
-  arrows) when it doesn't fit above the news line.
+- Touch menus (v0.13.0; Tom, 2026-10-16: "you can't do anything with it
+  unless you have a controller paired", the game list clipped into the
+  help text on some boards - "focus on user-friendliness and a clean
+  attractive UI with touch based controls (as well as the controller)",
+  plus an on-screen sign of which controllers are paired). `main/ui.*`
+  (look, layout, widgets - LovyanGFX only), `main/menu_model.*` (the rows
+  and texts), `main/menu.cpp` (driving them), `main/touch.*`. Every page:
+  a header bar (< back, title, gear = Settings), content, a gold news line
+  (game speed after a game, ROMs loaded / receiving), and at the very
+  bottom the controllers - "1 8BitDo Ultimate" / "2 Xbox Wireless" with a
+  teal pad icon, or "No controller: put one in pairing mode". Home lists
+  the games as two-line rows (title; maker and year, from `games::Info`
+  `maker` / `year`), playable ones first, games without ROMs muted ("No
+  ROMs yet - tap for help" opens which zip it needs); a sideways-board
+  icon marks landscape games; with no ROMs at all, "How to Add Games"
+  comes first. Settings: Volume [-] [+], Swap A/B and X/Y and Rotate
+  Screen 180 switches, Sound Output DAC / PWM (DAC boards), Controller
+  Test, Forget Controllers, Calibrate Touch (resistive), How to Add Games,
+  About (version, board, games ready, ROM storage, RAM / PSRAM). No
+  scrolling or dragging: rows per page come from the panel size (240x320:
+  5 rows of 43 px, 320x480: 6 of 57) with < > page keys - nothing can
+  clip. Fonts: FreeSansBold 9 / 12 pt titles, DejaVu 9 / 12 second lines,
+  DejaVu 12 / 18 text pages. Touch: tap = act on release at the press
+  point (two agreeing readings start a press, two empty ones end it - from
+  CYD Classic Games); a touched row lights, the gold frame follows the
+  finger. Controller: up / down move the gold frame (pages follow), A /
+  Start choose, B back, left / right change the focused setting or the
+  page, L / R page. Starting a game with no controller shows a note
+  first; touch and hold the screen 1 s leaves any game (read every 4th
+  frame). Resistive panels are calibrated once at the first start (tap
+  the four corner arrows - LovyanGFX's calibrateTouch; BOOT held at power-
+  on or Settings > Calibrate Touch redoes it), saved in NVS ("tcal" + a
+  board-name hash). PC preview: `tools/menu_preview/build.sh <LovyanGFX
+  dir>` draws every page at 240x320 and 320x480 with the real code onto
+  LovyanGFX sprites (PNGs) - render it after any menu change.
 - Interrupted draws (v0.6.2, Tom: Galaga's start tune crackled at its end,
   where the whole screen changes at once): a draw stops at a line boundary
   when less than a frame of sound is queued, and the next draw goes on
@@ -456,9 +486,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   S3 bootloader at 0x0; the flasher's chipFamily "ESP32-S3"),
   `main/boards/freenove_s3_display.hpp`. Pins from Freenove's schematics
   (their repo is CC BY-NC-SA: facts only). Display SPI2 (IOMUX pins),
-  inversion on; touch (FT6336, I2C) not used. Sound: I2S into the ES8311
-  codec (`BOARD_AUDIO_I2S`; our own register setup), no Sound Output menu
-  item there. SD by 4-bit SDMMC (`BOARD_SD_SDMMC`). Native USB only: the
+  inversion on; touch FT6336 through LovyanGFX's Touch_FT5x06 (I2C 0x38,
+  panel portrait coordinates, polled). Sound: I2S into the ES8311 codec
+  (`BOARD_AUDIO_I2S`; our own register setup, written through LovyanGFX's
+  I2C - the codec shares the touch's bus, one driver owns it), no Sound
+  Output menu item there. SD by 4-bit SDMMC (`BOARD_SD_SDMMC`). Native USB only: the
   ROM loader uses USB-Serial-JTAG (`BOARD_USB_SERIAL_JTAG`), the console
   stays on UART0 and the log is copied to USB (dropped when nobody reads).
   8 MB octal PSRAM (`sdkconfig.defaults.esp32s3`): ROM regions go there
@@ -600,7 +632,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   zips as they are in the `roms` partition, append-only, directory sector)
   and `usb_import` (protocol of the web page's ROM loader, "CYDA ..."
   lines on UART0 at 115200). `components/arcade_core` builds emu/ + core/.
-- Firmware (`main/`): `menu` (controller-driven; no touch yet), `game_runner`
+- Firmware (`main/`): `menu` (touch + controller, see Touch menus), `game_runner`
   (sound ring paces the game; changed lines only; skips drawing when
   behind; back = hold Select + Start twice, or Home), `catalog` (which games
   the stored zips complete; ROM regions unpacked into RAM at game start),

@@ -8,10 +8,9 @@
 //   Backlight       : GPIO 21 (PWM)
 //   Touch XPT2046   : own pins on VSPI: SCLK 25, MOSI 32, MISO 39, CS 33, IRQ 36
 //   SD card (VSPI)  : SCK 18, MISO 19, MOSI 23, CS 5
-//   Touch is not attached in this firmware (no touch screens yet), so the SD
-//   card has VSPI. CYD-BYOG-PoolRadSeries reads this touch chip in software
-//   (touch_xpt2046_soft.hpp) for the same reason - port that when touch is
-//   needed here.
+//   Touch and the SD card both use VSPI, one after the other: the SD card
+//   is read at start-up and its bus freed before the display (and with it
+//   the touch controller, on VSPI from then on) starts.
 //   RGB LED (active low) : R 4, G 16, B 17
 //   LDR 34, speaker amp 26, BOOT button 0
 //
@@ -37,7 +36,7 @@
 #define BOARD_PIN_SD_SCK      18
 #define BOARD_PIN_SD_MISO     19
 #define BOARD_PIN_SD_MOSI     23
-#define BOARD_SD_USABLE       1    // touch isn't attached, VSPI belongs to SD
+#define BOARD_SD_USABLE       1    // read at start-up, before touch takes VSPI
 
 template <class PanelT, bool kInvert>
 class LGFX_Esp32_2432S028 : public lgfx::LGFX_Device
@@ -45,6 +44,7 @@ class LGFX_Esp32_2432S028 : public lgfx::LGFX_Device
     PanelT              _panel;
     lgfx::Bus_SPI       _bus;
     lgfx::Light_PWM     _light;
+    lgfx::Touch_XPT2046 _touch;
 
 public:
     LGFX_Esp32_2432S028()
@@ -94,6 +94,25 @@ public:
             cfg.pwm_channel = 7;
             _light.config(cfg);
             _panel.setLight(&_light);
+        }
+        {   // Touch on its own pins (VSPI, as in CYD Classic Games). The raw
+            // limits are only a start; the saved calibration replaces them.
+            auto cfg = _touch.config();
+            cfg.x_min           = 300;
+            cfg.x_max           = 3900;
+            cfg.y_min           = 200;
+            cfg.y_max           = 3750;
+            cfg.pin_int         = 36;
+            cfg.bus_shared      = false;
+            cfg.offset_rotation = 0;
+            cfg.spi_host        = VSPI_HOST;
+            cfg.freq            = 1000000;
+            cfg.pin_sclk        = 25;
+            cfg.pin_mosi        = 32;
+            cfg.pin_miso        = 39;
+            cfg.pin_cs          = 33;
+            _touch.config(cfg);
+            _panel.setTouch(&_touch);
         }
         setPanel(&_panel);
     }

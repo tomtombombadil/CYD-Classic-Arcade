@@ -34,6 +34,16 @@ ESP32-S3 has Bluetooth LE only: Xbox Wireless and other BLE controllers
 pair; classic-Bluetooth ones (PlayStation, Switch Pro, many 8BitDo modes)
 don't. ROM zips go in over USB from the web page, or from an SD card.
 
+## Using it
+
+Touch the screen or use a controller. Tap a game to play it; the gear at
+the top right opens Settings (volume, button layout, screen rotation,
+Controller Test, touch calibration, how to add games). The line at the
+bottom shows which controllers are connected. In a game: hold Select and
+press Start twice (or press Home, or touch and hold the screen for a
+second) to come back. Resistive screens ask you to tap four corner arrows
+once, the first time.
+
 ## Controllers
 
 Anything [Bluepad32](https://github.com/ricardoquesada/bluepad32) supports:
