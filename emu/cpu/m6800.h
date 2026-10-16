@@ -89,6 +89,10 @@ public:
 
 private:
     bool irq_line_ = false, nmi_pending_ = false;
+    // CLI (with I set) and TAP: an IRQ waits until one more instruction
+    // has run (the chip samples it before the flag changes) - a handler
+    // that ends "CLI ; LDAA <PIA>" reads the PIA before the next IRQ.
+    bool irq_hold_ = false;
     int  done_ = 0, target_ = 0;
 
     uint8_t  fetch() { return rd(pc++); }
