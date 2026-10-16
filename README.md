@@ -12,9 +12,9 @@ Bluetooth controllers and shows their buttons. The emulators come next
 
 Playable: Pac-Man, Space Invaders, Rally-X, Donkey Kong, Galaga, Dig Dug,
 Ms. Pac-Man, Mr. Do!, Burger Time, Q\*bert, Asteroids, Tempest, Robotron:
-2084, Defender.
+2084, Defender, Qix.
 
-Planned: Qix, Star Wars; later perhaps Stargate, Spy Hunter and Rolling
+Planned: Star Wars; later perhaps Stargate, Spy Hunter and Rolling
 Thunder.
 
 ## ROMs - bring your own

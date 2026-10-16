@@ -73,7 +73,8 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/atari_dvg.cpp $ROOT/emu/machines/asteroids.cpp $ROOT/emu/machines/atari_avg.cpp \
      $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp $ROOT/emu/cpu/m6809.cpp \
      $ROOT/emu/cpu/m6800.cpp $ROOT/emu/machines/pia6821.cpp $ROOT/emu/machines/williams_blitter.cpp \
-     $ROOT/emu/sound/williams_sound.cpp $ROOT/emu/machines/williams.cpp"
+     $ROOT/emu/sound/williams_sound.cpp $ROOT/emu/machines/williams.cpp \
+     $ROOT/emu/sound/qix_sound.cpp $ROOT/emu/machines/qix.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -119,6 +120,12 @@ g++ $FLAGS $SAN -o "$OUT/williams_tests_san" "$ROOT/tools/host_tests/williams_te
 "$OUT/williams_tests"
 "$OUT/williams_tests_san"
 
+echo "== Qix board tests"
+g++ $FLAGS -O2 -o "$OUT/qix_tests" "$ROOT/tools/host_tests/qix_tests.cpp" $EMU
+g++ $FLAGS $SAN -o "$OUT/qix_tests_san" "$ROOT/tools/host_tests/qix_tests.cpp" $EMU
+"$OUT/qix_tests"
+"$OUT/qix_tests_san"
+
 echo "== Namco board tests"
 g++ $FLAGS -O2 -o "$OUT/namco_tests" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
 g++ $FLAGS $SAN -o "$OUT/namco_tests_san" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
@@ -154,7 +161,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

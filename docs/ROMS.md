@@ -77,6 +77,10 @@ Notes:
 - **Burger Time:** the Data East set 1 (`aa04.9b` ... `ab9.15k`, 15
   files). It has no colour PROMs (the palette is in RAM). The other sets
   (`btime2`, `btime3`, `btimem`) have other program ROMs and aren't read.
+- **Qix:** the Rev 2 set (MAME's `qix`, 16 files of 2 KB: `qq12_rev2.u12`
+  ... or, in older collections, just `u4` ... `u19`, `u27`). The other Qix
+  sets (`qixa`, `qixb`, `qixo`, `qix2`) have other program ROMs and aren't
+  read.
 - **Robotron: 2084:** older sets name the files `robotron.sb1` ...
   `robotron.sbc` and `robotron.snd` (same contents). The two decoder PROMs
   (`decoder_rom_4.3g`, `decoder_rom_6.3c`, for the cocktail flip) aren't

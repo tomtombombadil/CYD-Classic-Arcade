@@ -86,6 +86,7 @@ void Cpu::reset()
     cc = uint8_t(cc | 0xc0 | CC_I);
     wai = false;
     nmi_pending_ = false;
+    irq_hold_ = false;
     pc = rd16(kVecReset);
 }
 
@@ -123,10 +124,11 @@ int Cpu::run(int cycles)
             interrupt(kVecNmi);
             continue;
         }
-        if (irq_line_ && !(cc & CC_I)) {
+        if (irq_line_ && !(cc & CC_I) && !irq_hold_) {
             interrupt(kVecIrq);
             continue;
         }
+        irq_hold_ = false;
         if (wai) {
             if (done_ < target_) done_ = target_;
             break;
@@ -243,7 +245,7 @@ inline void Cpu::exec(uint8_t op)
     done_ += cyc;
     switch (op) {
     case 0x01: break;                                                   // NOP
-    case 0x06: cc = uint8_t(a | 0xc0); break;                           // TAP
+    case 0x06: cc = uint8_t(a | 0xc0); irq_hold_ = true; break;         // TAP
     case 0x07: a = uint8_t(cc | 0xc0); break;                           // TPA
     case 0x08: ++x; cc = uint8_t((cc & ~CC_Z) | (x ? 0 : CC_Z)); break; // INX
     case 0x09: --x; cc = uint8_t((cc & ~CC_Z) | (x ? 0 : CC_Z)); break; // DEX
@@ -251,7 +253,10 @@ inline void Cpu::exec(uint8_t op)
     case 0x0b: cc |= CC_V; break;
     case 0x0c: cc &= uint8_t(~CC_C); break;
     case 0x0d: cc |= CC_C; break;
-    case 0x0e: cc &= uint8_t(~CC_I); break;
+    case 0x0e:                                                          // CLI
+        if (cc & CC_I) irq_hold_ = true;
+        cc &= uint8_t(~CC_I);
+        break;
     case 0x0f: cc |= CC_I; break;
     case 0x10: a = op_sub(a, b, 0); break;                              // SBA
     case 0x11: op_sub(a, b, 0); break;                                  // CBA
@@ -275,7 +280,9 @@ inline void Cpu::exec(uint8_t op)
     case 0x28: case 0x29: case 0x2a: case 0x2b: case 0x2c: case 0x2d: case 0x2e: case 0x2f: {
         const int8_t o = int8_t(fetch());
         if (taken(op, cc)) {
-            if (o == -2 && target_ > done_)     // a branch to itself: idle until an interrupt
+            // A branch to itself: idle until an interrupt (not when one is
+            // already due - after CLI / TAP it waits for this one instruction).
+            if (o == -2 && target_ > done_ && !nmi_pending_ && !(irq_line_ && !(cc & CC_I)))
                 done_ += (target_ - done_ + 3) / 4 * 4;
             pc = uint16_t(pc + o);
             if (op == 0x26 && o == -3) delay_loop();

@@ -359,6 +359,56 @@ void test_interrupts()
     r.cpu.run(1);
     CHECK_EQ(r.cpu.pc, 0x1003);
     CHECK_EQ(r.cpu.s, 0x01ff);
+    // CLI with I set: a pending IRQ waits for one more instruction (Qix's
+    // sound handler is "LDS ; CLI ; LDAA <PIA>" - the read clears the IRQ).
+    r.mem[0x1003] = 0x0e;                   // CLI
+    r.mem[0x1004] = 0x01;                   // NOP
+    r.cpu.cc = 0xc0 | CC_I;
+    r.cpu.irq(true);
+    CHECK_EQ(r.cpu.run(1), 2);              // CLI
+    CHECK_EQ(r.cpu.run(1), 2);              // NOP runs first
+    CHECK_EQ(r.cpu.pc, 0x1005);
+    CHECK_EQ(r.cpu.run(1), 12);             // then the IRQ
+    CHECK_EQ(r.cpu.pc, 0x3000);
+    r.cpu.irq(false);
+    r.cpu.run(1);                           // RTI
+    CHECK_EQ(r.cpu.pc, 0x1005);
+    // CLI with I already clear: no wait. TAP: always one instruction.
+    r.mem[0x1005] = 0x0e;
+    r.cpu.irq(true);
+    CHECK_EQ(r.cpu.run(1), 12);             // taken before the CLI even runs
+    r.cpu.irq(false);
+    r.cpu.run(1);
+    CHECK_EQ(r.cpu.run(1), 2);              // the CLI
+    r.cpu.irq(true);
+    CHECK_EQ(r.cpu.run(1), 12);             // taken at once after it
+    r.cpu.irq(false);
+    r.cpu.run(1);
+    CHECK_EQ(r.cpu.pc, 0x1006);
+    r.mem[0x1006] = 0x06;                   // TAP (A = C0: I clear)
+    r.mem[0x1007] = 0x01;
+    r.cpu.a = 0xc0;
+    r.cpu.cc = 0xc0 | CC_I;
+    r.cpu.irq(true);
+    CHECK_EQ(r.cpu.run(1), 2);
+    CHECK_EQ(r.cpu.run(1), 2);              // NOP first
+    CHECK_EQ(r.cpu.run(1), 12);
+    r.cpu.irq(false);
+    // A branch to itself idles - but not past an IRQ that is due.
+    r.mem[0x1010] = 0x0e;                   // CLI
+    r.mem[0x1011] = 0x20;                   // BRA *
+    r.mem[0x1012] = 0xfe;
+    r.cpu.pc = 0x1010;
+    r.cpu.s = 0x01ff;
+    r.cpu.cc = 0xc0 | CC_I;
+    r.cpu.irq(true);
+    CHECK_EQ(r.cpu.run(1), 2);              // CLI
+    CHECK_EQ(r.cpu.run(5), 4 + 12);         // BRA once (no idling: the IRQ is due), the IRQ
+    CHECK_EQ(r.cpu.pc, 0x3000);
+    r.cpu.irq(false);
+    r.cpu.run(1);                           // RTI
+    CHECK_EQ(r.cpu.run(100), 100);          // now BRA idles to the end
+    CHECK_EQ(r.cpu.pc, 0x1011);
 }
 
 // A checksum loop: sum bytes 0x2000-0x20FF into A:B with carry.
