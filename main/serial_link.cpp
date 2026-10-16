@@ -65,9 +65,10 @@ void task(void*)
 
 void start()
 {
-    // RX buffer for about a second at 115200 baud: flash erases can hold the
-    // task up while a chunk arrives.
-    esp_err_t err = uart_driver_install(kPort, 16384, 0, 0, nullptr, 0);
+    // RX buffer: the web page sends a 2 KB chunk and waits for its ACK, so
+    // 4 KB holds a chunk plus the command lines while a flash erase holds
+    // the task up (it was 16 KB until v0.10.1 - RAM games need).
+    esp_err_t err = uart_driver_install(kPort, 4096, 0, 0, nullptr, 0);
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "serial port not available (%s): no ROM loading over USB", esp_err_to_name(err));
         return;

@@ -28,6 +28,7 @@
 #include "emu/games.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
@@ -71,21 +72,32 @@ void message(const char* a, const char* b)
 void run(int index, AudioRing& ring)
 {
     const games::Info& g = games::kGames[index];
-    // The machine first: it's the biggest block (Robotron's ~52 KB), so
-    // it gets the heap's largest free block before the ROMs split it.
-    games::Machine* m = g.make();
-    if (!m) {
-        ESP_LOGE(kTag, "%s: no memory for the machine (largest block %u)", g.id,
-                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
-        message("Not enough memory", g.title);
-        return;
-    }
+    // The ROMs into RAM, then the machine. When RAM runs short (v0.10.0:
+    // "can't load" for every new game on every board), ROM regions move to
+    // the scratch flash, biggest first, until the machine and the runner's
+    // buffers (~12 KB) fit; they're then read in place from flash.
+    ESP_LOGI(kTag, "%s: %u KB free, largest block %u KB", g.id,
+             unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+             unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
     catalog::Loaded roms;
     if (!catalog::load(g, roms)) {
-        delete m;
-        message("Can't load the ROMs", "Reload them, or not enough memory");
+        message("Can't load the ROMs", catalog::last_error());
         return;
     }
+    games::Machine* m = g.make();
+    while (!m && catalog::move_to_flash(roms)) m = g.make();
+    while (m && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 16 * 1024 && catalog::move_to_flash(roms)) {}
+    if (!m) {
+        char buf[48];
+        std::snprintf(buf, sizeof buf, "%u KB free, largest %u KB",
+                      unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+                      unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+        ESP_LOGE(kTag, "%s: no memory for the machine (%s)", g.id, buf);
+        catalog::unload(roms);
+        message("Not enough memory", buf);
+        return;
+    }
+    if (roms.flash_used) ESP_LOGI(kTag, "%s: %u KB of ROM read from flash", g.id, unsigned(roms.flash_used / 1024));
     LGFX& lcd = screen::lcd();
     if (g.orientation == games::Orientation::Landscape) screen::landscape();
     // Scale: as large as fits with the shape kept, never smaller than 1:1

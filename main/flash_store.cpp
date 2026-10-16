@@ -1,6 +1,7 @@
 // The `roms` partition (partitions.csv: data, subtype 0x40) for the ROM store.
 #include "flash_store.h"
 
+#include <cstring>
 #include <esp_log.h>
 #include <esp_partition.h>
 #include <freertos/FreeRTOS.h>
@@ -10,14 +11,16 @@ namespace flash_store {
 namespace {
 
 constexpr const char* kTag = "roms";
+constexpr uint32_t kScratch = 128 * 1024;   // the biggest game's ROMs are ~72 KB
 
 class PartitionFlash : public rom_store::Flash {
 public:
     const esp_partition_t* part = nullptr;
     const uint8_t* mapped = nullptr;
     esp_partition_mmap_handle_t handle = 0;
+    uint32_t limit = 0;     // the store's share: the partition less the scratch area
 
-    uint32_t size() const override { return part ? part->size : 0; }
+    uint32_t size() const override { return limit; }
     bool read(uint32_t off, void* out, uint32_t len) override
     {
         return esp_partition_read(part, off, out, len) == ESP_OK;
@@ -57,11 +60,33 @@ bool open()
         return false;
     }
     s_flash.mapped = static_cast<const uint8_t*>(p);
+    // The scratch area only if the store (written by any version) ends
+    // before it: its directory sector says where the files end
+    struct { char magic[4]; uint32_t count, next_free; } head{};
+    s_flash.limit = s_flash.part->size - kScratch;
+    if (esp_partition_read(s_flash.part, 0, &head, sizeof head) == ESP_OK &&
+        std::memcmp(head.magic, "CAR1", 4) == 0 && head.next_free > s_flash.limit)
+        s_flash.limit = s_flash.part->size;
     s_store.open(s_flash);
     int live = 0;
     for (int i = 0; i < s_store.count(); ++i) live += s_store.live(i);
     ESP_LOGI(kTag, "%d zips stored, %u KB free", live, unsigned(s_store.free_bytes() / 1024));
     return true;
+}
+
+uint32_t scratch_size() { return s_flash.part ? s_flash.part->size - s_flash.limit : 0; }
+
+const uint8_t* scratch_put(uint32_t offset, const uint8_t* data, uint32_t len)
+{
+    const uint32_t size = scratch_size();
+    if (offset % rom_store::kSector || offset + len > size) return nullptr;
+    const uint32_t at = s_flash.limit + offset;
+    const uint8_t* mapped = s_flash.mapped + at;
+    if (std::memcmp(mapped, data, len) == 0) return mapped;    // already there (same game again)
+    const uint32_t span = (len + rom_store::kSector - 1) / rom_store::kSector * rom_store::kSector;
+    if (esp_partition_erase_range(s_flash.part, at, span) != ESP_OK) return nullptr;
+    if (esp_partition_write(s_flash.part, at, data, len) != ESP_OK) return nullptr;
+    return std::memcmp(mapped, data, len) == 0 ? mapped : nullptr;
 }
 
 rom_store::Flash& flash() { return s_flash; }

@@ -170,11 +170,22 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   when less than a frame of sound is queued, and the next draw goes on
   from that line (unsent lines keep their old hash). The sound never runs
   dry for drawing.
-- Game start (v0.10.0, for Robotron's ~104 KB): the machine is made first
-  (its object is the biggest block), then the ROMs are loaded; machines
-  are made with `new (std::nothrow)` - on the board a failed plain new
-  aborts (no exceptions) - so a game that doesn't fit says "Not enough
-  memory". Screen strips are 8 lines (7.5 KB at 480 wide).
+- Game start (v0.10.1; Tom: v0.10.0 said "can't load the ROMs" for every
+  new game on every board): the ROMs go into RAM, then the machine is made
+  (`new (std::nothrow)` - on the board a failed plain new aborts); while
+  the machine, or then a 16 KB block for the runner's buffers, doesn't
+  fit, the biggest ROM region still in RAM moves to the scratch flash
+  (`flash_store::scratch_put`: the last 128 KB of the `roms` partition,
+  kept out of the store - unless an old store already reaches into it -
+  written only when its bytes differ) and is read in place, memory-mapped.
+  A failed load names the missing ROM or the RAM shortfall on screen
+  (`catalog::last_error()`); the menu shows free RAM and the largest
+  block under its title. Machine + ROM RAM by game (PC sizes, about the
+  board's): Robotron 108 KB, Q*bert 94, Mr. Do! 93, Dig Dug 90, Defender
+  85, Burger Time 75, Ms. Pac-Man 72, Galaga 64, Tempest 56, Donkey Kong
+  56, Rally-X 41, Pac-Man 41, Asteroids 36, Invaders 18. The USB loader's
+  UART RX buffer is 4 KB (was 16; the page waits for an ACK every 2 KB).
+  Screen strips are 8 lines (7.5 KB at 480 wide).
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
   checked by `arcade_host --check-table`; the USB loader's GAMES reply has
   room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).

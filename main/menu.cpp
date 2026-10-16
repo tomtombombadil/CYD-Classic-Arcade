@@ -15,6 +15,7 @@
 #include "emu/games.h"
 
 #include <cstdio>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -105,6 +106,15 @@ void draw_all(int sel, int top, const char* status)
     char buf[64];
     std::snprintf(buf, sizeof buf, "CYD Classic Arcade %s", CYD_ARCADE_VERSION);
     line(0, kGold, buf);
+    // Free RAM (a game needs its machine + ROMs in it; ROMs go to flash
+    // when it's short)
+    std::snprintf(buf, sizeof buf, "RAM %u KB free, largest block %u KB",
+                  unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
+                  unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+    const int title_h = line_h();
+    small_font();
+    line(title_h, kMuted, buf);
+    menu_font();
     scroll_to(sel, top);
     for (int i = 0; i < item_count(); ++i) draw_item(i, sel, top);
     // more above / below
