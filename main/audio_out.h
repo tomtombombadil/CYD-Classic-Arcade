@@ -17,6 +17,8 @@ using Fill = void (*)(int16_t* out, int n, void* ctx);
 // same pin (pwm = true, the Sound Output setting). false = no audio (logged).
 bool start(Fill fill, void* ctx, bool pwm);
 bool running();   // start() succeeded
+// false on boards whose sound goes through a codec (no DAC / PWM setting)
+bool has_output_choice();
 
 // 0..100 %, amplitude in proportion; 100 % = the loudest games just under
 // the DAC's full scale.

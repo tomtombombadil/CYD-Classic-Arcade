@@ -27,8 +27,13 @@ are). Which sets, and how they're found: [`docs/ROMS.md`](docs/ROMS.md).
 
 The same boards as [CYD Classic Games](https://github.com/tomtombombadil/CYD-Classic-Games):
 2.8" ILI9341 / ST7789 (ESP32-2432S028), 3.2" ST7789, 3.5" ST7796 and 4.0"
-ST7796 (ESP32-32E display boards), all resistive touch. Not yet tested on
-hardware with this firmware.
+ST7796 (ESP32-32E display boards), all resistive touch - all tested.
+
+Also the Freenove ESP32-S3 Display boards (2.8" ILI9341 FNK0104B and 4.0"
+ST7796 FNK0104S, capacitive touch, 8 MB PSRAM) - not yet tested. The
+ESP32-S3 has Bluetooth LE only: Xbox Wireless and other BLE controllers
+pair; classic-Bluetooth ones (PlayStation, Switch Pro, many 8BitDo modes)
+don't. ROM zips go in over USB from the web page, or from an SD card.
 
 ## Controllers
 

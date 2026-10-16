@@ -30,8 +30,18 @@ enum Item : int { kTest = 1000, kSwap, kVolume, kSound, kRotate, kForget };
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
-int item_count() { return games::kGameCount + 6; }
-int item_id(int i) { return i < games::kGameCount ? i : kTest + (i - games::kGameCount); }
+// The settings after the games; Sound Output only where there's a choice
+// (not on the codec boards)
+constexpr int kSettings[] = {kTest, kSwap, kVolume, kSound, kRotate, kForget};
+int settings_count() { return audio::has_output_choice() ? 6 : 5; }
+int item_count() { return games::kGameCount + settings_count(); }
+int item_id(int i)
+{
+    if (i < games::kGameCount) return i;
+    int k = i - games::kGameCount;
+    if (!audio::has_output_choice() && k >= 3) ++k;
+    return kSettings[k];
+}
 
 void item_text(int id, char* buf, size_t cap, uint16_t& color)
 {

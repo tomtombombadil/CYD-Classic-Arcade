@@ -19,6 +19,12 @@ From [CYD Classic Games](https://github.com/tomtombombadil/CYD-Classic-Games)
 (same author, MIT): the board files in `main/boards/` and the DEFLATE
 decoder in `emu/util/`.
 
+Freenove ESP32-S3 Display boards (`main/boards/freenove_s3_display.hpp`):
+the pins come from Freenove's published schematics and sample setups
+(CC BY-NC-SA) - facts only, no code taken. The ES8311 codec's start-up
+register values (`main/audio_out.cpp`) follow the ES8311 user guide, the
+same values Espressif's Apache 2.0 driver writes; the code is our own.
+
 ## Game ROMs
 
 None are included. Arcade game ROMs are copyrighted by their makers; users

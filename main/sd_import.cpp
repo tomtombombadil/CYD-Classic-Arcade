@@ -19,7 +19,11 @@
 #include <esp_log.h>
 
 #if BOARD_SD_USABLE
+#if BOARD_SD_SDMMC
+#include <driver/sdmmc_host.h>
+#else
 #include <driver/sdspi_host.h>
+#endif
 #include <esp_vfs_fat.h>
 #include <sdmmc_cmd.h>
 #endif
@@ -39,6 +43,36 @@ constexpr const char* kMount = "/sdcard";
 constexpr const char* kFolder = "/sdcard/CYD-Classic-Arcade";
 constexpr long kMaxZip = 2 * 1024 * 1024;
 
+#if BOARD_SD_SDMMC
+// 4-bit SDMMC on the board's own pins (ESP32-S3: any pins through the GPIO
+// matrix)
+bool mount(sdmmc_card_t** card)
+{
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+    slot.width = 4;
+    slot.clk = gpio_num_t(BOARD_PIN_SD_CLK);
+    slot.cmd = gpio_num_t(BOARD_PIN_SD_CMD);
+    slot.d0 = gpio_num_t(BOARD_PIN_SD_D0);
+    slot.d1 = gpio_num_t(BOARD_PIN_SD_D1);
+    slot.d2 = gpio_num_t(BOARD_PIN_SD_D2);
+    slot.d3 = gpio_num_t(BOARD_PIN_SD_D3);
+    slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+    esp_vfs_fat_mount_config_t cfg = {};
+    cfg.format_if_mount_failed = false;
+    cfg.max_files = 2;
+    cfg.allocation_unit_size = 16 * 1024;
+    const esp_err_t err = esp_vfs_fat_sdmmc_mount(kMount, &host, &slot, &cfg, card);
+    if (err != ESP_OK) {
+        ESP_LOGI(kTag, "no SD card (%s)", esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
+void unmount(sdmmc_card_t* card) { esp_vfs_fat_sdcard_unmount(kMount, card); }
+
+#else
 bool mount(sdmmc_card_t** card)
 {
     spi_bus_config_t bus = {};
@@ -72,6 +106,8 @@ void unmount(sdmmc_card_t* card)
     esp_vfs_fat_sdcard_unmount(kMount, card);
     spi_bus_free(SPI3_HOST);
 }
+
+#endif  // BOARD_SD_SDMMC
 
 // True when the zip's directory lists a ROM of a known game. Reads only the
 // end record and the central directory.

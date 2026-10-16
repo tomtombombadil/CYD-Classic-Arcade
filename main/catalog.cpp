@@ -77,7 +77,11 @@ bool load(const games::Info& game, Loaded& out)
     }
     s_error[0] = 0;
     for (int r = 0; r < set.region_count; ++r) {
-        out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(set.regions[r].size, MALLOC_CAP_8BIT));
+        // PSRAM first where the board has it (ESP32-S3 boards): internal
+        // RAM stays for the machine and the screen strips
+        out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(set.regions[r].size, MALLOC_CAP_SPIRAM));
+        if (!out.regions[r])
+            out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(set.regions[r].size, MALLOC_CAP_8BIT));
         if (!out.regions[r]) {
             const unsigned largest = unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
             ESP_LOGE(kTag, "%s: no memory for region %s (%u bytes, largest block %u)", game.id,

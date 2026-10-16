@@ -66,6 +66,13 @@ speaker connector (a plain 8-ohm speaker, nothing added). 24,000 samples a
 second, 8-bit, streamed by DMA (`main/audio_out.*`); each machine mixes its
 voices to 16-bit and the driver applies the volume.
 
+ESP32-S3 boards (Freenove ESP32-S3 Display, v0.11.0): no DAC on the S3, so
+16-bit samples go by I2S to the board's ES8311 codec at 24,000 a second
+(MCLK 256 x, codec in slave mode, its DAC volume at 0 dB - our volume
+setting scales the samples, same scale as the DAC path), then its own amp
+(enable GPIO1, low = on, switched off after 0.2 s of silence as on the
+ESP32-32E boards).
+
 ## 4. Controls
 
 Bluetooth controllers through Bluepad32 (PlayStation 3/4/5, Xbox, Switch

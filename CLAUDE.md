@@ -448,6 +448,19 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   by callgrind: 1.3x Pac-Man's 483K; the sound CPU is half of it - the
   game's waveform loops write the DAC ~40,000 times a second), render
   ~0.035 ms.
+- Freenove ESP32-S3 Display (Tom bought an FNK0104, 2026-10-16; v0.11.0):
+  envs `fnk28_ili9341_cap` (FNK0104B, 2.8" ILI9341) and `fnk40_st7796_cap`
+  (FNK0104S, 4.0" ST7796), `custom_chip = esp32s3` (CI's merge puts the
+  S3 bootloader at 0x0; the flasher's chipFamily "ESP32-S3"),
+  `main/boards/freenove_s3_display.hpp`. Pins from Freenove's schematics
+  (their repo is CC BY-NC-SA: facts only). Display SPI2 (IOMUX pins),
+  inversion on; touch (FT6336, I2C) not used. Sound: I2S into the ES8311
+  codec (`BOARD_AUDIO_I2S`; our own register setup), no Sound Output menu
+  item there. SD by 4-bit SDMMC (`BOARD_SD_SDMMC`). Native USB only: the
+  ROM loader uses USB-Serial-JTAG (`BOARD_USB_SERIAL_JTAG`), the console
+  stays on UART0 and the log is copied to USB (dropped when nobody reads).
+  8 MB octal PSRAM (`sdkconfig.defaults.esp32s3`): ROM regions go there
+  first, machines (< 128 KB) internal RAM. BLE controllers only on the S3.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

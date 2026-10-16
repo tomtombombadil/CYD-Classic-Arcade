@@ -16,17 +16,27 @@
 // bits), the way CYD Classic Games drives it. Tom's 2.8" ILI9341 played
 // nothing from the DAC (v0.5.0 - v0.6.1). A timer interrupt takes the next
 // sample 24,000 times a second.
+//
+// Boards with an audio codec (BOARD_AUDIO_I2S: the Freenove ESP32-S3
+// boards' ES8311) get 16-bit samples by I2S at the game rate instead; the
+// codec does the rest. No DAC / PWM choice there.
 #include "audio_out.h"
 
-#include <driver/dac_continuous.h>
+#include "board_select.h"
+
 #include <driver/gpio.h>
-#include <driver/gptimer.h>
-#include <driver/ledc.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include "board_select.h"
+#if BOARD_AUDIO_I2S
+#include <driver/i2c_master.h>
+#include <driver/i2s_std.h>
+#else
+#include <driver/dac_continuous.h>
+#include <driver/gptimer.h>
+#include <driver/ledc.h>
+#endif
 
 namespace audio {
 namespace {
@@ -35,7 +45,9 @@ constexpr const char* kTag = "audio";
 constexpr int kChunk = 256;  // game samples per write (~10.7 ms)
 constexpr int kOver = 4;     // DAC samples per game sample
 
+#if !BOARD_AUDIO_I2S
 dac_continuous_handle_t s_dac = nullptr;
+#endif
 Fill s_fill = nullptr;
 void* s_ctx = nullptr;
 // 0..400, from the volume, linear: 100 % puts the loudest game peaks
@@ -45,6 +57,7 @@ void* s_ctx = nullptr;
 constexpr int kGainMax = 400;
 volatile int s_gain = kGainMax / 2;
 bool s_running = false;
+bool s_pwm = false;     // the Sound Output setting (DAC boards)
 
 // The ESP32-32E boards can switch their amp off (BOARD_PIN_AUDIO_EN, low =
 // on). It's off after ~0.2 s with nothing to play, as in CYD Classic Games:
@@ -63,11 +76,120 @@ void amp(bool on) {
 #endif
 }
 
+#if BOARD_AUDIO_I2S
+// ---- I2S into the ES8311 codec ----
+// Register values from the ES8311 user guide (the same ones Espressif's
+// Apache-2.0 driver writes; no code taken): slave mode, MCLK from its pin
+// at 256 x the sample rate, I2S 16-bit in, DAC and output stage powered.
+i2s_chan_handle_t s_tx = nullptr;
+
+bool codec_init() {
+    i2c_master_bus_config_t bc = {};
+    bc.i2c_port = I2C_NUM_0;
+    bc.sda_io_num = gpio_num_t(BOARD_PIN_I2C_SDA);
+    bc.scl_io_num = gpio_num_t(BOARD_PIN_I2C_SCL);
+    bc.clk_source = I2C_CLK_SRC_DEFAULT;
+    bc.glitch_ignore_cnt = 7;
+    bc.flags.enable_internal_pullup = 1;
+    i2c_master_bus_handle_t bus = nullptr;
+    esp_err_t err = i2c_new_master_bus(&bc, &bus);
+    i2c_master_dev_handle_t dev = nullptr;
+    if (err == ESP_OK) {
+        i2c_device_config_t dc = {};
+        dc.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+        dc.device_address = BOARD_I2C_CODEC_ADDR;
+        dc.scl_speed_hz = 100000;
+        err = i2c_master_bus_add_device(bus, &dc, &dev);
+    }
+    struct Reg { uint8_t reg, val; uint8_t wait_ms; };
+    static const Reg kInit[] = {
+        {0x00, 0x1F, 20},   // reset
+        {0x00, 0x00, 0},
+        {0x00, 0x80, 0},    // power on, slave
+        {0x01, 0x3F, 0},    // every clock on, MCLK from the MCLK pin
+        {0x02, 0x00, 0},    // pre-divider 1, multiplier 1 (MCLK = 256 fs)
+        {0x03, 0x10, 0},    // single speed, ADC oversampling
+        {0x04, 0x10, 0},    // DAC oversampling
+        {0x05, 0x00, 0},    // ADC / DAC dividers 1
+        {0x06, 0x03, 0},    // BCLK divider (unused as slave), not inverted
+        {0x07, 0x00, 0},    // LRCK divider 256 (unused as slave)
+        {0x08, 0xFF, 0},
+        {0x09, 0x0C, 0},    // serial in: I2S, 16 bit
+        {0x0A, 0x0C, 0},    // serial out: I2S, 16 bit
+        {0x0D, 0x01, 0},    // analog circuits up
+        {0x0E, 0x02, 0},    // PGA / ADC modulator up
+        {0x12, 0x00, 0},    // DAC up
+        {0x13, 0x10, 0},    // output driver on
+        {0x1C, 0x6A, 0},    // ADC equaliser bypassed, DC offset cancelled
+        {0x37, 0x08, 0},    // DAC equaliser bypassed
+        {0x31, 0x00, 0},    // DAC not muted
+        {0x32, 0xBF, 0},    // DAC volume 0 dB (the volume setting is ours)
+    };
+    for (const Reg& r : kInit) {
+        if (err != ESP_OK) break;
+        const uint8_t b[2] = {r.reg, r.val};
+        err = i2c_master_transmit(dev, b, 2, 50);
+        if (r.wait_ms) vTaskDelay(pdMS_TO_TICKS(r.wait_ms));
+    }
+    if (err != ESP_OK) ESP_LOGE(kTag, "ES8311 codec not set up: %s", esp_err_to_name(err));
+    return err == ESP_OK;
+}
+
+bool start_i2s() {
+    i2s_chan_config_t cc = {};
+    cc.id = I2S_NUM_0;
+    cc.role = I2S_ROLE_MASTER;
+    cc.dma_desc_num = 4;
+    cc.dma_frame_num = kChunk;
+    cc.auto_clear = true;               // silence, not a repeated buffer, if late
+    esp_err_t err = i2s_new_channel(&cc, &s_tx, nullptr);
+    if (err == ESP_OK) {
+        i2s_std_config_t sc = {};
+        sc.clk_cfg.sample_rate_hz = kRate;
+        sc.clk_cfg.clk_src = I2S_CLK_SRC_DEFAULT;
+        sc.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
+        sc.slot_cfg.data_bit_width = I2S_DATA_BIT_WIDTH_16BIT;
+        sc.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO;
+        sc.slot_cfg.slot_mode = I2S_SLOT_MODE_MONO;
+        sc.slot_cfg.slot_mask = I2S_STD_SLOT_BOTH;
+        sc.slot_cfg.ws_width = 16;
+        sc.slot_cfg.ws_pol = false;
+        sc.slot_cfg.bit_shift = true;   // Philips I2S
+#if SOC_I2S_HW_VERSION_2
+        sc.slot_cfg.left_align = true;
+        sc.slot_cfg.big_endian = false;
+        sc.slot_cfg.bit_order_lsb = false;
+#endif
+        sc.gpio_cfg.mclk = gpio_num_t(BOARD_PIN_I2S_MCLK);
+        sc.gpio_cfg.bclk = gpio_num_t(BOARD_PIN_I2S_BCLK);
+        sc.gpio_cfg.ws = gpio_num_t(BOARD_PIN_I2S_WS);
+        sc.gpio_cfg.dout = gpio_num_t(BOARD_PIN_I2S_DOUT);
+        sc.gpio_cfg.din = I2S_GPIO_UNUSED;
+        err = i2s_channel_init_std_mode(s_tx, &sc);
+    }
+    if (err == ESP_OK) err = i2s_channel_enable(s_tx);   // MCLK runs before the codec is set up
+    if (err != ESP_OK) {
+        ESP_LOGE(kTag, "I2S start failed: %s", esp_err_to_name(err));
+        return false;
+    }
+    return codec_init();
+}
+
+void i2s_out(const int16_t* pcm, int g) {
+    static int16_t out[kChunk];
+    for (int i = 0; i < kChunk; i++) {
+        int v = (pcm[i] * g) >> 8;      // same scale as the DAC path: 100 % = peaks near full scale
+        out[i] = int16_t(v < -32768 ? -32768 : v > 32767 ? 32767 : v);
+    }
+    size_t done = 0;
+    i2s_channel_write(s_tx, out, sizeof out, &done, portMAX_DELAY);
+}
+
+#else
 // ---- PWM output ----
 constexpr int kPwmFifo = 2048;        // samples, power of two (~85 ms)
 uint16_t s_fifo[kPwmFifo];
 volatile uint32_t s_head = 0, s_tail = 0;   // producer: audio task; consumer: the timer interrupt
-bool s_pwm = false;
 gptimer_handle_t s_timer = nullptr;
 
 bool on_sample(gptimer_handle_t, const gptimer_alarm_event_data_t*, void*) {
@@ -125,6 +247,9 @@ bool start_pwm() {
     return err == ESP_OK;
 }
 
+#endif  // BOARD_AUDIO_I2S
+
+#if !BOARD_AUDIO_I2S
 // One chunk out by PWM. The resting level slides between 0 (silent: the
 // pin stays low, as it does between CYD Classic Games' tones) and the
 // middle (512) over ~5 ms, so starting and stopping don't click.
@@ -143,9 +268,13 @@ void pwm_out(const int16_t* pcm, int g, bool idle) {
     }
 }
 
+#endif  // !BOARD_AUDIO_I2S
+
 void audio_task(void*) {
     static int16_t pcm[kChunk];
+#if !BOARD_AUDIO_I2S
     static uint8_t out[kChunk * kOver];
+#endif
     int prev = 0;  // last game sample, in DAC steps x 256
     int err = 0;   // rounding error carried to the next step, x 256
     int quiet_chunks = kAmpOffChunks;
@@ -157,6 +286,12 @@ void audio_task(void*) {
         if (!quiet) amp(true);
         else if (quiet_chunks >= kAmpOffChunks) amp(false);
         const int g = s_gain;
+#if BOARD_AUDIO_I2S
+        i2s_out(pcm, g);
+        (void)prev;
+        (void)err;
+    }
+#else
         if (s_pwm) {
             pwm_out(pcm, g, quiet && quiet_chunks >= kAmpOffChunks);
             continue;
@@ -182,6 +317,7 @@ void audio_task(void*) {
         size_t done = 0;
         dac_continuous_write(s_dac, out, sizeof out, &done, -1);
     }
+#endif
 }
 
 }  // namespace
@@ -202,6 +338,14 @@ bool start(Fill fill, void* ctx, bool pwm) {
     gpio_set_direction((gpio_num_t)BOARD_PIN_AUDIO_EN, GPIO_MODE_OUTPUT);
     gpio_set_level((gpio_num_t)BOARD_PIN_AUDIO_EN, 1);   // off until there's sound
 #endif
+#if BOARD_AUDIO_I2S
+    (void)pwm;
+    if (!start_i2s()) return false;
+    set_volume(50);
+    xTaskCreatePinnedToCore(audio_task, "audio", 3072, nullptr, 10, nullptr, 1);
+    s_running = true;
+    return true;
+#else
     if (pwm) {
         if (!start_pwm()) return false;
         set_volume(50);
@@ -228,8 +372,11 @@ bool start(Fill fill, void* ctx, bool pwm) {
     xTaskCreatePinnedToCore(audio_task, "audio", 3072, nullptr, 10, nullptr, 1);
     s_running = true;
     return true;
+#endif
 }
 
 bool running() { return s_running; }
+
+bool has_output_choice() { return !BOARD_AUDIO_I2S; }
 
 }  // namespace audio
