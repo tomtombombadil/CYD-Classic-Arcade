@@ -140,27 +140,29 @@ void run(int index, AudioRing& ring)
     ring.clear();
 
     // The start-up tests (RAM / ROM checks, test patterns, noise) run unseen
-    // and unheard, as fast as the board goes, behind a "Loading" card; the
-    // picture starts with the attract mode. Back (or holding the screen)
-    // cancels.
+    // and unheard, as fast as the board goes, behind a "Loading" card -
+    // drawn in the game's orientation, so a landscape game's card is the
+    // sign to turn the board (Tom). The picture starts with the attract
+    // mode. Back (or holding the screen) cancels.
     bool cancelled = false;
     if (g.boot_frames > 0) {
-        const char* note = g.orientation == games::Orientation::Landscape ? "Turn the board on its side" : "";
-        ui::loading(lcd, g.title, note, 0, g.boot_frames, true);
+        ui::loading(lcd, g.title, "", 0, g.boot_frames, true);
         Input boot_in;
         boot_in.wait_for_release();
         const int64_t t0 = esp_timer_get_time();
         for (int f = 0; f < g.boot_frames; ++f) {
             m->run_frame(audio, kAudioCap);     // the sound is thrown away
-            if ((f & 7) == 7) {
-                vTaskDelay(1);                  // let the idle task feed the watchdog
+            // Every 32 frames: the bar, the back gesture, and a tick for the
+            // idle task (watchdog) - little time away from the emulation
+            if ((f & 31) == 31) {
+                ui::loading(lcd, g.title, "", f + 1, g.boot_frames, false);
+                vTaskDelay(1);
                 boot_in.update(now_ms());
                 if (boot_in.back() || touch::held_long()) {
                     cancelled = true;
                     break;
                 }
             }
-            if ((f & 15) == 15) ui::loading(lcd, g.title, note, f + 1, g.boot_frames, false);
         }
         ESP_LOGI(kTag, "%s: %d start-up frames in %.1f s", g.id, g.boot_frames,
                  double(esp_timer_get_time() - t0) / 1e6);

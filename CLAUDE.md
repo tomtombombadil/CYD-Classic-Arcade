@@ -203,9 +203,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   1625 - its Williams logo, qix 190, starwars 90, the rest 30 for the
   first black / garbage frame). The runner runs them before the game loop
   with nothing drawn and the sound thrown away, as fast as the board goes
-  (a vTaskDelay(1) every 8 frames for the watchdog), behind
-  `ui::loading()` (game title, gold progress bar, "Turn the board on its
-  side" for landscape games); back or a held touch cancels. The speed
+  (bar, back check and a vTaskDelay(1) for the watchdog only every 32
+  frames), behind `ui::loading()` (game title, gold progress bar). Tom:
+  a landscape game's card is drawn in landscape (the panel turns first) -
+  that is the sign to turn the board; no "turn the board" text. Back or a
+  held touch cancels. The speed
   stats count only the game loop. A new game: find its attract mode's
   first frame the same way (arcade_host --png-every 10).
 - Interrupted draws (v0.6.2, Tom: Galaga's start tune crackled at its end,

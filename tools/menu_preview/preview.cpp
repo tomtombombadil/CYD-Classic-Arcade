@@ -148,8 +148,8 @@ void render(int w, int h)
         LGFX_Sprite l;
         l.setColorDepth(16);
         if (l.createSprite(h, w)) {
-            ui::loading(l, "Defender", "Turn the board on its side", 600, 1625, true);
-            ui::loading(l, "Defender", "Turn the board on its side", 1100, 1625, false);
+            ui::loading(l, "Defender", "", 600, 1625, true);
+            ui::loading(l, "Defender", "", 1100, 1625, false);
             save(l, "B_loading_landscape");
         }
     }
