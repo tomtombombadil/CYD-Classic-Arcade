@@ -28,7 +28,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Mr. Do! | Z80 4.1 MHz | 2 x SN76489, two tile layers (one scrolls) + sprites, a protection PAL | 192x240 portrait | done: ~Pac-Man's cost |
 | Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM) | 240x256 portrait | medium: light CPUs, but 64 KB of RAM |
 | Burger Time | DECO CPU-7 (6502 with scrambled opcodes) 1.5 MHz | 6502 sound CPU + 2 AY-3-8910, a band-pass on one channel; characters, 8 sprites, background map from ROM, palette RAM | 240x240 portrait | done: VBLANK waits and the sound CPU's idle loop skipped (~6-9K main CPU cycles a frame in play) |
-| Star Wars | 6809 1.5 MHz + math box | color vector generator (AVG), 6809 sound CPU, 4 POKEY, TMS5220 speech (the voices are LPC data in the ROMs) | 4:3 landscape | medium-hard: vectors need a frame buffer (4 bpp, ~38 KB) |
+| Star Wars | 6809 1.5 MHz + matrix processor (PROM microcode) | colour vector generator (AVG), 6809 sound CPU + RIOT, 4 POKEY, TMS5220 speech (our LPC synthesiser; the voices are LPC data in the sound ROMs) | 320x240 landscape (lines drawn row by row from a segment list) | done: ~1.0M host instructions a frame (2x Pac-Man); machine ~51 KB + 72 KB of ROM |
 | Defender (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |

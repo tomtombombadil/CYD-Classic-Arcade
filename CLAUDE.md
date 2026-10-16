@@ -314,8 +314,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Unsure: the sprite offsets / clip (MAME calls them a guess), the speech
   clock mapping, the 8088 timing (no prefetch queue).
 - Vector games: `emu/machines/vector_display.*` keeps each picture as a
-  list of clipped segments in output pixels (1/16 px fixed point, at most
-  1024, ~20 KB with the sort and active lists), sorted by first row, and
+  list of clipped segments in output pixels (1/16 px fixed point; 14-byte
+  segments + 2 bytes in the sort list + the active list; capacity and
+  active-list size are template parameters - Asteroids / Tempest 1024,
+  ~18 KB), sorted by first row, and
   draws one output line at a time (1-pixel lines, dots 2 x 2, later lines
   on top) - no frame buffer. The machine builds a whole picture inside one
   run_frame (begin / add / finish).
@@ -373,6 +375,45 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   ms a frame emulated (the game keeps its CPU busy: ~6800 instructions a
   frame), ~0.025 ms rendered. Sound: the two POKEYs x 4, AC-coupled; game
   peaks ~20,000.
+- Star Wars (`emu/machines/starwars.*`, set `starwars` (set 1); math box
+  PROMs as today's dumps or old MAME's (14 bytes with stray high nibbles -
+  only the low 4 bits count) as romset variants; no AVG PROM; landscape
+  320x240, 61.5 Hz). Emulated: main 6809E at 1.512 MHz (IRQ every 6144
+  cycles, acked by 4660; ROM bank at 6000 = LS259 bit 4; watchdog 65536
+  cycles), the AVG's Star Wars variant (`atari_avg`, Variant::StarWars:
+  big-endian words, STAT = colour bits 8-10 + 8-bit intensity, vector
+  brightness = intensity x the 12k/24k/47k DAC of z), run at each AVG GO
+  (the game waits for VG_HALT, so its drawing time is kept exact); the
+  250 x 280 window stretched over 320 x 240 as the 4:3 tube does. The
+  matrix processor (`starwars_mathbox.*`) runs its microcode from the
+  user's PROMs as it goes (no decoded copy), with its timing (5 clocks a
+  step, +33 a multiply) on MATH_RUN; the divider; the 23-bit LFSR (3 MHz,
+  jumped ahead in closed form at each read). X2212 NOVRAM in RAM only
+  (store / recall). Sound board: 6809E, 6532 RIOT (`riot6532.*`: timer IRQ,
+  PA7 edge IRQ on a command), latches both ways, 4 POKEYs, and our own
+  TMS5220 (`emu/sound/tms5220.*`: Speak External FIFO, status, /RS /WS
+  /READY timing, the chip's tables, interpolation, chirp / LFSR
+  excitation, 10-stage lattice, 8-bit clipped output at 8.4 kHz). Mix:
+  POKEYs x 0.85 AC-coupled, speech x 0.44 through a 4 kHz low-pass (our
+  addition against the 8.4 kHz images); peaks ~21,000. Controls: the yoke
+  = left stick (yaw / pitch, up = sights up) plus where the d-pad has
+  moved the sights (2 ADC counts a frame, stays put); A / B / X / Y fire
+  (the four yoke buttons), Select = coin, Start = fire (the game has no
+  start button: a trigger starts it). The game calibrates its yoke itself
+  (minimum + gain per axis, learnt in play, kept in the NOVRAM); a new
+  NOVRAM starts at minimum 0x40, gain 1.25, so the pots read 0x40 / 0xA6
+  (centred) / 0xFF - the sights centre and reach the edges at once. Idle
+  skipping, exact (checked frame by frame against runs without it over
+  8000 frames incl. play): the main frame wait (6005), a flag wait (6032),
+  the matrix processor wait (CDBD, the CPU stops after each start), the
+  sound CPU's timer wait (7D4C); about half the cycles. The attract mode
+  sends no sound command (silent, whatever the Demo Sounds switch). Display
+  cap 1700 segments (the flight instructions page needs ~1660, high scores
+  ~1070, play up to ~900), at most 256 crossing a row (166 seen). Memory:
+  machine object ~51 KB (20 KB RAM, 27.8 KB display) + 72 KB of ROM
+  regions (9). PC: ~1.0M host instructions a frame emulated (callgrind,
+  attract + play; Pac-Man 483K), ~0.3M rendered. Unsure: the speech
+  filter, attract silence, the TMS5220's start delay (no "fast start").
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

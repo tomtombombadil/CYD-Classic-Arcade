@@ -58,9 +58,13 @@ Older MAME versions named the sets differently: their `asteroid` is today's
 `-132`) aren't needed: the emulator does what they do.
 
 Older dumps also work where the data is the same: an old `spyhunt` has
-`cpu_pg5.11d` with its two halves swapped (the loader checks both orders),
-and an old `starwars` has the math box PROMs in another layout, and no
-AVG PROM - our emulator needs neither.
+`cpu_pg5.11d` with its two halves swapped (the loader checks both orders).
+An old `starwars` (files `136021.105` ... `136021.214`) has the math box
+PROMs `136021.110` ... `.113` with stray bits above the 4 data bits in 14
+bytes (other CRCs); the chips are 4 bits wide, so both dumps work (romset
+variants). The AVG PROM (`136021-109.4b`) isn't needed. Only set 1's
+program (`136021.214`) is recognised; `starwars1` / `starwarso` (program
+`136021.114`) aren't.
 
 Notes:
 - **Galaga, Dig Dug:** non-merged sets also hold the Namco custom chips'
