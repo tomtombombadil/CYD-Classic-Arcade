@@ -11,6 +11,7 @@
 #include "machines/mspacman.h"
 #include "machines/pacman.h"
 #include "machines/qbert.h"
+#include "machines/qix.h"
 #include "machines/rallyx.h"
 #include "machines/tempest.h"
 #include "machines/williams.h"
@@ -465,6 +466,46 @@ const ButtonName kDefenderButtons[] = {
     {"hsreset", williams::defender::kHighScoreReset},
 };
 
+// ---- Qix ---------------------------------------------------------------------
+
+class Qix : public Machine {
+public:
+    bool ok() const { return m_.ok(); }
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override { m_.init(r, rate, swap); }
+    void set_dips(uint8_t) override {}          // no DIP switches: settings are in the CMOS RAM
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return 0; }     // no watchdog on this board
+
+private:
+    qix::Machine m_;
+};
+
+// The video RAM is two 32 KB blocks of its own: null if either didn't fit.
+Machine* make_qix()
+{
+    Qix* q = new (std::nothrow) Qix;
+    if (q && !q->ok()) {
+        delete q;
+        q = nullptr;
+    }
+    return q;
+}
+
+// 4-way stick; A = Fast Draw, B = Slow Draw.
+const Control kQixControls[] = {
+    {kPadUp, qix::kUp}, {kPadDown, qix::kDown}, {kPadLeft, qix::kLeft}, {kPadRight, qix::kRight},
+    {kPadA, qix::kFast}, {kPadB, qix::kSlow},
+    {kPadSelect, qix::kCoin}, {kPadStart, qix::kStart1}, {kPadL, qix::kStart2},
+};
+
+const ButtonName kQixButtons[] = {
+    {"up", qix::kUp}, {"down", qix::kDown}, {"left", qix::kLeft}, {"right", qix::kRight},
+    {"fast", qix::kFast}, {"slow", qix::kSlow}, {"coin", qix::kCoin}, {"coin2", qix::kCoin2},
+    {"start1", qix::kStart1}, {"start2", qix::kStart2}, {"advance", qix::kAdvance},
+};
+
 // nothrow: on the board a failed plain new aborts (no exceptions) - the
 // runner says "Not enough memory" instead.
 template <class M> Machine* make() { return new (std::nothrow) M; }
@@ -520,6 +561,9 @@ const Info kGames[] = {
      Orientation::Landscape, williams::kCpuClock, williams::kCyclesPerFrame, kDefenderControls,
      COUNT(kDefenderControls), kDefenderButtons, COUNT(kDefenderButtons), nullptr, 0,
      make<Williams<williams::Board::Defender>>, false},
+    {"qix", "Qix", &qix::kRomSet, qix::kScreenW, qix::kScreenH, Orientation::Portrait, qix::kCpuClock,
+     qix::kCyclesPerFrame, kQixControls, COUNT(kQixControls), kQixButtons, COUNT(kQixButtons), nullptr, 0,
+     make_qix, true},
 };
 
 const int kGameCount = COUNT(kGames);

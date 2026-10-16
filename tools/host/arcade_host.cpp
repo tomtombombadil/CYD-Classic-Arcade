@@ -3,7 +3,7 @@
 //   arcade_host <game> <zip | rom file | dir>... [options]
 //     games: the table in emu/games.cpp (pacman, invaders, rallyx, dkong,
 //     galaga, digdug, mspacman, mrdo, btime, qbert, asteroid, tempest,
-//     robotron, defender, ...)
+//     robotron, defender, qix, ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -38,7 +38,9 @@
 //                         advance autoup hsreset;
 //                         defender: up down left right (the stick: reverse /
 //                         thrust by the ship's facing) fire thrust bomb hyper
-//                         reverse coin start1 start2 advance autoup hsreset; any game: lx=N,
+//                         reverse coin start1 start2 advance autoup hsreset;
+//                         qix: up down left right fast slow coin coin2
+//                         start1 start2 advance; any game: lx=N,
 //                         the left stick's X -512..511, e.g.
 //                         "1200+60:lx=-300+fire")
 //     --verbose           one timing line per frame
@@ -393,6 +395,10 @@ int main(int argc, char** argv)
 
     // --- run ---
     std::unique_ptr<games::Machine> m(gi.make());
+    if (!m) {
+        std::fprintf(stderr, "%s: not enough memory for the machine\n", gi.id);
+        return 1;
+    }
     std::vector<const uint8_t*> rom_ptrs(region_ptrs.begin(), region_ptrs.end());
     m->init(rom_ptrs.data(), rate, false);
     if (dips >= 0) m->set_dips(uint8_t(dips));

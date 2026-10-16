@@ -437,6 +437,43 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   by callgrind: 1.3x Pac-Man's 483K; the sound CPU is half of it - the
   game's waveform loops write the DAC ~40,000 times a second), render
   ~0.035 ms.
+- Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
+  the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
+  game draws lies in lines 16-240, and 256 scaled down to 240 would drop
+  the one-pixel lines), 55.84 Hz). Emulated: the data and video 6809s at
+  1.25 MHz with the shared RAM and the FIRQs between them (8C00 raise the
+  other's, 8C01 clear own), the 6845's timing (82 cycles x 273 lines;
+  VSYNC lines 256-271 on the sound PIA's CB1 = the data CPU's IRQ), the
+  scanline register (the shown line, 255 in the blank), the video RAM in
+  two 32 KB heap blocks (nothrow in the constructor; `make_qix` returns
+  null if either fails) seen through the 0000-7FFF window (bit 7 of the
+  latch) and the 9400 latched byte, palette RAM with its bank, the CMOS,
+  the PIAs (inputs active low; A = Fast Draw = button 1, B = Slow Draw),
+  and the sound board (`emu/sound/qix_sound.*`: 6802 at 921.6 kHz + PIA +
+  DAC running U27 - exact; the volume attenuators (data PIA port B, 4
+  bits a side, 22k / 10k / 5.6k / 3.3k against 10k) averaged to mono, the
+  1.5k / 1 uF output high-pass; play peaks ~15,000-21,000). Our own
+  guess: the RRGGBBII levels (intensity scales the colour 50-100 % and
+  adds a little grey). Not drawn: flip screen. First boot: the CMOS is
+  empty, the game writes its defaults and waits on the operator's setup
+  pages (Advance x5); the machine restarts the board 30 frames after the
+  CMOS checks valid (55AA + checksum), as a power cycle would, and the
+  game comes up. The CPUs run in step (32-cycle slices, the one behind
+  runs; a FIRQ ahead of the other's time waits for it); the game is
+  sensitive to this - other slices give another attract-mode Qix. Idle
+  loops sleep (pure loops, scanline waits until the line changes, and
+  the data CPU's counting wait "INC <25 ; LDA 8520 ; BNE" whose count is
+  added on waking) and wake on the other's shared RAM writes (trapped
+  while one sleeps; a counting wait only for its two bytes), FIRQs, IRQ,
+  VSYNC. The video CPU never sleeps in play: its task loop polls the
+  scanline. PC: emu ~1.4x Pac-Man's host instructions a frame (~650K by
+  callgrind; wall time ~0.09 ms vs Pac-Man's 0.05 in the same run),
+  render ~0.05 ms. RAM (32-bit): machine ~8.5 KB + video RAM 2 x 32 KB +
+  ROM regions 16 + 14 + 2 KB = ~104 KB; the biggest single block 32 KB.
+- 6800 core fix (2026-10-16, found with Qix): an IRQ waits one more
+  instruction after CLI (with I set) or TAP, as on the chip - Qix's sound
+  handler "LDS ; CLI ; LDAA <PIA>" re-entered itself forever without it;
+  a branch to itself doesn't idle past an IRQ already due.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
@@ -553,7 +590,12 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - 6800 / 6802 / 6808 core (`emu/cpu/m6800.*`, the Williams and Qix sound
   CPUs): the same kind of own tests in `m6800_tests.cpp` (ALU vs a plain
   model, shifts' V = N xor C, CPX's 6800 flags, cycles, IRQ / NMI / SWI /
-  WAI). Undocumented opcodes run as 2-cycle no-ops.
+  WAI, the IRQ wait after CLI / TAP). Undocumented opcodes run as 2-cycle
+  no-ops.
+- `qix_tests.cpp`: the Qix board on hand-assembled programs (video RAM
+  latch / window, palette and picture, both FIRQs, the scanline, the
+  VSYNC IRQ, the sound command / DAC / volume, the first boot's restart)
+  and that idle skipping leaves their results as they are without it.
 - `williams_tests.cpp`: the 6821 PIA, the SC1 blitter on synthetic data,
   the sound board on a hand-made 6808 program, and the Robotron board
   running hand-assembled 6809 programs (line interrupts, video counter,

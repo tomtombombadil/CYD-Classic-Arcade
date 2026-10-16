@@ -26,7 +26,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Rally-X | Z80 3.072 MHz | Namco wavetable sound (as Pac-Man), analog crash "bang", scrolling + radar | 288x224 landscape | easy (after Pac-Man) |
 | Ms. Pac-Man | Z80 3.072 MHz | the Pac-Man board + Midway's aux board (scrambled ROMs laid over the Pac-Man program, a latch set / cleared by trap addresses) | 224x288 portrait | done: as Pac-Man |
 | Mr. Do! | Z80 4.1 MHz | 2 x SN76489, two tile layers (one scrolls) + sprites, a protection PAL | 192x240 portrait | done: ~Pac-Man's cost |
-| Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM) | 240x256 portrait | medium: light CPUs, but 64 KB of RAM |
+| Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM, two 32 KB blocks), 6845 timing | 240x256 portrait (lines 8-247 of 256) | done: the video CPU polls the scanline all the time (~1.4x Pac-Man's host instructions a frame); ~104 KB of RAM with the ROMs |
 | Burger Time | DECO CPU-7 (6502 with scrambled opcodes) 1.5 MHz | 6502 sound CPU + 2 AY-3-8910, a band-pass on one channel; characters, 8 sprites, background map from ROM, palette RAM | 240x240 portrait | done: VBLANK waits and the sound CPU's idle loop skipped (~6-9K main CPU cycles a frame in play) |
 | Star Wars | 6809 1.5 MHz + math box | color vector generator (AVG), 6809 sound CPU, 4 POKEY, TMS5220 speech (the voices are LPC data in the ROMs) | 4:3 landscape | medium-hard: vectors need a frame buffer (4 bpp, ~38 KB) |
 | Robotron: 2084 | 6809 1 MHz | SC1 blitter, 6808 sound CPU + DAC, 304x256 4-bit bitmap (38 KB) | 292x240 landscape | done: idle loops skipped (exact), ~104 KB of RAM with the ROMs |
@@ -48,8 +48,8 @@ its sound one of three ways, and we do what the machine did:
    (AY-8910s). We emulate the chip; the sound is exact.
 2. **A sound CPU with its own program and a DAC** - Donkey Kong's music
    (i8035), Q\*bert's effects (6502), Defender / Stargate (all of it,
-   6800). We run that CPU's program from the ROM set; it writes the DAC
-   and the sound is exact. Q\*bert's speech goes through a Votrax SC-01
+   6800), Qix (all of it, 6802). We run that CPU's program from the ROM
+   set; it writes the DAC and the sound is exact. Q\*bert's speech goes through a Votrax SC-01
    chip whose own ROM isn't in the common sets: the sound CPU's program
    (and so the phoneme timing) runs as on the board, and our own small
    source-filter model voices the phonemes (Q\*bert's swearing is random
