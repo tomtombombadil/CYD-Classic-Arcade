@@ -13,6 +13,7 @@
 #include "machines/qbert.h"
 #include "machines/rallyx.h"
 #include "machines/tempest.h"
+#include "machines/starwars.h"
 
 #include <cstring>
 
@@ -399,6 +400,49 @@ const ButtonName kTempestButtons[] = {
     {"step", tempest::kDiagStep},
 };
 
+// ---- Star Wars --------------------------------------------------------------
+
+class Starwars : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        using namespace starwars;
+        m_.init({{r[kRegionRom0], r[kRegionRom1], r[kRegionRom2], r[kRegionRom3], r[kRegionRom4]},
+                 r[kRegionVector], {r[kRegionSound0], r[kRegionSound1]}, r[kRegionMath]},
+                rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    // The yoke = the left stick, in proportion (the d-pad moves the sights
+    // at a steady speed, starwars::Machine::kSightSpeed).
+    void set_analog(const Analog& a) override { m_.set_yoke(a.lx, a.ly); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    starwars::Machine m_;
+};
+
+// The d-pad moves the sights at a steady speed (the left stick: the yoke
+// itself); A and B fire (the yoke's triggers), X and Y too (its thumb
+// buttons). The game has no start button: a trigger starts it, so Start
+// fires too.
+const Control kStarwarsControls[] = {
+    {kPadUp, starwars::kUp}, {kPadDown, starwars::kDown}, {kPadLeft, starwars::kLeft},
+    {kPadRight, starwars::kRight}, {kPadA, starwars::kFire1}, {kPadB, starwars::kFire2},
+    {kPadX, starwars::kFire3}, {kPadY, starwars::kFire4}, {kPadSelect, starwars::kCoin},
+    {kPadStart, starwars::kFire1},
+};
+
+const ButtonName kStarwarsButtons[] = {
+    {"fire", starwars::kFire1}, {"fire2", starwars::kFire2}, {"fire3", starwars::kFire3},
+    {"fire4", starwars::kFire4}, {"up", starwars::kUp}, {"down", starwars::kDown},
+    {"left", starwars::kLeft}, {"right", starwars::kRight}, {"coin", starwars::kCoin},
+    {"coin2", starwars::kCoin2}, {"aux", starwars::kAux}, {"start1", starwars::kFire1},
+    {"test", starwars::kTest}, {"step", starwars::kDiagStep},
+};
+
 template <class M> Machine* make() { return new M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -444,6 +488,9 @@ const Info kGames[] = {
     {"tempest", "Tempest", &tempest::kRomSet, tempest::kScreenW, tempest::kScreenH, Orientation::Portrait,
      tempest::kCpuClock, tempest::kCyclesPerFrame, kTempestControls, COUNT(kTempestControls),
      kTempestButtons, COUNT(kTempestButtons), nullptr, 0, make<Tempest>, false},
+    {"starwars", "Star Wars", &starwars::kRomSet, starwars::kScreenW, starwars::kScreenH,
+     Orientation::Landscape, starwars::kCpuClock, starwars::kCyclesPerFrame, kStarwarsControls,
+     COUNT(kStarwarsControls), kStarwarsButtons, COUNT(kStarwarsButtons), nullptr, 0, make<Starwars>, false},
 };
 
 const int kGameCount = COUNT(kGames);

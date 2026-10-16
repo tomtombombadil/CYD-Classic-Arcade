@@ -15,7 +15,9 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/sound/ay8910.cpp $ROOT/emu/machines/btime.cpp $ROOT/emu/sound/qbert_sound.cpp \
      $ROOT/emu/machines/qbert.cpp $ROOT/emu/sound/pokey.cpp $ROOT/emu/sound/asteroids_sound.cpp \
      $ROOT/emu/machines/vector_display.cpp $ROOT/emu/machines/atari_dvg.cpp $ROOT/emu/machines/asteroids.cpp \
-     $ROOT/emu/machines/atari_avg.cpp $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp"
+     $ROOT/emu/machines/atari_avg.cpp $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp \
+     $ROOT/emu/sound/tms5220.cpp $ROOT/emu/machines/riot6532.cpp $ROOT/emu/machines/starwars_mathbox.cpp \
+     $ROOT/emu/machines/starwars.cpp"
 g++ -std=c++17 -O2 -Wall -Wextra -o "$OUT/arcade_host" \
     "$ROOT/tools/host/arcade_host.cpp" "$ROOT/tools/host/writers.cpp" $EMU
 echo "built $OUT/arcade_host"

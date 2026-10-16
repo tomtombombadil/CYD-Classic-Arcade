@@ -38,6 +38,9 @@
 #  10. the Q*bert board (8088 + 6502 sound board, video, the speech and
 #      knocker models, the diagonal stick, idle skipping) on hand-made
 #      programs, -O2 and with the sanitizers
+#  12. the Star Wars board (TMS5220, matrix processor on synthetic PROMs,
+#      divider, LFSR, RIOT, the AVG's Star Wars variant, wiring on hand-made
+#      6809 programs), -O2 and with the sanitizers
 #  11. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
 #      start of each opcode's file, ~600 tests each, fetched on first use
 #      into build/i8088 by fetch_i8088_tests.py - not ours, never
@@ -67,7 +70,8 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/btime.cpp $ROOT/emu/sound/qbert_sound.cpp $ROOT/emu/machines/qbert.cpp \
      $ROOT/emu/sound/pokey.cpp $ROOT/emu/sound/asteroids_sound.cpp $ROOT/emu/machines/vector_display.cpp \
      $ROOT/emu/machines/atari_dvg.cpp $ROOT/emu/machines/asteroids.cpp $ROOT/emu/machines/atari_avg.cpp \
-     $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp"
+     $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp $ROOT/emu/sound/tms5220.cpp \
+     $ROOT/emu/machines/riot6532.cpp $ROOT/emu/machines/starwars_mathbox.cpp $ROOT/emu/machines/starwars.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -124,6 +128,12 @@ g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cp
 "$OUT/atari_tests"
 "$OUT/atari_tests_san"
 
+echo "== Star Wars tests (TMS5220, matrix processor, divider, LFSR, RIOT, AVG variant, board wiring)"
+g++ $FLAGS -O2 -o "$OUT/starwars_tests" "$ROOT/tools/host_tests/starwars_tests.cpp" $EMU
+g++ $FLAGS $SAN -o "$OUT/starwars_tests_san" "$ROOT/tools/host_tests/starwars_tests.cpp" $EMU
+"$OUT/starwars_tests"
+"$OUT/starwars_tests_san"
+
 echo "== Burger Time tests (AY-3-8910, DECO CPU-7, board wiring)"
 g++ $FLAGS -O2 -o "$OUT/btime_tests" "$ROOT/tools/host_tests/btime_tests.cpp" $EMU
 g++ $FLAGS $SAN -o "$OUT/btime_tests_san" "$ROOT/tools/host_tests/btime_tests.cpp" $EMU
@@ -142,7 +152,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest starwars; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

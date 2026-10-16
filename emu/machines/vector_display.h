@@ -18,11 +18,13 @@ namespace vector_display {
 // Fixed point: coordinates are in 1/16 pixel.
 constexpr int kSub = 16;
 
-class Display {
+// The picture and its drawing; the segment storage is in Sized<N> below
+// (the most segments a picture holds, 16 bytes each with the sort list,
+// plus the active list - more are counted and dropped).
+class Base {
 public:
-    // The most segments a picture holds (more are counted and dropped).
-    // 20 bytes each with the sort and active lists.
-    static constexpr int kMaxSegments = 1024;
+    Base(const Base&) = delete;
+    Base& operator=(const Base&) = delete;
 
     // Output size in pixels (at most 512 x 512).
     void init(int width, int height);
@@ -45,29 +47,63 @@ public:
     int height() const { return height_; }
     int count() const { return count_; }            // segments in the shown picture
     int dropped() const { return dropped_; }        // lost in the last picture (too many)
+    int capacity() const { return cap_; }
 
-private:
+    // 14 bytes (16-bit aligned): the slope is kept in two halves.
     struct Seg {
         int16_t  ax, ay, bx, by;    // ay <= by, 1/16 px
-        int32_t  slope;             // dx per 1/16 y, 16.16 (0 for flat lines)
         uint16_t color;
-        uint16_t last_row;          // the last row it touches
+        uint16_t slope_lo;          // dx per 1/16 y, 16.16 (0 for flat lines)
+        int16_t  slope_hi;
+        int32_t  slope() const { return int32_t(uint32_t(uint16_t(slope_hi)) << 16 | slope_lo); }
     };
 
+protected:
+    Base(Seg* seg, uint16_t* order, uint16_t* active, int cap, int active_cap)
+        : seg_(seg), order_(order), active_(active), cap_(cap), active_cap_(active_cap) {}
+
+private:
     void store(int ax, int ay, int bx, int by, uint16_t color);
     void draw(const Seg& s, int y, uint16_t* out) const;
+    // The last row a segment touches (a dot covers the next one too).
+    int  last_row(const Seg& s) const
+    {
+        const int r = s.by / kSub;
+        return (s.ax == s.bx && s.ay == s.by && r + 1 < height_) ? r + 1 : r;
+    }
 
-    int      width_ = 0, height_ = 0;
-    Seg      seg_[kMaxSegments];
-    int      count_ = 0;
-    int      dropped_ = 0;
+    Seg*      seg_;
     // Segment numbers sorted by first row.
-    uint16_t order_[kMaxSegments];
+    uint16_t* order_;
     // Rendering state: the segments crossing the row last drawn.
-    uint16_t active_[kMaxSegments];
-    int      active_n_ = 0;
-    int      next_ = 0;             // next in order_ not yet active
-    int      last_y_ = -2;
+    uint16_t* active_;
+    int       cap_;
+    int       active_cap_;          // most segments crossing one row (more aren't drawn there)
+    int       width_ = 0, height_ = 0;
+    int       count_ = 0;
+    int       dropped_ = 0;
+    int       active_n_ = 0;
+    int       next_ = 0;            // next in order_ not yet active
+    int       last_y_ = -2;
 };
+
+static_assert(sizeof(Base::Seg) == 14, "segments pack into 14 bytes");
+
+// A display holding up to N segments (N x 16 bytes), at most A of them
+// crossing one row (A x 2 bytes; A = N can never run short).
+template <int N, int A = N>
+class Sized : public Base {
+public:
+    static constexpr int kMaxSegments = N;
+    Sized() : Base(seg_store_, order_store_, active_store_, N, A) {}
+
+private:
+    Seg      seg_store_[N];
+    uint16_t order_store_[N];
+    uint16_t active_store_[A];
+};
+
+// Asteroids' and Tempest's: 1024 segments, ~18 KB.
+using Display = Sized<1024>;
 
 } // namespace vector_display

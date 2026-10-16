@@ -250,6 +250,18 @@ int Pokey::level() const
 
 void Pokey::render(int16_t* out, int n, bool add)
 {
+    if (!active_ || in_reset_) {
+        // No underflow matters: the level is the same all along (what the
+        // loop below would give, without looking for events).
+        const int lv = level();
+        for (int i = 0; i < n; ++i) {
+            frac_ += step_;
+            t_ += frac_ >> 16;
+            frac_ &= 0xffff;
+            out[i] = int16_t(add ? out[i] + lv : lv);
+        }
+        return;
+    }
     for (int i = 0; i < n; ++i) {
         frac_ += step_;
         const uint32_t clocks = frac_ >> 16;

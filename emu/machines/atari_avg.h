@@ -22,6 +22,12 @@
 // per binary scale step, with bits 3-12 of each on the DACs and the linear
 // scale reducing the rate: move = value x time x (255 - linear) / 16 in
 // 1/65536 of a screen unit. Done here the same way, so rounding matches.
+//
+// Star Wars' AVG (Variant::StarWars) differs in three ways: its 6809 is
+// big-endian, so a word's high byte comes first; STAT sets the colour (bits
+// 8-11: 10 red, 9 green, 8 blue) and an 8-bit intensity (bits 0-7) at once;
+// and a vector's brightness is that intensity through a resistor DAC driven
+// by its 3-bit z (12k / 24k / 47k for z's bits 2 / 1 / 0) - z = 0 is a move.
 #pragma once
 
 #include <cstdint>
@@ -30,15 +36,22 @@ namespace atari_avg {
 
 using read_fn = uint8_t (*)(void* ctx, uint16_t addr);
 // A line in beam coordinates (16.16 screen units, X right, Y down, the
-// centre at (cx, cy)), with the colour index and intensity (1-15). A dot
-// when the ends meet.
+// centre at (cx, cy)), with the colour index and intensity (Tempest: 1-15;
+// Star Wars: 1-255). A dot when the ends meet.
 using line_fn = void (*)(void* ctx, int32_t x0, int32_t y0, int32_t x1, int32_t y1, int color, int intensity);
+
+enum class Variant : uint8_t { Tempest, StarWars };
 
 class Avg {
 public:
-    // `base`: CPU address of word 0 (Tempest 2000); the centre in 16.16.
-    void init(read_fn rd, line_fn line, void* ctx, uint16_t base, int32_t cx, int32_t cy);
+    // `base`: CPU address of word 0 (Tempest 2000, Star Wars 0000); the
+    // centre in 16.16.
+    void init(read_fn rd, line_fn line, void* ctx, uint16_t base, int32_t cx, int32_t cy,
+              Variant variant = Variant::Tempest);
     void reset();       // the VG reset strobe: scales and colour cleared
+    // Optional direct reads: the 4 KB page (0-3) of the AVG's 16 KB window
+    // (from `base`) at `p`; unmapped pages go through the read function.
+    void map(int page, const uint8_t* p) { page_[page & 3] = p; }
 
     // Runs the list from word 0 until HALT, a jump back to word 0 (Tempest
     // keeps the AVG in an endless loop: that ends a picture) or `max_ops`
@@ -66,12 +79,14 @@ private:
     int  vector(int dvx, int dvy, int z, bool svec);
 
     read_fn  rd_ = nullptr;
+    const uint8_t* page_[4] = {};
     line_fn  line_ = nullptr;
     void*    ctx_ = nullptr;
     uint16_t base_ = 0;
     uint16_t pc_ = 0;               // word address
     uint16_t stack_[4] = {};
     uint8_t  sp_ = 0;
+    Variant  variant_ = Variant::Tempest;
     int32_t  cx_ = 0, cy_ = 0;
     int32_t  x_ = 0, y_ = 0;        // beam, 16.16
     int      color_ = 0, intensity_ = 0;
