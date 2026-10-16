@@ -141,6 +141,19 @@ void render(int w, int h)
     ui::draw_text(s, info, footer(1, ""));
     save(s, "8_game_info");
 
+    ui::loading(s, "Galaga", "", 0, 870, true);
+    ui::loading(s, "Galaga", "", 520, 870, false);
+    save(s, "A_loading");
+    {   // a landscape game: the panel turned
+        LGFX_Sprite l;
+        l.setColorDepth(16);
+        if (l.createSprite(h, w)) {
+            ui::loading(l, "Defender", "Turn the board on its side", 600, 1625, true);
+            ui::loading(l, "Defender", "Turn the board on its side", 1100, 1625, false);
+            save(l, "B_loading_landscape");
+        }
+    }
+
     home.page = 0;
     home.focus = 0;
     home.pressed = -1;

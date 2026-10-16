@@ -94,6 +94,11 @@ struct Info {
     // Shown in the menu under the title: "Namco 1980"
     const char*        maker = "";
     int                year = 0;
+    // Frames from power-on to the attract mode: the start-up tests (RAM /
+    // ROM checks, test patterns, noise) run this long unseen and unheard,
+    // as fast as the board can, behind a "Loading" card (v0.14.0, Tom:
+    // "horrible looking test patterns"). Found frame by frame in PC runs.
+    int                boot_frames = 0;
 };
 
 extern const Info kGames[];

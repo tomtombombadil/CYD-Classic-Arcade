@@ -139,6 +139,34 @@ void run(int index, AudioRing& ring)
     for (int y = 0; y < kMaxLines; ++y) line_hash[y] = 0;   // a black line hashes otherwise
     ring.clear();
 
+    // The start-up tests (RAM / ROM checks, test patterns, noise) run unseen
+    // and unheard, as fast as the board goes, behind a "Loading" card; the
+    // picture starts with the attract mode. Back (or holding the screen)
+    // cancels.
+    bool cancelled = false;
+    if (g.boot_frames > 0) {
+        const char* note = g.orientation == games::Orientation::Landscape ? "Turn the board on its side" : "";
+        ui::loading(lcd, g.title, note, 0, g.boot_frames, true);
+        Input boot_in;
+        boot_in.wait_for_release();
+        const int64_t t0 = esp_timer_get_time();
+        for (int f = 0; f < g.boot_frames; ++f) {
+            m->run_frame(audio, kAudioCap);     // the sound is thrown away
+            if ((f & 7) == 7) {
+                vTaskDelay(1);                  // let the idle task feed the watchdog
+                boot_in.update(now_ms());
+                if (boot_in.back() || touch::held_long()) {
+                    cancelled = true;
+                    break;
+                }
+            }
+            if ((f & 15) == 15) ui::loading(lcd, g.title, note, f + 1, g.boot_frames, false);
+        }
+        ESP_LOGI(kTag, "%s: %d start-up frames in %.1f s", g.id, g.boot_frames,
+                 double(esp_timer_get_time() - t0) / 1e6);
+        lcd.fillScreen(TFT_BLACK);
+    }
+
     // Sound queued: at least three frames, and always enough to last
     // through a draw (draw_est, in samples, follows the slowest recent draw).
     const uint32_t frame_samples = uint32_t(24000.0 / games::frame_rate(g) + 0.5);
@@ -154,7 +182,7 @@ void run(int index, AudioRing& ring)
     uint32_t all_frames = 0, all_drawn = 0;
     int64_t all_emu_us = 0, all_draw_us = 0;
     int64_t emu_us = 0, draw_us = 0;
-    for (;;) {
+    while (!cancelled) {
         in.update(now_ms());
         // Back to the menu: the controller's gesture, or the screen held
         // for a second (a game started without a controller)

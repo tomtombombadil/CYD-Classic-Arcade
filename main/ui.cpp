@@ -539,4 +539,40 @@ void message(Gfx& g, const char* title, const char* body, uint16_t title_color)
     wrap(g, body, x + pad, y + pad + th + pad / 2, w - 2 * pad, kText, true, 1 << 30, true);
 }
 
+void loading(Gfx& g, const char* game, const char* note, int done, int total, bool full)
+{
+    const Metrics m = metrics(g);
+    const int w = m.w * 3 / 4 < 280 ? m.w - 4 * m.margin : m.w * 3 / 4;
+    const int x = (m.w - w) / 2;
+    const int pad = m.big ? 16 : 10;
+    const int th = font_h(g, m.sub), gh = font_h(g, m.body), nh = note[0] ? font_h(g, m.sub) + pad / 2 : 0;
+    const int bar_h = m.big ? 12 : 8;
+    const int h = pad + th + 4 + gh + pad + bar_h + nh + pad;
+    const int y = (m.h - h) / 2;
+    const int bar_y = y + pad + th + 4 + gh + pad;
+    const int bar_x = x + pad, bar_w = w - 2 * pad;
+    if (full) {
+        g.fillScreen(kBg);
+        g.fillRoundRect(x, y, w, h, m.big ? 12 : 8, kCard);
+        g.setTextDatum(textdatum_t::top_center);
+        g.setFont(m.sub);
+        g.setTextColor(kSub);
+        g.drawString("Loading", m.w / 2, y + pad);
+        g.setFont(m.body);
+        g.setTextColor(kGold);
+        char buf[48];
+        fit(g, game, w - 2 * pad, buf, sizeof buf);
+        g.drawString(buf, m.w / 2, y + pad + th + 4);
+        if (note[0]) {
+            g.setFont(m.sub);
+            g.setTextColor(kText);
+            fit(g, note, w - 2 * pad, buf, sizeof buf);
+            g.drawString(buf, m.w / 2, bar_y + bar_h + pad / 2);
+        }
+        g.fillRoundRect(bar_x, bar_y, bar_w, bar_h, bar_h / 2, kOff);
+    }
+    const int fill = total > 0 ? bar_w * (done < total ? done : total) / total : bar_w;
+    if (fill >= bar_h) g.fillRoundRect(bar_x, bar_y, fill, bar_h, bar_h / 2, kGold);
+}
+
 }  // namespace ui

@@ -134,6 +134,11 @@ void draw_header(Gfx& g, const char* title, bool back, bool gear);
 // A message in a card in the middle of the screen (over what's there).
 void message(Gfx& g, const char* title, const char* body, uint16_t title_color = kGold);
 
+// "Loading <game>" in a card with a progress bar, for a game's start-up
+// tests run unseen. full = clear the screen and draw the card; otherwise
+// only the bar moves.
+void loading(Gfx& g, const char* game, const char* note, int done, int total, bool full);
+
 // Writes `text` into `out` cut to `max_w` pixels with "..." if needed (the
 // current font).
 void fit(Gfx& g, const char* text, int max_w, char* out, int cap);

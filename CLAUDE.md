@@ -195,6 +195,19 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   board-name hash). PC preview: `tools/menu_preview/build.sh <LovyanGFX
   dir>` draws every page at 240x320 and 320x480 with the real code onto
   LovyanGFX sprites (PNGs) - render it after any menu change.
+- Start-up hidden (v0.14.0; Tom, 2026-10-16: show "Loading <game>"
+  instead of "those horrible looking test patterns"): `games::Info::
+  boot_frames` = frames from power-on to the attract mode, found frame by
+  frame in PC runs with Tom's ROMs (pacman / mspacman 300 - the grid test
+  ends there, rallyx 770, galaga 870, digdug 700, robotron 760, defender
+  1625 - its Williams logo, qix 190, starwars 90, the rest 30 for the
+  first black / garbage frame). The runner runs them before the game loop
+  with nothing drawn and the sound thrown away, as fast as the board goes
+  (a vTaskDelay(1) every 8 frames for the watchdog), behind
+  `ui::loading()` (game title, gold progress bar, "Turn the board on its
+  side" for landscape games); back or a held touch cancels. The speed
+  stats count only the game loop. A new game: find its attract mode's
+  first frame the same way (arcade_host --png-every 10).
 - Interrupted draws (v0.6.2, Tom: Galaga's start tune crackled at its end,
   where the whole screen changes at once): a draw stops at a line boundary
   when less than a frame of sound is queued, and the next draw goes on
