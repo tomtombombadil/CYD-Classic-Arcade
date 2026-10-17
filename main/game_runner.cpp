@@ -268,6 +268,7 @@ void run(int index, AudioRing& ring)
     // sign to turn the board (Tom). The picture starts with the attract
     // mode. Back (or holding the screen) cancels.
     bool cancelled = false;
+    const char* ended_by = "the controller";    // for the log
     if (g.boot_frames > 0) {
         ui::loading(lcd, g.title, "", 0, g.boot_frames, true);
         crash_note::step(g.title, "running its start-up");
@@ -284,6 +285,7 @@ void run(int index, AudioRing& ring)
                 boot_in.update(now_ms());
                 if (boot_in.back() || touch::held_long()) {
                     cancelled = true;
+                    ended_by = boot_in.back() ? "the controller (loading)" : "a held touch (loading)";
                     break;
                 }
             }
@@ -332,7 +334,10 @@ void run(int index, AudioRing& ring)
             held = touch::held_long();
             xSemaphoreGive(s_bus);
         }
-        if (in.back() || held) break;
+        if (in.back() || held) {
+            ended_by = in.back() ? "the controller" : "a held touch";
+            break;
+        }
         const uint32_t pad = g.four_way ? four_way.filter(in.game()) : in.game();
         m->set_inputs(games::map_pad(g, pad));
         m->set_analog(in.analog());
@@ -467,6 +472,7 @@ void run(int index, AudioRing& ring)
     s_last.draw_max_ms = float(draw_max_us) / 1000.0f;
     s_last.worst_frames = std::max(worst_frames, 0);
     s_last.worst_drawn = worst_drawn;
+    devlog::add("%s: left by %s", g.id, ended_by);
     devlog::add("%s: ran %.0f s, %.1f fps (game %.1f), %.0f shown/s; emu %.1f ms (worst %.1f), picture %.1f "
                 "(worst %.1f, send %.1f, %.1fK px); slowest second %d frames, %d shown",
                 g.id, double(secs), double(s_last.frames_per_s), double(s_last.game_hz), double(s_last.drawn_per_s),
