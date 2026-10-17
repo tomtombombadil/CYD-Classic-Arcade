@@ -665,10 +665,26 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   150; Dig Dug emu 56 -> 52, render 204 -> 47, p99 303 -> 137. The busy
   frames' emulation is now most of the cost and only ~10 % cheaper: the
   Z80 interpreter itself (~45 host instructions a Z80 instruction on the
-  PC) is what's left. Next step on the board (not
-  done): Galaga's stars change ~140 of 288 lines every frame, but only ~9 %
-  of the pixels - sending changed parts of lines (e.g. 8 hashes a line)
-  instead of whole lines would cut its SPI time ~5x.
+  PC) is what's left. On the board the bigger cost was sending: Galaga's
+  stars change ~140 of 288 lines every frame but ~10 % of the pixels, so
+  v0.14.3 sends changed segments, not whole lines (see Drawing).
+- Drawing (v0.14.3, `main/line_diff.h`, used by `game_runner` and by
+  `arcade_host --panel WxH`): each game line is cut into up to 8 segments
+  (even widths, 28 pixels for 224-wide games), each with a 32-bit hash of
+  what the panel shows (rotate-multiply per pixel pair + a final mix; 0 =
+  never sent); only changed segments go, runs one unchanged segment apart
+  joined, and lines whose changed part is the same columns are packed into
+  strips of 8 rows. 16-bit segment hashes (+ a line hash) were tried and
+  missed a change within 10 frames of Galaga - never go back to short
+  hashes. RAM: height x segments x 4 (Galaga 9 KB; v0.14's line hashes 2
+  KB). `arcade_host --panel 320x480` draws exactly as the firmware does
+  (scaling, skipped pictures, pictures cut short at random) onto a panel in
+  memory and checks every finished picture against a full redraw: all 16
+  games x 240x320 / 320x480, 6,000 frames each, 0 wrong pixels. Pixels
+  sent a picture on 320x480, segments vs whole changed lines: Galaga 13.5K
+  vs 62.9K (~100 blocks a picture), Dig Dug 1.7K vs 7.8K, Pac-Man 3.0K vs
+  12.3K, Rally-X 14.8K vs 29.4K, Star Wars 9.1K vs 36.1K, Defender 6.8K vs
+  26.4K, Robotron 5.1K vs 25.7K. Run it after any change to the drawing.
 - Galaga: emulated CPUs, WSG, tiles / sprites / 05XX stars (the 256 stars
   of the LFSR period found once, placed per frame); 54XX explosions are our
   own noise + band-pass model (`emu/sound/namco54.*`). Speedups: sub / sound
@@ -686,7 +702,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   and `usb_import` (protocol of the web page's ROM loader, "CYDA ..."
   lines on UART0 at 115200). `components/arcade_core` builds emu/ + core/.
 - Firmware (`main/`): `menu` (touch + controller, see Touch menus), `game_runner`
-  (sound ring paces the game; changed lines only; skips drawing when
+  (sound ring paces the game; changed line segments only; skips drawing when
   behind; back = hold Select + Start twice, or Home), `catalog` (which games
   the stored zips complete; ROM regions unpacked into RAM at game start),
   `sd_import` (new zips from /CYD-Classic-Arcade/ at boot, 32E boards),
@@ -729,7 +745,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   inputs, writes PNG frames and a WAV; a game table in it, `--samples` for
   a MAME sample zip, `--hash FILE` = each frame's picture and audio CRC,
   to show a speed-up changed nothing: compare the files of the old and the
-  new build). Run them after any
+  new build; `--panel WxH` = the firmware's drawing checked, see Drawing). Run them after any
   emulator change. Test programs that aren't ours (ZEX, the 8080 tests) are
   downloaded into `build/` with pinned SHA-256s, never committed.
 - 6809 core (`emu/cpu/m6809.*`): no public 6809 test program was found,

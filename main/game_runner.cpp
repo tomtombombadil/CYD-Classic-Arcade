@@ -10,8 +10,9 @@
 // emptied the ring, one frame was emulated, and it drew again - the game
 // crawled, and surged when few lines changed (Tom).
 //
-// Drawing: each line is rendered, hashed and only sent to the panel if it
-// differs from the line already there; changed lines go out in strips.
+// Drawing: each line is rendered and hashed in segments (line_diff.h); only
+// the segments that differ from what the panel shows are sent, and lines
+// whose changed part is the same columns go out together in strips.
 // On the bigger panels (320x480) the picture is scaled up to fill the
 // width, keeping its shape: each screen pixel takes the nearest game pixel
 // (no blending), so 224 game pixels become 320 - some two wide, some one.
@@ -23,6 +24,7 @@
 
 #include "catalog.h"
 #include "input.h"
+#include "line_diff.h"
 #include "screen.h"
 #include "touch.h"
 #include "ui.h"
@@ -49,14 +51,6 @@ constexpr int kAudioCap = 1024;         // samples per frame, at most
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
 Stats s_last;
-
-uint32_t hash_line(const uint16_t* p, int n)
-{
-    uint32_t h = 2166136261u;
-    const uint32_t* w = reinterpret_cast<const uint32_t*>(p);
-    for (int i = 0; i < n / 2; ++i) h = (h ^ w[i]) * 16777619u;
-    return h;
-}
 
 void message(const char* a, const char* b)
 {
@@ -109,16 +103,18 @@ void run(int index, AudioRing& ring)
     uint16_t* strip = static_cast<uint16_t*>(heap_caps_malloc(strip_bytes, MALLOC_CAP_8BIT));
     uint16_t* src = static_cast<uint16_t*>(heap_caps_malloc(size_t(g.width) * sizeof(uint16_t), MALLOC_CAP_8BIT));
     uint16_t* x_map = static_cast<uint16_t*>(heap_caps_malloc(size_t(out_w) * sizeof(uint16_t), MALLOC_CAP_8BIT));
-    uint32_t* line_hash = static_cast<uint32_t*>(heap_caps_malloc(kMaxLines * sizeof(uint32_t), MALLOC_CAP_8BIT));
+    const line_diff::Layout segs = line_diff::layout(g.width);
+    uint32_t* seg_hash = static_cast<uint32_t*>(
+        heap_caps_malloc(size_t(g.height) * size_t(segs.segs) * sizeof(uint32_t), MALLOC_CAP_8BIT));
     int16_t* audio = static_cast<int16_t*>(heap_caps_malloc(kAudioCap * sizeof(int16_t), MALLOC_CAP_8BIT));
-    if (!m || !strip || !src || !x_map || !line_hash || !audio || g.height > kMaxLines) {
+    if (!m || !strip || !src || !x_map || !seg_hash || !audio || g.height > kMaxLines) {
         ESP_LOGE(kTag, "%s: out of memory (largest block %u)", g.id,
                  unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
         delete m;
         heap_caps_free(strip);
         heap_caps_free(src);
         heap_caps_free(x_map);
-        heap_caps_free(line_hash);
+        heap_caps_free(seg_hash);
         heap_caps_free(audio);
         catalog::unload(roms);
         screen::apply_rotation();
@@ -136,7 +132,18 @@ void run(int index, AudioRing& ring)
     for (int x = 0; x < out_w; ++x) x_map[x] = uint16_t(x * g.width / out_w);
     const bool scaled = out_w != g.width || out_h != g.height;
     ESP_LOGI(kTag, "%s: %dx%d shown as %dx%d", g.id, g.width, g.height, out_w, out_h);
-    for (int y = 0; y < kMaxLines; ++y) line_hash[y] = 0;   // a black line hashes otherwise
+    line_diff::Drawer drawer;
+    drawer.segs = segs;
+    drawer.height = g.height;
+    drawer.out_w = out_w;
+    drawer.out_h = out_h;
+    drawer.scaled = scaled;
+    drawer.x_map = x_map;
+    drawer.src = src;
+    drawer.strip = strip;
+    drawer.strip_rows = kStrip;
+    drawer.seg_hash = seg_hash;
+    drawer.setup();
     ring.clear();
 
     // The start-up tests (RAM / ROM checks, test patterns, noise) run unseen
@@ -174,7 +181,6 @@ void run(int index, AudioRing& ring)
     const uint32_t frame_samples = uint32_t(24000.0 / games::frame_rate(g) + 0.5);
     const uint32_t queue_max = AudioRing::kSize - kAudioCap;
     uint32_t draw_est = frame_samples;
-    int resume_y = 0;     // where an interrupted draw goes on
 
     Input in;
     games::FourWay four_way;
@@ -205,54 +211,20 @@ void run(int index, AudioRing& ring)
         // Not enough sound queued to last through a draw: skip this one.
         if (ring.count() < draw_est + frame_samples / 2) continue;
 
-        lcd.startWrite();
-        int rows = 0, start = 0;
-        auto flush = [&]() {
-            if (!rows) return;
-            lcd.pushImage(x0, y0 + start, out_w, rows, reinterpret_cast<const lgfx::swap565_t*>(strip));
-            lines_sent += uint32_t(rows);
-            rows = 0;
-        };
-        // Game line y fills output rows first_row(y) .. first_row(y + 1) - 1
-        // (output row r shows game line r * height / out_h). A line is
-        // rendered and hashed once, and its rows are sent only if it changed.
+        // Only the changed segments of each line go (line_diff::Drawer).
         // The sound must not run dry while drawing: when less than a frame
-        // of it is left, the draw stops at a line boundary and the next one
-        // goes on from there (v0.6.1: Galaga's start tune crackled at its
-        // end, where the whole screen changes at once and one draw outlasted
-        // the queue). Unsent lines keep their old hash, so they still go.
-        auto first_row = [&](int y) { return (y * out_h + g.height - 1) / g.height; };
-        bool complete = true;
-        for (int k = 0; k < g.height; ++k) {
-            const int y = (resume_y + k) % g.height;
-            if (k > 0 && ring.count() < frame_samples) {
-                resume_y = y;
-                complete = false;
-                break;
-            }
-            if (y == 0) flush();          // wrapped round: rows restart at the top
-            const int r0 = first_row(y), r1 = first_row(y + 1);
-            if (r0 >= r1) continue;
-            uint16_t* line = scaled ? src : strip + rows * out_w;
-            m->render_line(y, line);
-            const uint32_t h = hash_line(line, g.width);
-            if (h == line_hash[y]) {
-                flush();
-                continue;
-            }
-            line_hash[y] = h;
-            for (int r = r0; r < r1; ++r) {
-                if (!rows) start = r;
-                uint16_t* row = strip + rows * out_w;
-                if (scaled) {
-                    for (int x = 0; x < out_w; ++x) row[x] = src[x_map[x]];
-                }
-                ++rows;
-                if (rows == kStrip) flush();
-            }
-        }
-        if (complete) resume_y = 0;
-        flush();
+        // of it is left, the picture stops at a line boundary and the next
+        // one goes on from there (v0.6.1: Galaga's start tune crackled at
+        // its end, where the whole screen changes at once and one draw
+        // outlasted the queue).
+        lcd.startWrite();
+        const bool complete = drawer.frame(
+            [&](int y, uint16_t* line) { m->render_line(y, line); },
+            [&](int x, int y, int w, int h, const uint16_t* px) {
+                lcd.pushImage(x0 + x, y0 + y, w, h, reinterpret_cast<const lgfx::swap565_t*>(px));
+                lines_sent += uint32_t(h);
+            },
+            [&]() { return ring.count() < frame_samples; });
         lcd.endWrite();
         const int64_t took_us = esp_timer_get_time() - t1;
         draw_us += took_us;
@@ -300,7 +272,7 @@ void run(int index, AudioRing& ring)
     heap_caps_free(strip);
     heap_caps_free(src);
     heap_caps_free(x_map);
-    heap_caps_free(line_hash);
+    heap_caps_free(seg_hash);
     heap_caps_free(audio);
     catalog::unload(roms);
     screen::apply_rotation();

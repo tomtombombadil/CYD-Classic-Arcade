@@ -66,6 +66,7 @@
 #include "../../emu/rom/zip.h"
 #include "../../emu/sound/samples.h"
 #include "writers.h"
+#include "../../main/line_diff.h"
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -261,7 +262,10 @@ void usage()
     std::fprintf(stderr,
                  "usage: arcade_host <game> <zip|file|dir>... [--frames N] [--png-every K] [--out DIR]\n"
                  "                   [--wav FILE] [--rate HZ] [--dips HEX] [--samples ZIP|DIR]\n"
-                 "                   [--input SCRIPT] [--verbose]\n"
+                 "                   [--input SCRIPT] [--verbose] [--hash FILE] [--panel WxH]\n"
+                 "  --panel WxH: draw as the firmware does (changed segments only, scaled, pictures\n"
+                 "               cut short now and then) onto a panel of that size, and check every\n"
+                 "               finished picture against a full redraw; prints what was sent\n"
                  "games:");
     for (int i = 0; i < games::kGameCount; ++i) std::fprintf(stderr, " %s", games::kGames[i].id);
     std::fprintf(stderr, "\n");
@@ -345,7 +349,7 @@ int main(int argc, char** argv)
     const GameInfo& gi = *info;
     const romset::Set& set = *gi.set;
 
-    int frames = 600, png_every = 0, dips = -1, verbose = 0;
+    int frames = 600, png_every = 0, dips = -1, verbose = 0, panel_w = 0, panel_h = 0;
     uint32_t rate = 24000;
     std::string out_dir = ".", wav_path, script, samples_path, hash_path;
     std::vector<std::string> paths;
@@ -365,6 +369,13 @@ int main(int argc, char** argv)
         else if (arg == "--samples") samples_path = value("--samples");
         else if (arg == "--verbose") verbose = 1;
         else if (arg == "--hash") hash_path = value("--hash");
+        else if (arg == "--panel") {
+            const std::string v = value("--panel");
+            if (std::sscanf(v.c_str(), "%dx%d", &panel_w, &panel_h) != 2 || panel_w < 64 || panel_h < 64) {
+                std::fprintf(stderr, "--panel WxH, e.g. 320x480\n");
+                return 2;
+            }
+        }
         else if (arg.rfind("--", 0) == 0) { std::fprintf(stderr, "unknown option %s\n", arg.c_str()); return 2; }
         else paths.push_back(arg);
     }
@@ -444,6 +455,47 @@ int main(int argc, char** argv)
     }
 
     std::vector<uint16_t> frame(size_t(gi.width) * gi.height);
+
+    // --panel: the firmware's drawing (main/game_runner.cpp) onto a panel
+    // in memory, sizes and scaling as there; a landscape game turns it
+    struct Panel {
+        int w = 0, h = 0, out_w = 0, out_h = 0;
+        std::vector<uint16_t> px, want, x_map, src, strip;
+        std::vector<uint32_t> seg_hash;
+        line_diff::Drawer d;
+        long long pictures = 0, finished = 0, cut = 0, blocks = 0, pixels = 0, line_pixels = 0, bad = 0;
+        uint32_t rnd = 12345;
+        uint32_t next() { rnd = rnd * 1103515245u + 12345u; return rnd >> 16; }
+    } panel;
+    if (panel_w) {
+        Panel& p = panel;
+        p.w = panel_w;
+        p.h = panel_h;
+        if ((gi.orientation == games::Orientation::Landscape) != (p.w > p.h)) std::swap(p.w, p.h);
+        const float scale = std::max(1.0f, std::min(float(p.w) / gi.width, float(p.h) / gi.height));
+        p.out_w = std::min(p.w, int(gi.width * scale + 0.5f));
+        p.out_h = std::min(p.h, int(gi.height * scale + 0.5f));
+        p.px.assign(size_t(p.out_w) * p.out_h, 0);
+        p.want.resize(p.px.size());
+        p.x_map.resize(size_t(p.out_w));
+        for (int x = 0; x < p.out_w; ++x) p.x_map[size_t(x)] = uint16_t(x * gi.width / p.out_w);
+        p.src.resize(size_t(gi.width));
+        p.strip.resize(size_t(p.out_w) * 8);
+        p.d.segs = line_diff::layout(gi.width);
+        p.seg_hash.resize(size_t(gi.height) * size_t(p.d.segs.segs));
+        p.d.height = gi.height;
+        p.d.out_w = p.out_w;
+        p.d.out_h = p.out_h;
+        p.d.scaled = p.out_w != gi.width || p.out_h != gi.height;
+        p.d.x_map = p.x_map.data();
+        p.d.src = p.src.data();
+        p.d.strip = p.strip.data();
+        p.d.strip_rows = 8;
+        p.d.seg_hash = p.seg_hash.data();
+        p.d.setup();
+        std::printf("panel %dx%d: %dx%d shown as %dx%d, %d segments of %d pixels\n", p.w, p.h, gi.width,
+                    gi.height, p.out_w, p.out_h, p.d.segs.segs, p.d.segs.seg_w);
+    }
     int16_t audio[2048];
     uint16_t held = 0;
     int stick = 0, stick_y = 0;
@@ -498,6 +550,57 @@ int main(int argc, char** argv)
             std::fprintf(hash_file, "%d %08x %08x %d\n", f,
                          unsigned(crc32::of(reinterpret_cast<const uint8_t*>(frame.data()), frame.size() * 2)),
                          unsigned(crc32::of(reinterpret_cast<const uint8_t*>(audio), size_t(n) * 2)), n);
+        if (panel_w && panel.next() % 4 != 0) {   // the firmware skips some pictures
+            Panel& p = panel;
+            const bool may_cut = p.next() % 5 == 0;
+            ++p.pictures;
+            // what v0.14 sent: every changed line in full
+            for (int r = 0; r < p.out_h; ++r) {
+                const uint16_t* gl = frame.data() + size_t(r * gi.height / p.out_h) * gi.width;
+                const uint16_t* row = &p.px[size_t(r) * p.out_w];
+                for (int x = 0; x < p.out_w; ++x)
+                    if (row[x] != gl[p.x_map[size_t(x)]]) {
+                        p.line_pixels += p.out_w;
+                        break;
+                    }
+            }
+            const bool done = p.d.frame(
+                [&](int y, uint16_t* line) { m->render_line(y, line); },
+                [&](int x, int y, int w, int h, const uint16_t* px) {
+                    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > p.out_w || y + h > p.out_h || h > 8) {
+                        std::fprintf(stderr, "frame %d: block %d,%d %dx%d off the picture\n", f, x, y, w, h);
+                        ++p.bad;
+                        return;
+                    }
+                    for (int r = 0; r < h; ++r)
+                        std::memcpy(&p.px[size_t(y + r) * p.out_w + x], px + r * w, size_t(w) * 2);
+                    ++p.blocks;
+                    p.pixels += w * h;
+                },
+                [&]() { return may_cut && p.next() % 64 == 0; });
+            if (done) {
+                ++p.finished;
+                for (int r = 0; r < p.out_h; ++r) {
+                    const uint16_t* gl = frame.data() + size_t(r * gi.height / p.out_h) * gi.width;
+                    for (int x = 0; x < p.out_w; ++x) p.want[size_t(r) * p.out_w + x] = gl[p.x_map[size_t(x)]];
+                }
+                if (p.px != p.want) {
+                    ++p.bad;
+                    if (p.bad <= 5) {
+                        int n = 0, fx = -1, fy = -1;
+                        for (size_t i = 0; i < p.px.size(); ++i)
+                            if (p.px[i] != p.want[i] && n++ == 0) {
+                                fx = int(i % size_t(p.out_w));
+                                fy = int(i / size_t(p.out_w));
+                            }
+                        std::fprintf(stderr, "frame %d: panel differs from the full picture: %d pixels, first at %d,%d\n",
+                                     f, n, fx, fy);
+                    }
+                }
+            } else {
+                ++p.cut;
+            }
+        }
         emu_sum += emu; ren_sum += ren;
         emu_max = std::max(emu_max, emu); ren_max = std::max(ren_max, ren);
         sec_emu += emu; sec_ren += ren;
@@ -518,6 +621,15 @@ int main(int argc, char** argv)
     }
     wav.close();
     if (hash_file) std::fclose(hash_file);
+    if (panel_w) {
+        const Panel& p = panel;
+        std::printf("panel: %lld pictures (%lld finished, %lld cut short), %lld blocks, %.0f pixels a picture "
+                    "(%.1f %% of the panel; whole changed lines: %.0f); %lld wrong\n",
+                    p.pictures, p.finished, p.cut, p.blocks, p.pictures ? double(p.pixels) / p.pictures : 0.0,
+                    p.pictures ? 100.0 * double(p.pixels) / p.pictures / (double(p.out_w) * p.out_h) : 0.0,
+                    p.pictures ? double(p.line_pixels) / p.pictures : 0.0, p.bad);
+        if (p.bad) return 1;
+    }
     if (frames > 0)
         std::printf("summary: %d frames (%.1f s of game), emu avg %.3f ms (max %.3f), render avg %.3f ms "
                     "(max %.3f) per %.2f ms frame; watchdog resets %d\n",
