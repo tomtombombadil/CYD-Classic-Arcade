@@ -652,13 +652,47 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   8000 frames incl. play): the main frame wait (6005), a flag wait (6032),
   the matrix processor wait (CDBD, the CPU stops after each start), the
   sound CPU's timer wait (7D4C); about half the cycles. The attract mode
-  sends no sound command (silent, whatever the Demo Sounds switch). Display
+  is silent but for one random tune / speech about every 7 minutes (see
+  Demo sounds; the first ~7 minutes are silent). Display
   cap 1700 segments (the flight instructions page needs ~1660, high scores
   ~1070, play up to ~900), at most 256 crossing a row (166 seen). Memory:
   machine object ~51 KB (20 KB RAM, 27.8 KB display) + 72 KB of ROM
   regions (9). PC: ~1.0M host instructions a frame emulated (callgrind,
   attract + play; Pac-Man 483K), ~0.3M rendered. Unsure: the speech
-  filter, attract silence, the TMS5220's start delay (no "fast start").
+  filter, the TMS5220's start delay (no "fast start").
+- Demo sounds (Tom, 2026-10-17: an option for sound in the attract mode,
+  "so you could leave it in demo mode and get all those classic arcade
+  sounds"): `games::Machine::set_demo_sounds(bool)`, after init(), before
+  the first frame; it returns false where the cabinet has no such switch.
+  Only the cabinet's own switch is set - no sounds the real game doesn't
+  make. Not called = the game's factory setting (on for all five that
+  have one). Switches (facts from MAME's DIP lists, the games' operator
+  pages and their code): Galaga DSWA bit 3 (SWB:4; the demo play's shots,
+  explosions, tunes); Dig Dug DSWB bit 4 (SWB:4); Q*bert DSW bit 0 (the
+  demo's hops, speech, music); Qix the operator's ATTRACT SOUND, CMOS
+  87E9 (BCD 01 / 00) - written with the checksum (8700 = sum of
+  8701-87FF, the game's f56d) at the first boot's restart; with it off
+  the attract play itself differs (the CPUs' timing changes the game's
+  random draws); Star Wars 10D switch 7 (DSW0 bit 6): the game copies the
+  switches to the NOVRAM (4590-4593) at power-on, and with sound on the
+  attract's logo starts one of nine tunes / speeches picked at random
+  (table at 6759, gate NOVRAM 4592 bit 2) - only when the hundreds of a
+  BCD time count (4B04-4B07, a step every 1000 IRQs = 4.1 s) changed
+  since the last time: about every 7 minutes, never the first time round
+  (the old note "no sound command whatever the switch" came from runs
+  under 7 minutes). No switch, attract silent on the cabinet: Pac-Man,
+  Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong, Mr. Do!, Burger Time,
+  Asteroids, Tempest (MAME's DIP lists have none for these sets),
+  Robotron (its Game Adjustment page: no sound item - "Fancy Attract
+  Mode" is pictures), Defender (28 audit / adjust items, none about sound;
+  Game Adjust 1-10 are unnamed on screen). Not attract sound: Q*bert's
+  power-on speech and Burger Time's power-on sound (~2 s in) come after
+  their 30 boot frames, either way. Measured on the PC (`arcade_host
+  --demo-sounds on|off`, 4000 frames after start-up, peak / RMS): Galaga
+  16,335 / 1,085 vs 0; Dig Dug 17,816 / 1,085 vs 0; Q*bert 18,827 / 2,188
+  vs power-on only; Qix 12,071 / 1,342 vs 0; Star Wars over 16 minutes
+  9,975 / 274 (24 s of sound) vs 0. Play after a coin sounds the same
+  either way.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
@@ -816,7 +850,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Galaga-family parts, `atari_tests` for the 6502 boards)
   and `tools/host/` (`arcade_host`: runs a game headless with scripted
   inputs, writes PNG frames and a WAV; a game table in it, `--samples` for
-  a MAME sample zip, `--hash FILE` = each frame's picture and audio CRC,
+  a MAME sample zip, `--demo-sounds on|off` = set_demo_sounds, `--hash FILE` = each frame's picture and audio CRC,
   to show a speed-up changed nothing: compare the files of the old and the
   new build; `--panel WxH` = the firmware's drawing checked, see Drawing). Run them after any
   emulator change. Test programs that aren't ours (ZEX, the 8080 tests) are

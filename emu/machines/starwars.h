@@ -68,6 +68,14 @@ enum Button : uint16_t {
 // operator's manual's). Pricing (10E/F) is fixed at 1 coin 1 credit.
 constexpr uint8_t kDipDefault = 0x98;
 constexpr uint8_t kDipPricing = 0x02;
+// 10D switch 7 (bit 6) set = no sound in the attract mode. The game copies
+// the switches into the NOVRAM at power-on (4590-4593) and its attract
+// mode reads them there: with demo sounds on, the Star Wars logo starts one
+// of nine tunes / speeches picked at random, but only when the hundreds of
+// a time count (4B04-4B07, BCD, a step every 1000 IRQs = 4.1 s) have
+// changed since the last one - about every 7 minutes, never the first time
+// round.
+constexpr uint8_t kDipDemoSoundsOff = 0x40;
 
 // The ROM set: MAME "starwars" (set 1); the math box PROMs either as today
 // (variant 1) or as old MAME's dumps (variant 2: stray high nibbles). The
@@ -103,6 +111,12 @@ public:
 
     void set_inputs(uint16_t buttons) { buttons_ = buttons; }
     void set_dips(uint8_t dsw) { dsw0_ = dsw; }
+    // The attract mode's sounds (10D's Demo Sounds switch; before the
+    // first frame - the game copies the switches at power-on).
+    void set_demo_sounds(bool on)
+    {
+        dsw0_ = uint8_t(on ? dsw0_ & ~kDipDemoSoundsOff : dsw0_ | kDipDemoSoundsOff);
+    }
     // The yoke from a stick: -512..511 each way (+x right, +y down), added
     // to where the sight buttons have moved it.
     void set_yoke(int x, int y) { stick_x_ = x; stick_y_ = y; }

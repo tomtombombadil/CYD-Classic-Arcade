@@ -10,6 +10,9 @@
 //     --wav FILE          write the whole run's audio
 //     --rate HZ           audio rate (default 24000)
 //     --dips HEX          DIP switch bank (default: the machine's default)
+//     --demo-sounds on|off  the attract mode's sounds switch
+//                         (Machine::set_demo_sounds, after --dips; default:
+//                         as the machine starts)
 //     --samples ZIP|DIR   the game's MAME sample set (WAVs), if it has one
 //     --input SCRIPT      e.g. "120+6:coin,200+6:start1,400:left,460:"
 //                         F:btns   from frame F hold exactly btns ('+'-joined;
@@ -262,7 +265,7 @@ void usage()
     std::fprintf(stderr,
                  "usage: arcade_host <game> <zip|file|dir>... [--frames N] [--png-every K] [--out DIR]\n"
                  "                   [--wav FILE] [--rate HZ] [--dips HEX] [--samples ZIP|DIR]\n"
-                 "                   [--input SCRIPT] [--verbose] [--hash FILE] [--panel WxH]\n"
+                 "                   [--demo-sounds on|off] [--input SCRIPT] [--verbose] [--hash FILE] [--panel WxH]\n"
                  "  --panel WxH: draw as the firmware does (changed segments only, scaled, pictures\n"
                  "               cut short now and then) onto a panel of that size, and check every\n"
                  "               finished picture against a full redraw; prints what was sent\n"
@@ -349,7 +352,7 @@ int main(int argc, char** argv)
     const GameInfo& gi = *info;
     const romset::Set& set = *gi.set;
 
-    int frames = 600, png_every = 0, dips = -1, verbose = 0, panel_w = 0, panel_h = 0;
+    int frames = 600, png_every = 0, dips = -1, demo_sounds = -1, verbose = 0, panel_w = 0, panel_h = 0;
     uint32_t rate = 24000;
     std::string out_dir = ".", wav_path, script, samples_path, hash_path;
     std::vector<std::string> paths;
@@ -365,6 +368,12 @@ int main(int argc, char** argv)
         else if (arg == "--wav") wav_path = value("--wav");
         else if (arg == "--rate") rate = uint32_t(std::atoi(value("--rate").c_str()));
         else if (arg == "--dips") dips = int(std::strtol(value("--dips").c_str(), nullptr, 16));
+        else if (arg == "--demo-sounds") {
+            const std::string v = value("--demo-sounds");
+            if (v == "on") demo_sounds = 1;
+            else if (v == "off") demo_sounds = 0;
+            else { std::fprintf(stderr, "--demo-sounds on|off\n"); return 2; }
+        }
         else if (arg == "--input") script = value("--input");
         else if (arg == "--samples") samples_path = value("--samples");
         else if (arg == "--verbose") verbose = 1;
@@ -427,6 +436,11 @@ int main(int argc, char** argv)
     std::vector<const uint8_t*> rom_ptrs(region_ptrs.begin(), region_ptrs.end());
     m->init(rom_ptrs.data(), rate, false);
     if (dips >= 0) m->set_dips(uint8_t(dips));
+    if (demo_sounds >= 0) {
+        const bool has = m->set_demo_sounds(demo_sounds != 0);
+        std::printf("demo sounds %s%s\n", demo_sounds ? "on" : "off",
+                    has ? "" : ": this game has no such switch (nothing changed)");
+    }
 
     std::vector<std::vector<uint8_t>> sample_bufs;
     std::vector<samples::Wav> wavs;

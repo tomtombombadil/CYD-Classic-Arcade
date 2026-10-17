@@ -606,6 +606,15 @@ int Machine::run_frame(int16_t* audio, int cap)
         } else if (frame_ - cmos_valid_at_ >= kRestartFrames) {
             cmos_restart_ = true;
             cmos_valid_at_ = frame_;
+            // The operator's ATTRACT SOUND (87E9) as asked, the checksum in
+            // 8700 made again as the game makes it (the sum of 8701-87FF);
+            // the game copies the settings to its RAM as it starts.
+            if (attract_sound_ >= 0) {
+                cmos_[0x3e9] = uint8_t(attract_sound_);
+                uint8_t sum = 0;
+                for (int i = 0x301; i < 0x400; ++i) sum = uint8_t(sum + cmos_[i]);
+                cmos_[0x300] = sum;
+            }
             reset();
         }
     }
