@@ -178,7 +178,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   comes first. Settings: Volume [-] [+], Swap A/B and X/Y and Rotate
   Screen 180 switches, Sound Output DAC / PWM (DAC boards), Controller
   Test, Forget Controllers, Calibrate Touch (resistive), How to Add Games,
-  About (version, board, games ready, ROM storage, RAM / PSRAM). No
+  Last Game Speed, About (version, board, games ready, ROM storage, RAM / PSRAM). No
   scrolling or dragging: rows per page come from the panel size (240x320:
   5 rows of 43 px, 320x480: 6 of 57) with < > page keys - nothing can
   clip. Fonts: FreeSansBold 9 / 12 pt titles, DejaVu 9 / 12 second lines,
@@ -266,6 +266,19 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   shows "The board restarted: Dig Dug crashed while loading its ROMs (31
   KB free, block 20 KB)" and keeps it on the news line - ask Tom for that
   line when something resets.
+- Speed on the board (v0.14.5; Tom, v0.14.3 on the 4.0": Galaga "much
+  improved" but "57.3 fps, 49 shown/s", bogging down where enemies fire as
+  they enter): Settings > Last Game Speed shows the last game's frames and
+  pictures a second, the slowest whole second, and a frame's time split
+  into emulation (average, worst after the first 2 s), picture (render +
+  hash + send) and sending (with pixels a picture) - the same in the log
+  line when a game ends. Ask Tom for this page when a game is slow. PC
+  times don't carry over: the board was ~140x slower than the PC on
+  Pac-Man's emulation (0.041 vs 5.7 ms), so PC numbers only compare
+  versions. An ESP32 VM was considered (Tom, 2026-10-17): Espressif's QEMU
+  translates Xtensa code and models no clock, flash cache or SPI timing,
+  so it can't show where frames drop; the board's own page is the
+  measurement.
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
   checked by `arcade_host --check-table`; the USB loader's GAMES reply has
   room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).

@@ -78,6 +78,7 @@ int build_settings(ui::Item* out, int* what, const SettingsState& s)
     add(kForget, "Forget Controllers", "Pair them again afterwards", ui::Widget::None);
     if (s.has_calibration) add(kCalibrate, "Calibrate Touch", "Tap four corner arrows", ui::Widget::Chevron);
     add(kRoms, "How to Add Games", "From SD card or USB", ui::Widget::Chevron);
+    add(kSpeed, "Last Game Speed", "Where this board's time goes", ui::Widget::Chevron);
     add(kAbout, "About", "Version, board, memory", ui::Widget::Chevron);
     refresh_settings(out, what, n, s);
     return n;
@@ -129,6 +130,31 @@ int build_about(const AboutInfo& a, char (*buf)[64], const char** lines, int cap
     line("%s", "#Memory");
     line("RAM: %u KB free, largest block %u KB", a.ram_free_kb, a.ram_block_kb);
     if (a.psram_kb) line("PSRAM: %u KB free", a.psram_kb);
+    return n;
+}
+
+int build_speed(const SpeedInfo& a, char (*buf)[64], const char** lines, int cap)
+{
+    int n = 0;
+    auto line = [&](const char* fmt, auto... args) {
+        if (n >= cap) return;
+        std::snprintf(buf[n], 64, fmt, args...);
+        lines[n] = buf[n];
+        n++;
+    };
+    if (!a.game[0]) {
+        if (cap > 0) lines[n++] = "Play a game, then come back here to see how fast it ran on this board.";
+        return n;
+    }
+    line("#%s", a.game);
+    line("%.1f frames a second (the game: %.1f)", double(a.frames_per_s), double(a.game_hz));
+    line("%.0f pictures shown a second", double(a.drawn_per_s));
+    line("Slowest second: %d frames, %d pictures", a.worst_frames, a.worst_drawn);
+    line("%s", "");
+    line("#Time a frame: %.1f ms", a.game_hz > 0 ? 1000.0 / double(a.game_hz) : 0.0);
+    line("Emulation: %.1f ms, worst %.1f", double(a.emu_ms), double(a.emu_max_ms));
+    line("Picture: %.1f ms, worst %.1f", double(a.draw_ms), double(a.draw_max_ms));
+    line("Sending it: %.1f ms, %.1fK pixels", double(a.send_ms), double(a.kpixels));
     return n;
 }
 

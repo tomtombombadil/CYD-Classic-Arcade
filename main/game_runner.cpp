@@ -200,6 +200,12 @@ void run(int index, AudioRing& ring)
     uint32_t all_frames = 0, all_drawn = 0;
     int64_t all_emu_us = 0, all_draw_us = 0;
     int64_t emu_us = 0, draw_us = 0;
+    // For the About page: worst frame / picture (after the first 2 s), the
+    // time spent sending, pixels sent, and the slowest whole second
+    int64_t emu_max_us = 0, draw_max_us = 0, all_send_us = 0;
+    uint64_t all_pixels = 0;
+    uint32_t sec_t = now_ms(), sec_frames = 0, sec_drawn = 0;
+    int worst_frames = -1, worst_drawn = 0;
     crash_note::step(g.title, "playing");
     while (!cancelled) {
         in.update(now_ms());
@@ -218,6 +224,20 @@ void run(int index, AudioRing& ring)
         const int64_t t1 = esp_timer_get_time();
         emu_us += t1 - t0;
         ++frames;
+        ++sec_frames;
+        const bool warm = t1 - run_t0 > 2000000;
+        if (warm) emu_max_us = std::max(emu_max_us, t1 - t0);
+        {
+            const uint32_t now = now_ms();
+            if (now - sec_t >= 1000) {
+                if (warm && (worst_frames < 0 || int(sec_frames) < worst_frames)) {
+                    worst_frames = int(sec_frames);
+                    worst_drawn = int(sec_drawn);
+                }
+                sec_t = now;
+                sec_frames = sec_drawn = 0;
+            }
+        }
 
         // Not enough sound queued to last through a draw: skip this one.
         if (ring.count() < draw_est + frame_samples / 2) continue;
@@ -232,7 +252,10 @@ void run(int index, AudioRing& ring)
         const bool complete = drawer.frame(
             [&](int y, uint16_t* line) { m->render_line(y, line); },
             [&](int x, int y, int w, int h, const uint16_t* px) {
+                const int64_t s0 = esp_timer_get_time();
                 lcd.pushImage(x0 + x, y0 + y, w, h, reinterpret_cast<const lgfx::swap565_t*>(px));
+                all_send_us += esp_timer_get_time() - s0;
+                all_pixels += uint32_t(w * h);
                 lines_sent += uint32_t(h);
             },
             [&]() { return ring.count() < frame_samples; });
@@ -240,6 +263,8 @@ void run(int index, AudioRing& ring)
         const int64_t took_us = esp_timer_get_time() - t1;
         draw_us += took_us;
         ++drawn;
+        ++sec_drawn;
+        if (warm) draw_max_us = std::max(draw_max_us, took_us);
         // Up at once to a slower draw, down slowly (a quiet screen draws
         // fast, the next scroll doesn't)
         const uint32_t took = uint32_t(took_us * 24 / 1000);
@@ -274,9 +299,21 @@ void run(int index, AudioRing& ring)
         s_last.drawn_per_s = float(all_drawn) / secs;
     }
     if (all_frames) s_last.emu_ms = float(all_emu_us) / 1000.0f / float(all_frames);
-    if (all_drawn) s_last.draw_ms = float(all_draw_us) / 1000.0f / float(all_drawn);
-    ESP_LOGI(kTag, "%s ran %.1f s: %.1f frames/s, %.1f drawn/s; emu %.2f ms, draw %.2f ms", g.id, double(secs),
-             double(s_last.frames_per_s), double(s_last.drawn_per_s), double(s_last.emu_ms), double(s_last.draw_ms));
+    if (all_drawn) {
+        s_last.draw_ms = float(all_draw_us) / 1000.0f / float(all_drawn);
+        s_last.send_ms = float(all_send_us) / 1000.0f / float(all_drawn);
+        s_last.kpixels = float(all_pixels) / 1000.0f / float(all_drawn);
+    }
+    s_last.game_hz = float(games::frame_rate(g));
+    s_last.emu_max_ms = float(emu_max_us) / 1000.0f;
+    s_last.draw_max_ms = float(draw_max_us) / 1000.0f;
+    s_last.worst_frames = std::max(worst_frames, 0);
+    s_last.worst_drawn = worst_drawn;
+    ESP_LOGI(kTag, "%s ran %.1f s: %.1f frames/s, %.1f drawn/s; emu %.2f ms (max %.2f), draw %.2f ms (max %.2f, "
+             "send %.2f, %.1fK pixels); slowest second %d frames, %d drawn", g.id, double(secs),
+             double(s_last.frames_per_s), double(s_last.drawn_per_s), double(s_last.emu_ms), double(s_last.emu_max_ms),
+             double(s_last.draw_ms), double(s_last.draw_max_ms), double(s_last.send_ms), double(s_last.kpixels),
+             s_last.worst_frames, s_last.worst_drawn);
 
     ring.clear();
     delete m;

@@ -133,6 +133,30 @@ void render(int w, int h)
     ui::draw_text(s, about, footer(1, ""));
     save(s, "7_about");
 
+    {
+        char sp_buf[12][64];
+        const char* sp_lines[12];
+        menu_model::SpeedInfo sp;
+        sp.game = "Galaga";
+        sp.game_hz = 60.6f;
+        sp.frames_per_s = 57.3f;
+        sp.drawn_per_s = 49;
+        sp.emu_ms = 11.8f;
+        sp.emu_max_ms = 19.4f;
+        sp.draw_ms = 5.1f;
+        sp.draw_max_ms = 9.7f;
+        sp.send_ms = 3.2f;
+        sp.kpixels = 13.5f;
+        sp.worst_frames = 51;
+        sp.worst_drawn = 38;
+        ui::TextPage speed;
+        speed.title = "Last Game Speed";
+        speed.lines = sp_lines;
+        speed.count = menu_model::build_speed(sp, sp_buf, sp_lines, 12);
+        ui::draw_text(s, speed, footer(1, ""));
+        save(s, "7b_speed");
+    }
+
     char info_buf[12][96];
     const char* info_lines[12];
     ui::TextPage info;

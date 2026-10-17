@@ -47,6 +47,7 @@ struct Menu {
     AudioRing* ring = nullptr;
     Input in;
     Page page = Page::Home;
+    int last_game_ = -1;    // for Last Game Speed
 
     ui::Item home_items[kMaxItems];
     int home_what[kMaxItems] = {};
@@ -178,6 +179,29 @@ struct Menu {
         open_text("About", text_lines, n, Page::Settings);
     }
 
+    void open_speed()
+    {
+        static char buf[12][64];
+        menu_model::SpeedInfo a;
+        const game_runner::Stats& st = game_runner::last_stats();
+        if (st.frames_per_s > 0 && last_game_ >= 0) {
+            a.game = games::kGames[last_game_].title;
+            a.game_hz = st.game_hz;
+            a.frames_per_s = st.frames_per_s;
+            a.drawn_per_s = st.drawn_per_s;
+            a.emu_ms = st.emu_ms;
+            a.emu_max_ms = st.emu_max_ms;
+            a.draw_ms = st.draw_ms;
+            a.draw_max_ms = st.draw_max_ms;
+            a.send_ms = st.send_ms;
+            a.kpixels = st.kpixels;
+            a.worst_frames = st.worst_frames;
+            a.worst_drawn = st.worst_drawn;
+        }
+        const int n = menu_model::build_speed(a, buf, text_lines, 12);
+        open_text("Last Game Speed", text_lines, n, Page::Settings);
+    }
+
     void open_game_info(int game)
     {
         const int n = menu_model::build_game_info(game, text_buf, text_lines, 16);
@@ -227,6 +251,7 @@ struct Menu {
         }
         news[0] = 0;
         game_runner::run(game, *ring);
+        last_game_ = game;
         const game_runner::Stats& st = game_runner::last_stats();
         if (st.frames_per_s > 0)
             std::snprintf(news, sizeof news, "%s: %.1f fps, %.0f shown/s", games::kGames[game].title,
@@ -314,6 +339,9 @@ struct Menu {
             return;
         case menu_model::kRoms:
             open_text("How to Add Games", menu_model::kRomsHelp, menu_model::kRomsHelpCount, Page::Settings);
+            return;
+        case menu_model::kSpeed:
+            open_speed();
             return;
         case menu_model::kAbout:
             open_about();

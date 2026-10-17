@@ -25,6 +25,7 @@ enum Setting : int {
     kForget,
     kCalibrate,     // resistive touch only
     kRoms,
+    kSpeed,
     kAbout,
 };
 
@@ -57,6 +58,15 @@ struct AboutInfo {
     int paired = -1;    // controllers paired (-1 = not known: BLE-only chips)
 };
 int build_about(const AboutInfo& a, char (*buf)[64], const char** lines, int cap);
+
+// Settings > Last Game Speed: where the last game's time went on this board
+struct SpeedInfo {
+    const char* game = "";
+    float game_hz = 0, frames_per_s = 0, drawn_per_s = 0;
+    float emu_ms = 0, emu_max_ms = 0, draw_ms = 0, draw_max_ms = 0, send_ms = 0, kpixels = 0;
+    int worst_frames = 0, worst_drawn = 0;
+};
+int build_speed(const SpeedInfo& s, char (*buf)[64], const char** lines, int cap);
 
 // A game without its ROMs: which zip it needs
 int build_game_info(int game, char (*buf)[96], const char** lines, int cap);
