@@ -72,6 +72,12 @@ public:
     void reset();
 
     void set_inputs(uint16_t buttons) { buttons_ = buttons; }
+    // The operator's ATTRACT SOUND setting (CMOS 87E9, BCD: 01 = yes, the
+    // factory setting; 00 = no). Set before the first frame: written into
+    // the factory settings, with their checksum, when the first boot's
+    // restart (see run_frame()) brings the game up. Not called = the
+    // game's own factory setting.
+    void set_attract_sound(bool on) { attract_sound_ = on ? 1 : 0; }
     // Idle-loop skipping on (default) or off (to check it changes nothing).
     void set_idle_skipping(bool on) { idle_skipping_ = on; }
 
@@ -181,6 +187,7 @@ private:
     // the board has been restarted with it (see run_frame()).
     uint32_t cmos_valid_at_ = 0;
     bool     cmos_restart_ = false;
+    int8_t   attract_sound_ = -1;           // set_attract_sound(): -1 = as the game set it
 
     uint16_t pen_[256] = {};                // the palette bank as the frame ended, RGB565
     uint16_t rgb565_[256] = {};             // RRGGBBII -> RGB565

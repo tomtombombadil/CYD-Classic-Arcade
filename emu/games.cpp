@@ -63,6 +63,12 @@ private:
 }  // namespace
 namespace {
 
+// Demo sounds (Machine::set_demo_sounds): only Galaga, Dig Dug, Q*bert,
+// Qix and Star Wars have the switch (a DIP switch, or Qix's operator
+// setting); the others' attract modes are silent on the cabinet, with no
+// switch for it (MAME's DIP lists, Robotron's and Defender's operator
+// pages), so they keep the default (false).
+
 // ---- Pac-Man ----------------------------------------------------------------
 
 class Pacman : public Machine {
@@ -236,6 +242,9 @@ public:
                 rate, swap);
     }
     void set_dips(uint8_t d) override { m_.set_dips(d); }
+    // DIP bank A's Demo Sounds (SWB:4): the demo play's shots, explosions
+    // and tunes. On by default.
+    bool set_demo_sounds(bool on) override { m_.set_demo_sounds(on); return true; }
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
@@ -260,6 +269,9 @@ public:
                 rate, swap);
     }
     void set_dips(uint8_t d) override { m_.set_dips(d); }
+    // DIP bank B's Demo Sounds (SWB:4): the demo play's sounds. On by
+    // default.
+    bool set_demo_sounds(bool on) override { m_.set_demo_sounds(on); return true; }
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
@@ -363,6 +375,9 @@ public:
                  r[qbert::kRegionSprites]}, rate, swap);
     }
     void set_dips(uint8_t d) override { m_.set_dips(d); }
+    // The Demo Sounds switch (DSW 2): the demo's hops, speech and music.
+    // On by default.
+    bool set_demo_sounds(bool on) override { m_.set_demo_sounds(on); return true; }
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
@@ -536,6 +551,9 @@ public:
     bool ok() const { return m_.ok(); }
     void init(const uint8_t* const* r, uint32_t rate, bool swap) override { m_.init(r, rate, swap); }
     void set_dips(uint8_t) override {}          // no DIP switches: settings are in the CMOS RAM
+    // The operator's ATTRACT SOUND setting (CMOS 87E9; factory setting on):
+    // the demo play's sounds.
+    bool set_demo_sounds(bool on) override { m_.set_attract_sound(on); return true; }
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
@@ -583,6 +601,9 @@ public:
                 rate, swap);
     }
     void set_dips(uint8_t d) override { m_.set_dips(d); }
+    // 10D's Demo Sounds (switch 7; on by default): the attract mode's logo
+    // starts a random tune or speech about every 7 minutes (starwars.h).
+    bool set_demo_sounds(bool on) override { m_.set_demo_sounds(on); return true; }
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     // The yoke = the left stick, in proportion (the d-pad moves the sights
     // at a steady speed, starwars::Machine::kSightSpeed).

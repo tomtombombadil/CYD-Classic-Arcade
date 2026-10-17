@@ -315,6 +315,32 @@ void test_cmos_restart()
     CHECK_EQ(m->cmos()[0x100], 2);      // only once
 }
 
+// The operator's ATTRACT SOUND (87E9) set at the restart, the checksum
+// (8700) made again; not asked for = as the game wrote it.
+void test_attract_sound()
+{
+    Roms r;
+    r.put(1, 0xc800, {
+        0x7c, 0x85, 0x00,               // INC 8500: boots
+        0xb6, 0x85, 0x00, 0x81, 0x01,   // the first boot only:
+        0x26, 0x0e,                     //   BNE over the factory settings
+        0xcc, 0x55, 0xaa, 0xfd, 0x86, 0xa9,   // 86A9 = 55AA
+        0x86, 0x01, 0xb7, 0x87, 0xe9,   // 87E9 = 01: attract sound yes
+        0xb7, 0x87, 0x00,               // 8700 = 01, the sum of 8701-87FF
+        0x20, 0xfe,
+    });
+    for (int asked = -1; asked <= 1; ++asked) {
+        auto m = make(r);
+        if (asked >= 0) m->set_attract_sound(asked == 1);
+        run(*m, 50);
+        CHECK(m->restarted_at() > 0);
+        CHECK(m->cmos_valid());
+        CHECK_EQ(m->cmos()[0x100], 2);  // the game started again with it
+        CHECK_EQ(m->cmos()[0x3e9], asked == 0 ? 0 : 1);
+        CHECK_EQ(m->cmos()[0x300], asked == 0 ? 0 : 1);
+    }
+}
+
 } // namespace
 
 int main()
@@ -325,6 +351,7 @@ int main()
     test_shared_and_scanline_waits();
     test_sound();
     test_cmos_restart();
+    test_attract_sound();
     std::printf("qix tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

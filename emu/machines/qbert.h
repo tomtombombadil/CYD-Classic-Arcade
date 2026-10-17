@@ -100,6 +100,11 @@ public:
     // Idle-loop skipping (on by default; off for tests that compare).
     void set_idle_skip(bool on) { idle_skip_ = on; }
     void set_dips(uint8_t dsw) { dsw_ = dsw; }
+    // The attract mode's sounds (the Demo Sounds switch).
+    void set_demo_sounds(bool on)
+    {
+        dsw_ = uint8_t(on ? dsw_ & ~kDipDemoSoundsOff : dsw_ | kDipDemoSoundsOff);
+    }
 
     // Runs one frame (line 0 to line 0). Writes the frame's audio (about
     // audio_rate / 61.4 samples) to `audio` (up to `cap`; null = none) and

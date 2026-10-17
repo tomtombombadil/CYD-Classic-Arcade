@@ -44,6 +44,7 @@ constexpr uint8_t kDipDefault = kDipCoinB1Coin1Credit | kDipBonus20k60k | kDipLi
 // the factory setting). Default: 1 coin 1 credit, sound in the attract
 // mode, continue allowed, upright, easiest.
 constexpr uint8_t kDipBDefault = 0x24;
+constexpr uint8_t kDipBDemoSoundsOff = 0x10;     // bank B bit 4 (SWB:4)
 
 // The ROM set (MAME "digdug"); regions in this order.
 enum Region { kRegionMain, kRegionSub, kRegionSound, kRegionText, kRegionSprites, kRegionTiles, kRegionMap,
@@ -85,6 +86,11 @@ public:
 
     void set_dips(uint8_t bank_a) { dips_a_ = bank_a; chip53_.set_dips(dips_a_, dips_b_); }
     void set_dips_b(uint8_t bank_b) { dips_b_ = bank_b; chip53_.set_dips(dips_a_, dips_b_); }
+    // The attract mode's sounds (bank B's Demo Sounds switch).
+    void set_demo_sounds(bool on)
+    {
+        set_dips_b(uint8_t(on ? dips_b_ & ~kDipBDemoSoundsOff : dips_b_ | kDipBDemoSoundsOff));
+    }
 
     // Renders display line y (0-287) of a snapshot into 224 RGB565 pixels.
     void render_line(const VideoState& vs, int y, uint16_t* out) const;
