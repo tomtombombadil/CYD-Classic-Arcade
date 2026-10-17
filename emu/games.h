@@ -54,6 +54,11 @@ public:
     // that copy, and is safe while run_frame() goes on on another core.
     virtual bool snapshot() { return false; }
     virtual void render_snapshot_line(int y, uint16_t* out) { render_line(y, out); }
+    // The attract mode's sounds: the cabinet's "demo sounds" switch where
+    // it has one (a DIP switch or an operator setting). Called after init(),
+    // before the first run_frame(). Returns false when the game has no such
+    // switch - its attract mode is silent on the real cabinet too.
+    virtual bool set_demo_sounds(bool) { return false; }
     // PC tool only: MAME sample recordings, indexed like Info::sample_names
     // (null = the sound model). The firmware never uses samples (Tom).
     virtual void set_samples(const samples::Wav* const*) {}
