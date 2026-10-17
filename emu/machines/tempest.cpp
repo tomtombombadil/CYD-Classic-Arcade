@@ -13,7 +13,8 @@
 //              math box status (read)   6050  EAROM data (read)
 //   6060 / 6070  math box result low / high   6080-609F  math box commands
 //   60C0-60CF  POKEY 1 (ALLPOT = the spinner (bits 0-3), cabinet)
-//   60D0-60DF  POKEY 2 (ALLPOT = difficulty, rating, buttons, starts)
+//   60D0-60DF  POKEY 2 (ALLPOT = difficulty, rating, buttons and starts
+//              - high when pressed)
 //   60E0  start lamps, player select     9000-DFFF  program (F000-FFFF
 //              = D000-DFFF, for the vectors)
 // Facts from MAME's driver (read for facts only).
@@ -123,12 +124,27 @@ void Machine::vec_line(void* ctx, int32_t x0, int32_t y0, int32_t x1, int32_t y1
     const int k = 64 + level * 192 / 15;
     uint16_t c = uint16_t(((r * k >> 8) >> 3) << 11 | ((g * k >> 8) >> 2) << 5 | ((b * k >> 8) >> 3));
     if (m.swap_) c = uint16_t((c >> 8) | (c << 8));
-    // 16.16 units -> 1/16 pixels: the 580 x 570 window stretched over
-    // 240 x 320.
-    constexpr int64_t sx = int64_t(kScreenW) * vector_display::kSub, sy = int64_t(kScreenH) * vector_display::kSub;
-    auto px = [&](int32_t x) { return int(int64_t(x) * sx / (int64_t(kAvgW) << 16)); };
-    auto py = [&](int32_t y) { return int(int64_t(y) * sy / (int64_t(kAvgH) << 16)); };
-    m.display_.add(px(x0), py(y0), px(x1), py(y1), c);
+    // The window's sides (the tube's edges): a line reaching past one is
+    // cut there, as the borders beside the window aren't part of the tube.
+    constexpr int64_t kRight = int64_t(kAvgW) << 16;
+    int64_t ax = x0, ay = y0, bx = x1, by = y1;
+    if ((ax < 0 && bx < 0) || (ax > kRight && bx > kRight)) return;
+    auto cut = [&](int64_t& px_, int64_t& py_, int64_t qx, int64_t qy, int64_t edge) {
+        py_ += (qy - py_) * (edge - px_) / (qx - px_);
+        px_ = edge;
+    };
+    if (ax < 0) cut(ax, ay, bx, by, 0);
+    if (bx < 0) cut(bx, by, ax, ay, 0);
+    if (ax > kRight) cut(ax, ay, bx, by, kRight);
+    if (bx > kRight) cut(bx, by, ax, ay, kRight);
+    // 16.16 units -> 1/16 pixels: square units, the window's 570 units
+    // high over the 240 rows and its 580 across (244 px) in the middle of
+    // the 320.
+    constexpr int64_t kNum = int64_t(kScreenH) * vector_display::kSub, kDen = int64_t(kAvgH) << 16;
+    constexpr int kLeft = int((int64_t(kScreenW) * vector_display::kSub - int64_t(kAvgW) * kNum / kAvgH) / 2);
+    auto px = [&](int64_t x) { return kLeft + int(x * kNum / kDen); };
+    auto py = [&](int64_t y) { return int(y * kNum / kDen); };
+    m.display_.add(px(ax), py(ay), px(bx), py(by), c);
 }
 
 void Machine::vg_draw()
@@ -148,13 +164,17 @@ uint8_t Machine::in1() const
 
 uint8_t Machine::in2() const
 {
-    // Medium difficulty (bits 0-1 = 3), rating 1-9 (bit 2); buttons and
-    // starts low when pressed: 3 Superzapper, 4 fire, 5 start 1, 6 start 2.
-    uint8_t v = 0xff;
-    if (buttons_ & kZap) v &= uint8_t(~0x08);
-    if (buttons_ & kFire) v &= uint8_t(~0x10);
-    if (buttons_ & kStart1) v &= uint8_t(~0x20);
-    if (buttons_ & kStart2) v &= uint8_t(~0x40);
+    // Medium difficulty (bits 0-1 = 3), rating 1-9 (bit 2); the buttons
+    // and starts HIGH when pressed: 3 Superzapper, 4 fire, 5 start 1, 6
+    // start 2 (bit 7 unused, low). The game debounces this byte (D73E: two
+    // reads alike) and takes a 0 -> 1 change as a press and a 1 as held -
+    // fire held = autofire - so with these read low-active, an idle fire
+    // button fired for ever and a press acted when let go.
+    uint8_t v = 0x07;
+    if (buttons_ & kZap) v |= 0x08;
+    if (buttons_ & kFire) v |= 0x10;
+    if (buttons_ & kStart1) v |= 0x20;
+    if (buttons_ & kStart2) v |= 0x40;
     return v;
 }
 

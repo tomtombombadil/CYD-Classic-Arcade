@@ -49,7 +49,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Firmware file prefix `TTB-CYD-CA_` (Classic Arcade).
 - Orientation (Tom, 2026-10-14): each game runs in its cabinet's own
   orientation and fills the screen; the player turns the CYD on its side
-  for landscape games (Asteroids, Rally-X, Star Wars, Defender). The
+  for landscape games (Asteroids, Rally-X, Star Wars, Defender, Tempest). The
   firmware rotates the panel when a game starts and back for the menus.
   A game is shown as large as fits with its shape kept (borders only
   where the shapes differ).
@@ -456,13 +456,21 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   the colour RAM, the math box (`emu/machines/atari_mathbox.*`: the
   microprogram's commands as arithmetic, the same rounding and division
   loop), 2 POKEYs (sound; ALLPOT = the spinner's 4-bit count / the
-  buttons and switches, read directly as old MAME did), RANDOM (Tempest
+  buttons and switches, read directly as old MAME did; fire, Superzapper
+  and the starts read HIGH when pressed - v0.13.x read them low and Tom's
+  ship fired on its own: the game debounces that byte and takes 1 = held,
+  a 0 -> 1 change = a press), RANDOM (Tempest
   checks that a read 4 cycles later shows the high nibble in the low
   one), EAROM in RAM. The AVG loops on its list on the real board; here
   the list is drawn from its start to its jump back to word 0 every other
-  frame (the game makes ~27 pictures a second). Shown 240 x 320, the AVG's
-  580 x 570 window stretched to fill it as the portrait tube does (as
-  MAME shows it; unsure if a real cabinet's web looks this tall). Spinner:
+  frame (the game makes ~27 pictures a second). Landscape (Tom,
+  2026-10-17: the portrait 240 x 320 stretch of the 580 x 570 window
+  looked tall - "make it landscape, it was 4:3"): 320 x 240, the window
+  at its true shape (square units, a round web), 570 units over the 240
+  rows, 244 px wide in the middle, black sides; lines cut at the window's
+  sides. On 320x480 panels the runner shows it 427 x 320. Controls: A =
+  fire (held = autofire, as the cabinet's button), B = Superzapper, d-pad
+  / left stick = the spinner, Select = coin, Start = 1P, L = 2P. Spinner:
   clockwise on the screen counts the knob down; d-pad 1.5 counts a frame
   (a lane every ~5 frames), the stick up to 4 a frame in proportion
   (`set_spinner()`; the game reads the 4-bit count's change, so faster

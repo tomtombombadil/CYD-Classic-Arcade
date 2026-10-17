@@ -7,10 +7,12 @@
 // only). Hardware facts from public documentation and MAME's driver (read
 // for facts only).
 //
-// The picture: the monitor stands upright (portrait), the AVG's X axis
-// running down it. Shown 240 x 320, the AVG's 580 x 570 screen-unit window
-// stretched to fill it (as the tube does), drawn one output line at a
-// time from the last finished vector list (vector_display). The AVG runs
+// The picture: the AVG's 580 x 570 screen-unit window at its true, nearly
+// square shape (square units: the web is round), 570 units over 240 rows,
+// centred in a 320 x 240 landscape frame with black sides (Tom,
+// 2026-10-17: the cabinet's portrait tube stretched it tall). Drawn one
+// output line at a time from the last finished vector list
+// (vector_display). The AVG runs
 // in an endless loop on the real board; here the list is drawn from its
 // start to its jump back each frame.
 #pragma once
@@ -26,8 +28,8 @@
 
 namespace tempest {
 
-constexpr int      kScreenW = 240;
-constexpr int      kScreenH = 320;
+constexpr int      kScreenW = 320;     // landscape; the window fills the
+constexpr int      kScreenH = 240;     // height, 244 px wide, centred
 constexpr uint32_t kCpuClock = 1512000;
 constexpr int      kIrqCycles = 6144;                   // 3 kHz / 12
 constexpr int      kCyclesPerFrame = 4 * kIrqCycles;    // 24576 -> 61.5 Hz
@@ -35,7 +37,8 @@ constexpr int      kWatchdogCycles = 131072;            // 3 kHz / 256
 // The AVG's screen (units of 1 at linear scale 0): 580 x 570, centre.
 constexpr int      kAvgW = 580, kAvgH = 570;
 
-// Buttons for set_inputs() (pressed = bit set). The spinner: set_spinner()
+// Buttons for set_inputs() (pressed = bit set; the board reads fire,
+// Superzapper and the starts high when pressed). The spinner: set_spinner()
 // / set_analog() in the game table's machine, or the two spin buttons
 // (a steady speed).
 enum Button : uint16_t {
@@ -90,7 +93,7 @@ public:
     // samples) to `audio` (up to `cap`; null = none) and returns the count.
     int run_frame(int16_t* audio, int cap);
 
-    // Display line y (0-319) of the last vector list: 240 RGB565 pixels.
+    // Display line y (0-239) of the last vector list: 320 RGB565 pixels.
     void render_line(int y, uint16_t* out) { display_.render_line(y, out); }
 
     m6502::Cpu& cpu() { return cpu_; }

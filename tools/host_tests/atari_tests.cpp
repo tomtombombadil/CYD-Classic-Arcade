@@ -737,24 +737,38 @@ void test_tempest()
     CHECK_EQ(m.cpu().rd(0x0012), 0x5a);         // the EAROM kept the byte
     CHECK_EQ(m.earom()[7], 0x5a);
     CHECK_EQ(m.cpu().rd(0x0013), 0x40);         // math box result
-    CHECK_EQ(m.cpu().rd(0x0011), 0xef);         // fire: bit 4 low
+    CHECK_EQ(m.cpu().rd(0x0011), 0x17);         // fire: bit 4 HIGH (the game takes 1 = held)
     // Clockwise counts the knob down: 4 frames x 1.5 counts.
     CHECK_EQ(m.knob(), (16 - 6) & 15);
     CHECK_EQ(m.cpu().rd(0x0010) & 0x0f, m.knob());
     CHECK_EQ(m.cpu().rd(0x0010) & 0xf0, 0xf0);
-    // The picture: one line from the centre, red + green = yellow.
+    // The picture: one line from the centre, red + green = yellow. Square
+    // units: 570 over 240 rows, the 580-unit window centred in the 320.
     CHECK(m.vg_runs() >= 1);
     CHECK_EQ(m.display().count(), 1);
-    const int y = 285 * 320 / 570;
+    const int y = 285 * 240 / 570;
+    const int left = (320 - 580 * 240 / 570) / 2;
     std::vector<uint16_t> row(tempest::kScreenW);
     m.render_line(y, row.data());
     const std::vector<int> px = lit(row);
     CHECK(!px.empty());
     if (!px.empty()) {
-        CHECK(std::abs(px.front() - 290 * 240 / 580) <= 1);
-        CHECK(std::abs(px.back() - 390 * 240 / 580) <= 1);
+        CHECK(std::abs(px.front() - (left + 290 * 240 / 570)) <= 1);
+        CHECK(std::abs(px.front() - 160) <= 1);         // the window's centre = the frame's
+        CHECK(std::abs(px.back() - (left + 390 * 240 / 570)) <= 1);
         const uint16_t c = row[size_t(px.front())];
         CHECK((c >> 11) > 20 && ((c >> 5) & 63) > 40 && (c & 31) == 0);
+    }
+    // Nothing pressed: fire, Superzapper and the starts read low (an idle
+    // fire button read high made the game fire on its own); each reads high.
+    m.set_inputs(0);
+    m.run_frame(audio, 1024);
+    CHECK_EQ(m.cpu().rd(0x0011), 0x07);
+    const uint16_t keys[] = {tempest::kZap, tempest::kFire, tempest::kStart1, tempest::kStart2};
+    for (int i = 0; i < 4; ++i) {
+        m.set_inputs(keys[i]);
+        m.run_frame(audio, 1024);
+        CHECK_EQ(m.cpu().rd(0x0011), 0x07 | (0x08 << i));
     }
     // Without the IRQ acknowledged, the watchdog resets the board.
     m.cpu().wr(0x0000, 0);
