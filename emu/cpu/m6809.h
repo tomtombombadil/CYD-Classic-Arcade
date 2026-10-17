@@ -150,6 +150,7 @@ private:
     void page3();
     void exec(uint8_t op);          // one page 1 opcode (its fetch already done)
     inline void exec_inline(uint8_t op) __attribute__((always_inline));
+    template <uint8_t OP> inline void group() __attribute__((always_inline));
 
     // 8-bit operations (flags into cc)
     uint8_t op_neg(uint8_t v);

@@ -354,6 +354,45 @@ void test_vector_display()
     d.add(40 * S, 2 * S, 50 * S, 3 * S, 1);
     d.finish();
     CHECK_EQ(d.count(), 0);
+    // A copy (drawing on the other core) draws the same rows, and keeps the
+    // picture while the display gets the next one.
+    {
+        d.begin();
+        d.add(2 * S, 3 * S + 8, 10 * S + 8, 3 * S + 8, 1);
+        d.add(0, 0, 15 * S + 15, 15 * S + 15, 5);
+        d.add(20 * S + 8, 10 * S + 8, 20 * S + 8, 10 * S + 8, 3);
+        d.finish();
+        std::vector<std::vector<uint16_t>> want;
+        for (int y = 0; y < 16; ++y) want.push_back(row(d, y));
+        vector_display::Copy c;
+        CHECK(c.take(d));
+        CHECK_EQ(c.count(), 3);
+        // Room for the display's whole capacity, taken once (the firmware's
+        // game area gives room back only for its newest block)
+        const int room = c.bytes();
+        CHECK(room >= vector_display::Display::kMaxSegments * 16);
+        d.begin();
+        d.add(0, 8 * S, 31 * S, 8 * S, 7);
+        d.finish();
+        bool same = true;
+        for (int y = 0; y < 16; ++y) {
+            std::vector<uint16_t> r(32, 0xdead);
+            c.render_line(y, r.data());
+            same = same && r == want[size_t(y)];
+        }
+        CHECK(same);
+        // A bigger picture: the same room.
+        d.begin();
+        for (int i = 0; i < 100; ++i) d.add(0, 0, S, S, 1);
+        d.finish();
+        CHECK(c.take(d));
+        CHECK_EQ(c.count(), 100);
+        CHECK_EQ(c.bytes(), room);
+        d.begin();
+        d.finish();
+        CHECK(c.take(d));
+        CHECK_EQ(c.count(), 0);
+    }
     // Too many: counted.
     d.begin();
     for (int i = 0; i < vector_display::Display::kMaxSegments + 5; ++i) d.add(0, 0, S, S, 1);

@@ -86,6 +86,11 @@ public:
 
     // Display line y (0-239) of the last vector list: 320 RGB565 pixels.
     void render_line(int y, uint16_t* out) { display_.render_line(y, out); }
+    // A copy of the last picture for drawing on another core (heap, 20
+    // bytes a segment of the biggest picture so far; false if it can't be
+    // had), and its lines.
+    bool snapshot() { return shot_.take(display_); }
+    void render_snapshot_line(int y, uint16_t* out) { shot_.render_line(y, out); }
 
     m6502::Cpu& cpu() { return cpu_; }
     uint32_t frame() const { return frame_; }
@@ -113,6 +118,7 @@ private:
     atari_dvg::Dvg dvg_;
     asteroids_sound::Board sound_;
     vector_display::Display display_;
+    vector_display::Copy    shot_;
 
     uint8_t  ram_[0x400] = {};      // 0000-03FF; 0200 / 0300 swap with RAMSEL (player 2)
     uint8_t  vram_[0x800] = {};     // 4000-47FF vector RAM

@@ -70,23 +70,6 @@ constexpr BranchTable kBranch;
 
 inline bool taken(uint8_t op, uint8_t cc) { return (kBranch.m[cc & 15] >> (op & 15)) & 1; }
 
-// The A / B / D / X / U groups (0x80-0xFF): addressing mode (bits 4-5 of
-// the opcode: immediate, direct, indexed, extended) and whether an
-// immediate operand has two bytes.
-struct GroupTable {
-    uint8_t info[128];
-    constexpr GroupTable() : info()
-    {
-        for (int i = 0; i < 128; ++i) {
-            const int op = 0x80 + i, low = op & 0x0f;
-            const bool b = op & 0x40;
-            const bool wide = low == 0x3 || low == 0xc || low == 0xe || low == 0xf || (low == 0xd && b);
-            info[i] = uint8_t(((op >> 4) & 3) | (wide ? 4 : 0));
-        }
-    }
-};
-constexpr GroupTable kGroup;
-
 } // namespace
 
 Cpu::Cpu()
@@ -125,16 +108,19 @@ int Cpu::run(int cycles)
     done_ = 0;
     target_ = cycles;
     while (done_ < target_) {
-        if (lines_ && ((lines_ & kNmi) || ((lines_ & kFirq) && !(cc & CC_F)) || ((lines_ & kIrq) && !(cc & CC_I)))
-            && interrupt())
-            continue;
-        if (wait_) {
-            if ((wait_ & kSync) && (lines_ & (kIrq | kFirq))) {     // a masked line ends SYNC too
-                wait_ = 0;
-                done_ += 2;
-            } else {
-                if (done_ < target_) done_ = target_;   // waiting: the rest of the slice passes
-                break;
+        // Interrupt lines or a wait: looked at closely only when there's one.
+        if (__builtin_expect(lines_ | wait_, 0)) {
+            if (lines_ && ((lines_ & kNmi) || ((lines_ & kFirq) && !(cc & CC_F)) || ((lines_ & kIrq) && !(cc & CC_I)))
+                && interrupt())
+                continue;
+            if (wait_) {
+                if ((wait_ & kSync) && (lines_ & (kIrq | kFirq))) {     // a masked line ends SYNC too
+                    wait_ = 0;
+                    done_ += 2;
+                } else {
+                    if (done_ < target_) done_ = target_;   // waiting: the rest of the slice passes
+                    break;
+                }
             }
         }
         exec_inline(fetch());
@@ -453,6 +439,53 @@ uint8_t Cpu::rmw(uint8_t op, uint8_t v)
 
 // --- execution -------------------------------------------------------------------------
 
+// The A / B / D / X / U groups (0x80-0xFF but the codes above): the
+// addressing mode is bits 4-5 of the opcode (immediate, direct, indexed,
+// extended), the operation its low nibble, bit 6 = B / D / U. Made per
+// opcode at compile time, so each case is straight code.
+template <uint8_t OP> inline void Cpu::group()
+{
+    constexpr int mode = (OP >> 4) & 3;
+    constexpr int low = OP & 0x0f;
+    constexpr bool is_b = (OP & 0x40) != 0;
+    constexpr bool wide = low == 0x3 || low == 0xc || low == 0xe || low == 0xf || (low == 0xd && is_b);
+    uint16_t ea;
+    if constexpr (mode == 0) {
+        ea = pc;
+        pc = uint16_t(pc + (wide ? 2 : 1));
+    } else if constexpr (mode == 1) {
+        ea = ea_direct();
+    } else if constexpr (mode == 2) {
+        ea = ea_indexed();
+    } else {
+        ea = fetch16();
+    }
+    uint8_t& acc = is_b ? r.b : r.a;
+    if constexpr (low == 0x0) acc = op_sub(acc, rd(ea), 0);                     // SUB
+    else if constexpr (low == 0x1) op_sub(acc, rd(ea), 0);                      // CMP
+    else if constexpr (low == 0x2) acc = op_sub(acc, rd(ea), cc & CC_C ? 1 : 0);    // SBC
+    else if constexpr (low == 0x3) d = is_b ? op_add16(d, rd16(ea)) : op_sub16(d, rd16(ea));  // ADDD / SUBD
+    else if constexpr (low == 0x4) { acc &= rd(ea); nz8(acc); }                 // AND
+    else if constexpr (low == 0x5) nz8(uint8_t(acc & rd(ea)));                  // BIT
+    else if constexpr (low == 0x6) { acc = rd(ea); nz8(acc); }                  // LD
+    else if constexpr (low == 0x7) { nz8(acc); wr(ea, acc); }                   // ST
+    else if constexpr (low == 0x8) { acc ^= rd(ea); nz8(acc); }                 // EOR
+    else if constexpr (low == 0x9) acc = op_add(acc, rd(ea), cc & CC_C ? 1 : 0);    // ADC
+    else if constexpr (low == 0xa) { acc |= rd(ea); nz8(acc); }                 // OR
+    else if constexpr (low == 0xb) acc = op_add(acc, rd(ea), 0);                // ADD
+    else if constexpr (low == 0xc) {                                            // LDD / CMPX
+        if constexpr (is_b) { d = rd16(ea); nz16(d); }
+        else                op_sub16(x, rd16(ea));
+    } else if constexpr (low == 0xd) { nz16(d); wr16(ea, d); }                  // STD (B group)
+    else if constexpr (low == 0xe) {                                            // LDU / LDX
+        if constexpr (is_b) { u = rd16(ea); nz16(u); }
+        else                { x = rd16(ea); nz16(x); }
+    } else {                                                                    // STU / STX
+        if constexpr (is_b) { nz16(u); wr16(ea, u); }
+        else                { nz16(x); wr16(ea, x); }
+    }
+}
+
 // One page 1 instruction (the opcode is fetched): inlined into run(); the
 // prefixes' fallback calls the copy below.
 void Cpu::exec(uint8_t op)
@@ -640,51 +673,40 @@ inline void Cpu::exec_inline(uint8_t op)
         pc = uint16_t(pc + 2);
         break;
 
-    default: {
-        if (op < 0x80) break;                   // nothing else below 0x80
-        // Operand address by mode (bits 4-5): immediate, direct, indexed, extended.
-        const uint8_t info = kGroup.info[op - 0x80];
-        const int low = op & 0x0f;
-        const bool is_b = op & 0x40;
-        uint16_t ea = 0;
-        switch (info & 3) {
-        case 0: ea = pc; pc = uint16_t(pc + ((info & 4) ? 2 : 1)); break;
-        case 1: ea = ea_direct(); break;
-        case 2: ea = ea_indexed(); break;
-        default: ea = fetch16(); break;
-        }
-        uint8_t& acc = is_b ? r.b : r.a;
-        switch (low) {
-        case 0x0: acc = op_sub(acc, rd(ea), 0); break;                          // SUB
-        case 0x1: op_sub(acc, rd(ea), 0); break;                                // CMP
-        case 0x2: acc = op_sub(acc, rd(ea), cc & CC_C ? 1 : 0); break;          // SBC
-        case 0x3:                                                               // SUBD / ADDD
-            d = is_b ? op_add16(d, rd16(ea)) : op_sub16(d, rd16(ea));
-            break;
-        case 0x4: acc &= rd(ea); nz8(acc); break;                               // AND
-        case 0x5: nz8(uint8_t(acc & rd(ea))); break;                            // BIT
-        case 0x6: acc = rd(ea); nz8(acc); break;                                // LD
-        case 0x7: nz8(acc); wr(ea, acc); break;                                 // ST
-        case 0x8: acc ^= rd(ea); nz8(acc); break;                               // EOR
-        case 0x9: acc = op_add(acc, rd(ea), cc & CC_C ? 1 : 0); break;          // ADC
-        case 0xa: acc |= rd(ea); nz8(acc); break;                               // OR
-        case 0xb: acc = op_add(acc, rd(ea), 0); break;                          // ADD
-        case 0xc:                                                               // CMPX / LDD
-            if (is_b) { d = rd16(ea); nz16(d); }
-            else      op_sub16(x, rd16(ea));
-            break;
-        case 0xd: nz16(d); wr16(ea, d); break;                                  // STD (B group)
-        case 0xe:                                                               // LDX / LDU
-            if (is_b) { u = rd16(ea); nz16(u); }
-            else      { x = rd16(ea); nz16(x); }
-            break;
-        case 0xf:                                                               // STX / STU
-            if (is_b) { nz16(u); wr16(ea, u); }
-            else      { nz16(x); wr16(ea, x); }
-            break;
-        }
+    // --- the A / B / D / X / U groups, each opcode its own code (group<op>) ---
+    case 0x80: group<0x80>(); break; case 0x81: group<0x81>(); break; case 0x82: group<0x82>(); break; case 0x83: group<0x83>(); break;
+    case 0x84: group<0x84>(); break; case 0x85: group<0x85>(); break; case 0x86: group<0x86>(); break; case 0x88: group<0x88>(); break;
+    case 0x89: group<0x89>(); break; case 0x8a: group<0x8a>(); break; case 0x8b: group<0x8b>(); break; case 0x8c: group<0x8c>(); break;
+    case 0x8e: group<0x8e>(); break; case 0x90: group<0x90>(); break; case 0x91: group<0x91>(); break; case 0x92: group<0x92>(); break;
+    case 0x93: group<0x93>(); break; case 0x94: group<0x94>(); break; case 0x95: group<0x95>(); break; case 0x96: group<0x96>(); break;
+    case 0x97: group<0x97>(); break; case 0x98: group<0x98>(); break; case 0x99: group<0x99>(); break; case 0x9a: group<0x9a>(); break;
+    case 0x9b: group<0x9b>(); break; case 0x9c: group<0x9c>(); break; case 0x9e: group<0x9e>(); break; case 0x9f: group<0x9f>(); break;
+    case 0xa0: group<0xa0>(); break; case 0xa1: group<0xa1>(); break; case 0xa2: group<0xa2>(); break; case 0xa3: group<0xa3>(); break;
+    case 0xa4: group<0xa4>(); break; case 0xa5: group<0xa5>(); break; case 0xa6: group<0xa6>(); break; case 0xa7: group<0xa7>(); break;
+    case 0xa8: group<0xa8>(); break; case 0xa9: group<0xa9>(); break; case 0xaa: group<0xaa>(); break; case 0xab: group<0xab>(); break;
+    case 0xac: group<0xac>(); break; case 0xae: group<0xae>(); break; case 0xaf: group<0xaf>(); break; case 0xb0: group<0xb0>(); break;
+    case 0xb1: group<0xb1>(); break; case 0xb2: group<0xb2>(); break; case 0xb3: group<0xb3>(); break; case 0xb4: group<0xb4>(); break;
+    case 0xb5: group<0xb5>(); break; case 0xb6: group<0xb6>(); break; case 0xb7: group<0xb7>(); break; case 0xb8: group<0xb8>(); break;
+    case 0xb9: group<0xb9>(); break; case 0xba: group<0xba>(); break; case 0xbb: group<0xbb>(); break; case 0xbc: group<0xbc>(); break;
+    case 0xbe: group<0xbe>(); break; case 0xbf: group<0xbf>(); break; case 0xc0: group<0xc0>(); break; case 0xc1: group<0xc1>(); break;
+    case 0xc2: group<0xc2>(); break; case 0xc3: group<0xc3>(); break; case 0xc4: group<0xc4>(); break; case 0xc5: group<0xc5>(); break;
+    case 0xc6: group<0xc6>(); break; case 0xc8: group<0xc8>(); break; case 0xc9: group<0xc9>(); break; case 0xca: group<0xca>(); break;
+    case 0xcb: group<0xcb>(); break; case 0xcc: group<0xcc>(); break; case 0xce: group<0xce>(); break; case 0xd0: group<0xd0>(); break;
+    case 0xd1: group<0xd1>(); break; case 0xd2: group<0xd2>(); break; case 0xd3: group<0xd3>(); break; case 0xd4: group<0xd4>(); break;
+    case 0xd5: group<0xd5>(); break; case 0xd6: group<0xd6>(); break; case 0xd7: group<0xd7>(); break; case 0xd8: group<0xd8>(); break;
+    case 0xd9: group<0xd9>(); break; case 0xda: group<0xda>(); break; case 0xdb: group<0xdb>(); break; case 0xdc: group<0xdc>(); break;
+    case 0xdd: group<0xdd>(); break; case 0xde: group<0xde>(); break; case 0xdf: group<0xdf>(); break; case 0xe0: group<0xe0>(); break;
+    case 0xe1: group<0xe1>(); break; case 0xe2: group<0xe2>(); break; case 0xe3: group<0xe3>(); break; case 0xe4: group<0xe4>(); break;
+    case 0xe5: group<0xe5>(); break; case 0xe6: group<0xe6>(); break; case 0xe7: group<0xe7>(); break; case 0xe8: group<0xe8>(); break;
+    case 0xe9: group<0xe9>(); break; case 0xea: group<0xea>(); break; case 0xeb: group<0xeb>(); break; case 0xec: group<0xec>(); break;
+    case 0xed: group<0xed>(); break; case 0xee: group<0xee>(); break; case 0xef: group<0xef>(); break; case 0xf0: group<0xf0>(); break;
+    case 0xf1: group<0xf1>(); break; case 0xf2: group<0xf2>(); break; case 0xf3: group<0xf3>(); break; case 0xf4: group<0xf4>(); break;
+    case 0xf5: group<0xf5>(); break; case 0xf6: group<0xf6>(); break; case 0xf7: group<0xf7>(); break; case 0xf8: group<0xf8>(); break;
+    case 0xf9: group<0xf9>(); break; case 0xfa: group<0xfa>(); break; case 0xfb: group<0xfb>(); break; case 0xfc: group<0xfc>(); break;
+    case 0xfd: group<0xfd>(); break; case 0xfe: group<0xfe>(); break; case 0xff: group<0xff>(); break;
+
+    default:                                    // nothing else below 0x80
         break;
-    }
     }
 }
 

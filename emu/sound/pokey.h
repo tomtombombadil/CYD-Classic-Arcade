@@ -89,11 +89,15 @@ private:
     void step_channel(int c, uint32_t at);
     void advance_polys(uint32_t to);
     int  level() const;
+    uint32_t soonest() const;       // clocks from t_ to the next underflow that matters
+    void refresh();                 // lv_ and next_at_ from the state now
 
     Channel  ch_[4];
     // Channels whose underflows matter (heard, or clocking a heard
     // channel's high-pass); the others' events are skipped.
     uint8_t  active_ = 0;
+    int      lv_ = 0;               // level() now
+    uint32_t next_at_ = 0;          // the next underflow that matters (t_ + soonest())
     uint8_t  audctl_ = 0;
     uint8_t  skctl_ = 0;
     uint8_t  pot_[8] = {};

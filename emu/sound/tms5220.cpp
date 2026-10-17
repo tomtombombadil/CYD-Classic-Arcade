@@ -40,6 +40,29 @@ const uint8_t kKBits[10] = {5, 5, 4, 4, 4, 4, 4, 3, 3, 3};
 
 namespace {
 
+// The noise LFSR (13 bits, taps 12 / 3 / 2 / 0) steps 20 times a sample.
+// It is linear over GF(2), so 20 steps of a state = the XOR of 20 steps of
+// its low byte and of its high 5 bits alone: two tables (576 bytes, flash)
+// instead of 20 shifts.
+constexpr uint16_t lfsr20(uint16_t s)
+{
+    for (int i = 0; i < 20; ++i) {
+        const int bit = ((s >> 12) ^ (s >> 3) ^ (s >> 2) ^ s) & 1;
+        s = uint16_t(((s << 1) | bit) & 0x1fff);
+    }
+    return s;
+}
+struct Lfsr20 {
+    uint16_t lo[256] = {}, hi[32] = {};
+    constexpr Lfsr20()
+    {
+        for (int v = 0; v < 256; ++v) lo[v] = lfsr20(uint16_t(v));
+        for (int v = 0; v < 32; ++v) hi[v] = lfsr20(uint16_t(v << 8));
+    }
+};
+constexpr Lfsr20 kLfsr20{};
+static_assert((kLfsr20.lo[0x5a] ^ kLfsr20.hi[0x13]) == lfsr20(0x135a), "the LFSR is linear");
+
 // Right shift of the difference per interpolation period.
 constexpr uint8_t kInterpShift[8] = {0, 3, 3, 3, 2, 2, 1, 1};
 
@@ -304,10 +327,7 @@ int16_t Chip::step()
     int32_t ex;
     if (old_p0_) ex = (rng_ & 1) ? -64 : 64;
     else         ex = kChirp[pitch_count_ < 51 ? pitch_count_ : 51];
-    for (int i = 0; i < 20; ++i) {  // the LFSR steps once a chip T-cycle
-        const int bit = ((rng_ >> 12) ^ (rng_ >> 3) ^ (rng_ >> 2) ^ rng_) & 1;
-        rng_ = uint16_t(((rng_ << 1) | bit) & 0x1fff);
-    }
+    rng_ = uint16_t(kLfsr20.lo[rng_ & 0xff] ^ kLfsr20.hi[rng_ >> 8]);     // stepped once a chip T-cycle, 20 times
     int32_t s = lattice(ex);
     s = ((s + 16384) & 32767) - 16384;                  // 14 bits (the K1 stage may overflow)
     if (s > 2047) s = 2047;                             // the analog output: 8 bits, clipped

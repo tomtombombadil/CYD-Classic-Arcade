@@ -222,6 +222,13 @@ void test_matrix()
         put_micro(proms, 5, micro(kLdb, true, 1), junk);
         put_micro(proms, 6, micro(kLdc, true, 2), junk);
         put_micro(proms, 7, micro(kStoreAcc | kHalt, true, 3), junk);
+        // Command 2 (address 8), BIC addressing: [BIC x 4 + 1] loaded, ACC
+        // stored to [BIC x 4 + 2], BIC + 1.
+        put_micro(proms, 8, micro(kLoadAcc, false, 1), junk);
+        put_micro(proms, 9, micro(kStoreAcc | kIncBic | kHalt, false, 2), junk);
+        // Address 0 halts (command 0x3f below wraps to it).
+        put_micro(proms, 0x00, micro(kHalt, true, 0), junk);
+        // The microprogram is read from the PROMs once, at init.
         MatrixProcessor mp;
         mp.init(proms, ram);
         CHECK_EQ(mp.word(6), micro(kLdc, true, 2));
@@ -235,10 +242,7 @@ void test_matrix()
         CHECK_EQ(mp.a(), 0);                        // A and B keep their signs
         CHECK_EQ(mp.b(), -1);
 
-        // BIC addressing: [BIC x 4 + 1] loaded, ACC stored to [BIC x 4 + 2],
-        // BIC + 1; command 2 (address 8).
-        put_micro(proms, 8, micro(kLoadAcc, false, 1), junk);
-        put_micro(proms, 9, micro(kStoreAcc | kIncBic | kHalt, false, 2), junk);
+        // Command 2: BIC addressing.
         mp.set_bic_hi(1);
         mp.set_bic_lo(0x10);
         CHECK_EQ(mp.bic(), 0x110);
@@ -249,7 +253,6 @@ void test_matrix()
 
         // The counter wraps inside its 256-word page: command 0x3f starts
         // at FC; FC-FF no-ops, 00 halts.
-        put_micro(proms, 0x00, micro(kHalt, true, 0), junk);
         CHECK_EQ(mp.run(0x3f), 5 * 5);
     }
 
@@ -427,6 +430,77 @@ void test_machine()
     CHECK(w.watchdog_resets() >= 2);
 }
 
+// The sound CPU's timer wait (7D4C, done by sound_idle without the CPU):
+// a hand-made sound program around the game's wait loop, its RIOT timer
+// IRQ setting bit 0 of 100B. With the timer due inside the loop's count
+// (the loop ends at the LSR) and past it (X runs out: BEQ to 7D44), the
+// board must end exactly as without idle skipping.
+void test_sound_wait()
+{
+    using namespace starwars;
+    for (uint8_t timer : {uint8_t(4), uint8_t(40)}) {
+        static uint8_t rom0[0x4000], rom1[0x2000], rom2[0x2000], rom3[0x2000], rom4[0x2000];
+        static uint8_t vec[0x1000], snd0[0x2000], snd1[0x2000], math[0x1000];
+        // Main: kick the watchdog forever.
+        const uint8_t main_prog[] = {0x10, 0xce, 0x4f, 0xff, 0xb7, 0x46, 0x40, 0x20, 0xfb};
+        std::memcpy(rom4, main_prog, sizeof main_prog);
+        rom4[0x1ffe] = 0xe0;
+        rom4[0x1fff] = 0x00;
+        const uint8_t start[] = {
+            0x10, 0xce, 0x27, 0xff,             // 6000 LDS #$27FF
+            0x86, 0x10, 0x1f, 0x8b,             //      LDA #$10; TFR A,DP
+            0x86, timer, 0xb7, 0x10, 0x9f,      //      the timer: n x 1024, IRQ on
+            0x86, 0x3f, 0x97, 0x00,             //      LDA #$3F; STA <$00
+            0x0f, 0x0b,                         //      CLR <$0B
+            0x7e, 0x7d, 0x47,                   //      JMP $7D47
+        };
+        std::memcpy(snd1, start, sizeof start);
+        const uint8_t wait[] = {
+            0x7e, 0x7e, 0x27,                   // 7D44 JMP $7E27 (X ran out)
+            0x1c, 0xef, 0x8e, 0x01, 0x4d,       // 7D47 ANDCC #$EF; LDX #$014D
+            0x96, 0x00, 0x81, 0x3f, 0x26, 0xf2, 0x1f, 0xb8, 0x81, 0x10,     // 7D4C the wait
+            0x26, 0xec, 0x30, 0x1f, 0x27, 0xe8, 0x04, 0x0b, 0x24, 0xec,
+            0x7c, 0x20, 0x00, 0x7e, 0x7d, 0x47, // 7D60 INC $2000; JMP $7D47
+        };
+        std::memcpy(snd1 + 0x1d44, wait, sizeof wait);
+        const uint8_t out[] = {0x7c, 0x20, 0x01, 0x7e, 0x7d, 0x47};    // 7E27 INC $2001; JMP $7D47
+        std::memcpy(snd1 + 0x1e27, out, sizeof out);
+        const uint8_t irq[] = {
+            0x86, timer, 0xb7, 0x10, 0x9f,      // 7E40 the timer again (clears its flag)
+            0x0c, 0x0b, 0x3b,                   //      INC <$0B; RTI
+        };
+        std::memcpy(snd1 + 0x1e40, irq, sizeof irq);
+        snd1[0x1ff8] = 0x7e;
+        snd1[0x1ff9] = 0x40;
+        snd1[0x1ffe] = 0x60;
+        snd1[0x1fff] = 0x00;
+        static Machine a, b;
+        a.init({{rom0, rom1, rom2, rom3, rom4}, vec, {snd0, snd1}, math}, 24000);
+        b.init({{rom0, rom1, rom2, rom3, rom4}, vec, {snd0, snd1}, math}, 24000);
+        b.set_idle_skip(false);
+        int16_t audio_a[1024], audio_b[1024];
+        bool same = true;
+        int ran_a = 0, ran_b = 0;
+        for (int f = 0; f < 60; ++f) {
+            const int na = a.run_frame(audio_a, 1024), nb = b.run_frame(audio_b, 1024);
+            same = same && na == nb && std::memcmp(audio_a, audio_b, size_t(na) * 2) == 0;
+            ran_a += a.sound_run();
+            ran_b += b.sound_run();
+        }
+        const m6809::Cpu &sa = a.sound_cpu(), &sb = b.sound_cpu();
+        CHECK(same);
+        CHECK(std::memcmp(a.sound_ram(), b.sound_ram(), 0x800) == 0);
+        CHECK_EQ(sa.pc, sb.pc);
+        CHECK_EQ(sa.x, sb.x);
+        CHECK_EQ(sa.d, sb.d);
+        CHECK_EQ(sa.cc, sb.cc);
+        CHECK_EQ(sa.s, sb.s);
+        // The loop ended the one way or the other, many times.
+        CHECK((timer == 4 ? a.sound_ram()[0] : a.sound_ram()[1]) > 20);
+        CHECK(ran_a * 10 < ran_b);              // the wait wasn't run
+    }
+}
+
 } // namespace
 
 int main()
@@ -436,6 +510,7 @@ int main()
     test_riot();
     test_avg_starwars();
     test_machine();
+    test_sound_wait();
     std::printf("starwars tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

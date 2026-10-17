@@ -17,10 +17,11 @@
 // see. Each microinstruction takes 5 master clocks (12.096 MHz), a
 // multiply 33 more; the main CPU polls MATH_RUN until it's done.
 //
-// The microinstructions are read from the PROMs as they run (no decoded
-// copy: RAM is short). Old dumps (old MAME sets) have stray high nibbles in
-// 14 bytes; the PROMs are 4 bits wide, so only the low nibbles count (and
-// match today's dumps).
+// The microinstructions are put together from the four PROMs' nibbles once,
+// at init (2 KB of RAM: assembling each from four reads as it ran was a
+// third of the processor's time). Old dumps (old MAME sets) have stray high
+// nibbles in 14 bytes; the PROMs are 4 bits wide, so only the low nibbles
+// count (and match today's dumps).
 //
 // The divider: a 16-step restoring division of the dividend by the divisor,
 // started by the divisor's low byte, 15 quotient bits (the hardware's
@@ -55,12 +56,7 @@ public:
     void set_bic_hi(uint8_t v) { bic_ = uint16_t((bic_ & 0xff) | ((v & 1) << 8)); }
     void set_bic_lo(uint8_t v) { bic_ = uint16_t((bic_ & 0x100) | v); }
 
-    uint16_t word(int addr) const
-    {
-        addr &= 1023;
-        return uint16_t((proms_[addr] & 15) << 12 | (proms_[0x400 + addr] & 15) << 8 |
-                        (proms_[0x800 + addr] & 15) << 4 | (proms_[0xc00 + addr] & 15));
-    }
+    uint16_t word(int addr) const { return micro_[addr & 1023]; }
     int16_t  a() const { return a_; }
     int16_t  b() const { return b_; }
     int16_t  c() const { return c_; }
@@ -69,7 +65,7 @@ public:
     uint32_t steps() const { return steps_; }   // microinstructions run (all time)
 
 private:
-    const uint8_t* proms_ = nullptr;
+    uint16_t micro_[1024] = {};     // the microprogram, from the PROMs
     uint8_t* ram_ = nullptr;
     int16_t  a_ = 0, b_ = 0, c_ = 0;
     int32_t  acc_ = 0;

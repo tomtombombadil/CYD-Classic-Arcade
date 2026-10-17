@@ -420,6 +420,8 @@ public:
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
+    bool snapshot() override { return m_.snapshot(); }
+    void render_snapshot_line(int y, uint16_t* out) override { m_.render_snapshot_line(y, out); }
 
 private:
     asteroids::Machine m_;
@@ -456,6 +458,8 @@ public:
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
+    bool snapshot() override { return m_.snapshot(); }
+    void render_snapshot_line(int y, uint16_t* out) override { m_.render_snapshot_line(y, out); }
 
     static constexpr int kSpinnerFull = 1024;      // 4 counts a frame
 
@@ -611,6 +615,8 @@ public:
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
+    bool snapshot() override { return m_.snapshot(); }
+    void render_snapshot_line(int y, uint16_t* out) override { m_.render_snapshot_line(y, out); }
 
 private:
     starwars::Machine m_;
