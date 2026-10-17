@@ -1,5 +1,6 @@
 // Host tests for core/: the ROM store on a fake NOR flash, and the USB
 // loading protocol driven the way the web page drives it.
+#include "../../core/log_ring.h"
 #include "../../core/rom_store.h"
 #include "../../core/usb_import.h"
 #include "../../emu/rom/crc32.h"
@@ -259,8 +260,51 @@ void test_protocol()
 
 } // namespace
 
+void test_log_ring()
+{
+    static log_ring::Ring<64> r;
+    r.reset(0);
+    check(r.sane() && r.count() == 0, "log: empty");
+    char out[80];
+    check(!r.line(0, out, sizeof out), "log: nothing to read");
+    r.put("one");
+    r.put("two");
+    r.put("three");
+    check(r.count() == 3, "log: three lines");
+    check(r.line(0, out, sizeof out) && std::strcmp(out, "three") == 0, "log: newest first");
+    check(r.line(2, out, sizeof out) && std::strcmp(out, "one") == 0, "log: oldest last");
+    check(!r.line(3, out, sizeof out), "log: past the end");
+    // Fill past the size: old lines go whole, the newest stay readable
+    char text[32];
+    for (int i = 0; i < 40; ++i) {
+        std::snprintf(text, sizeof text, "line %d", i);
+        r.put(text);
+        bool ok = r.line(0, out, sizeof out) && std::strcmp(out, text) == 0;
+        int n = r.count();
+        for (int k = 0; k < n; ++k) {
+            char want[32];
+            std::snprintf(want, sizeof want, "line %d", i - k);
+            if (i - k >= 0) ok = ok && r.line(k, out, sizeof out) && std::strcmp(out, want) == 0;
+        }
+        if (!ok) {
+            check(false, "log: wraps keeping whole lines");
+            return;
+        }
+    }
+    check(r.used <= 64 && r.count() >= 6, "log: wraps keeping whole lines");
+    // Cut to the buffer given
+    check(r.line(0, out, 4) && std::strcmp(out, "lin") == 0, "log: cut to the caller's buffer");
+    // A line longer than the ring is cut, never overruns
+    char big[100];
+    std::memset(big, 'x', sizeof big - 1);
+    big[99] = 0;
+    r.put(big);
+    check(r.count() == 1 && r.line(0, out, sizeof out) && std::strlen(out) == 63, "log: a huge line is cut");
+}
+
 int main()
 {
+    test_log_ring();
     test_store();
     test_protocol();
     std::printf("core tests: %d passed, %d failed\n", g_pass, g_fail);

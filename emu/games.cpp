@@ -36,17 +36,28 @@ namespace {
 template <class M> class Shot {
 public:
     using VS = std::remove_cv_t<std::remove_reference_t<decltype(std::declval<const M&>().video())>>;
+    Shot() = default;
+    Shot(const Shot&) = delete;
+    Shot& operator=(const Shot&) = delete;
+    ~Shot()
+    {
+        if (vs_) vs_->~VS();
+        emu::free(vs_);
+    }
     bool take(const M& m)
     {
-        if (!vs_) vs_.reset(new (std::nothrow) VS);
-        if (!vs_) return false;
+        if (!vs_) {
+            void* p = emu::alloc(sizeof(VS));
+            if (!p) return false;
+            vs_ = new (p) VS;
+        }
         *vs_ = m.video();
         return true;
     }
     void render(const M& m, int y, uint16_t* out) const { m.render_line(*vs_, y, out); }
 
 private:
-    std::unique_ptr<VS> vs_;
+    VS* vs_ = nullptr;
 };
 
 }  // namespace
@@ -425,8 +436,8 @@ public:
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     // The left stick's X turns the spinner at a speed in proportion: full
     // over = kSpinnerFull / 256 counts a frame (the d-pad: a steady
-    // tempest::Machine::kButtonSpin).
-    void set_analog(const Analog& a) override { m_.set_spinner(a.lx * kSpinnerFull / 512); }
+    // tempest::Machine::kButtonSpin); right = counter-clockwise, as the d-pad.
+    void set_analog(const Analog& a) override { m_.set_spinner(-a.lx * kSpinnerFull / 512); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
@@ -437,11 +448,12 @@ private:
     tempest::Machine m_;
 };
 
-// D-pad left / right move the player round the tube (counter-clockwise /
-// clockwise on the screen) at a steady speed, the left stick at a speed in
-// proportion; A fires, B is the Superzapper.
+// D-pad left / right move the player round the tube at a steady speed, the
+// left stick at a speed in proportion: right = counter-clockwise on the
+// screen (Tom, v0.14.4: the player usually sits at the bottom, where
+// counter-clockwise is to the right); A fires, B is the Superzapper.
 const Control kTempestControls[] = {
-    {kPadLeft, tempest::kSpinLeft}, {kPadRight, tempest::kSpinRight}, {kPadA, tempest::kFire},
+    {kPadLeft, tempest::kSpinRight}, {kPadRight, tempest::kSpinLeft}, {kPadA, tempest::kFire},
     {kPadB, tempest::kZap}, {kPadSelect, tempest::kCoin}, {kPadStart, tempest::kStart1},
     {kPadL, tempest::kStart2},
 };

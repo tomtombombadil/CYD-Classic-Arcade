@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 
 namespace menu_model {
 namespace {
@@ -25,8 +26,20 @@ int build_home(ui::Item* out, int* what, const bool* available)
         it.widget = ui::Widget::Chevron;
         what[n++] = kHelpRow;
     }
+    // A to Z (Tom, 2026-10-17: the order they were added in isn't for a
+    // finished product), the playable ones first
+    int order[games::kMaxGames];
+    int count = 0;
+    for (int g = 0; g < games::kGameCount && g < games::kMaxGames; g++) order[count++] = g;
+    for (int i = 1; i < count; i++)
+        for (int j = i; j > 0 && strcasecmp(games::kGames[order[j]].title, games::kGames[order[j - 1]].title) < 0; j--) {
+            const int t = order[j];
+            order[j] = order[j - 1];
+            order[j - 1] = t;
+        }
     for (int pass = 0; pass < 2; pass++) {
-        for (int g = 0; g < games::kGameCount && n < kMaxItems; g++) {
+        for (int k = 0; k < count && n < kMaxItems; k++) {
+            const int g = order[k];
             if (available[g] != (pass == 0)) continue;
             const games::Info& info = games::kGames[g];
             ui::Item& it = out[n];
@@ -52,6 +65,7 @@ void refresh_settings(ui::Item* items, const int* what, int count, const Setting
             else std::snprintf(it.value, sizeof it.value, "%d%%", s.volume);
             break;
         case kSwap: it.on = s.swap_ab; break;
+        case kDemoSounds: it.on = s.demo_sounds; break;
         case kRotate: it.on = s.rotate180; break;
         case kSound: set(it.value, sizeof it.value, s.sound_pwm ? "PWM" : "DAC"); break;
         default: break;
@@ -71,6 +85,7 @@ int build_settings(ui::Item* out, int* what, const SettingsState& s)
         what[n++] = id;
     };
     add(kVolume, "Volume", "Game sound", ui::Widget::Stepper);
+    add(kDemoSounds, "Demo Sounds", "Sound in the attract mode", ui::Widget::Switch);
     add(kSwap, "Swap A/B and X/Y", "Nintendo-style button letters", ui::Widget::Switch);
     add(kRotate, "Rotate Screen 180", "Upside-down screen", ui::Widget::Switch);
     if (s.has_sound_choice) add(kSound, "Sound Output", "DAC or PWM; restarts", ui::Widget::Value);
@@ -79,6 +94,7 @@ int build_settings(ui::Item* out, int* what, const SettingsState& s)
     if (s.has_calibration) add(kCalibrate, "Calibrate Touch", "Tap four corner arrows", ui::Widget::Chevron);
     add(kRoms, "How to Add Games", "From SD card or USB", ui::Widget::Chevron);
     add(kSpeed, "Last Game Speed", "Where this board's time goes", ui::Widget::Chevron);
+    add(kLog, "Log", "Starts, games, crashes, controllers", ui::Widget::Chevron);
     add(kAbout, "About", "Version, board, memory", ui::Widget::Chevron);
     refresh_settings(out, what, n, s);
     return n;
@@ -128,7 +144,8 @@ int build_about(const AboutInfo& a, char (*buf)[64], const char** lines, int cap
     }
     line("%s", "");
     line("%s", "#Memory");
-    line("RAM: %u KB free, largest block %u KB", a.ram_free_kb, a.ram_block_kb);
+    line("Game area: %u KB (most used %u KB)", a.area_kb, a.area_peak_kb);
+    line("RAM outside it: %u KB free, block %u KB", a.ram_free_kb, a.ram_block_kb);
     if (a.psram_kb) line("PSRAM: %u KB free", a.psram_kb);
     return n;
 }

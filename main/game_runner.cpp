@@ -33,15 +33,19 @@
 // (CYD-BYOG-PoolRadSeries) draw this way on every board.
 #include "game_runner.h"
 
+#include "arena.h"
 #include "catalog.h"
 #include "crash_note.h"
+#include "devlog.h"
 #include "input.h"
 #include "line_diff.h"
 #include "screen.h"
+#include "settings.h"
 #include "touch.h"
 #include "ui.h"
 
 #include "emu/games.h"
+#include "emu/util/alloc.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -62,41 +66,44 @@ constexpr const char* kTag = "game";
 constexpr int kStrip = 8;               // lines per strip sent (7.5 KB at 480 wide)
 constexpr int kMaxLines = 512;
 constexpr int kAudioCap = 1024;         // samples per frame, at most
-// Internal RAM left free when a game's ROMs are placed: the runner's buffers
-// (~13-20 KB; + the draw task's 5 KB stack and a 2-5 KB snapshot for the
-// tile games) and Bluetooth's own needs while playing.
-constexpr uint32_t kKeepFree = 40 * 1024;
+// Internal RAM kept out of the game area (main/arena.h) for Bluetooth,
+// the USB loader and the system; games ran with this much left free in
+// v0.14 and Bluetooth was fine.
+constexpr uint32_t kSystemReserve = 40 * 1024;
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
 Stats s_last;
 
-// The draw task's work (async drawing, see the top of the file)
+// The draw task's work (async drawing, see the top of the file). The task
+// is made once at start-up (its stack outside the game area) and waits
+// for pictures; a game only fills in this job.
 struct DrawJob {
     games::Machine* m = nullptr;
     line_diff::Drawer* drawer = nullptr;
     LGFX* lcd = nullptr;
-    SemaphoreHandle_t bus = nullptr;   // the display's SPI bus (shared with touch on some boards)
     int x0 = 0, y0 = 0;
     std::atomic<bool> busy{false};     // a snapshot is being drawn
-    std::atomic<bool> quit{false};
-    std::atomic<bool> done{false};     // the task has ended
     std::atomic<uint32_t> drawn{0};
-    // Read once the task has ended (and, roughly, for the 5 s log line)
+    // Read between pictures (and, roughly, for the 5 s log line)
     volatile int64_t draw_us = 0, draw_max_us = 0, send_us = 0;
     volatile uint64_t pixels = 0;
     volatile uint32_t lines_sent = 0;
     volatile bool warm = false;        // past the first 2 s: count the worst
 };
 
-void draw_task(void* arg)
+DrawJob s_job;
+TaskHandle_t s_draw = nullptr;
+SemaphoreHandle_t s_bus = nullptr;    // the display's SPI bus (shared with touch on some boards)
+
+void draw_task(void*)
 {
-    DrawJob& j = *static_cast<DrawJob*>(arg);
+    DrawJob& j = s_job;
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        if (j.quit) break;
+        if (!j.busy || !j.m) continue;
         const int64_t t0 = esp_timer_get_time();
-        xSemaphoreTake(j.bus, portMAX_DELAY);
+        xSemaphoreTake(s_bus, portMAX_DELAY);
         j.lcd->startWrite();
         j.drawer->frame([&](int y, uint16_t* line) { j.m->render_snapshot_line(y, line); },
                         [&](int x, int y, int w, int h, const uint16_t* px) {
@@ -109,7 +116,7 @@ void draw_task(void* arg)
                         },
                         []() { return false; });
         j.lcd->endWrite();
-        xSemaphoreGive(j.bus);
+        xSemaphoreGive(s_bus);
         const int64_t took = esp_timer_get_time() - t0;
         j.draw_us = j.draw_us + took;
         if (j.warm && took > j.draw_max_us) j.draw_max_us = took;
@@ -119,53 +126,70 @@ void draw_task(void* arg)
         // checks it), even when pictures come back to back
         vTaskDelay(1);
     }
-    j.done = true;
-    vTaskDelete(nullptr);
 }
 
+// A message that stays until a tap or a button (Tom: one that goes by
+// can't be reported)
 void message(const char* a, const char* b)
 {
     LGFX& lcd = screen::lcd();
     lcd.fillScreen(ui::kBg);
     ui::message(lcd, a, b, ui::kRed);
-    const uint32_t t0 = now_ms();
-    while (now_ms() - t0 < 4000 && touch::poll().kind != touch::Event::Up) vTaskDelay(pdMS_TO_TICKS(16));
+    touch::wait_tap_or_button();
 }
 
+void emu_free(void* p) { arena::free(p); }
+
 }  // namespace
+
+bool init()
+{
+    // Everything the emulators allocate comes from the game area
+    emu::set_allocator(arena::alloc, emu_free);
+    s_bus = xSemaphoreCreateMutex();
+    if (s_bus) xTaskCreatePinnedToCore(draw_task, "draw", 5120, nullptr, 1, &s_draw, 0);
+    const bool ok = arena::reserve(kSystemReserve);
+    devlog::add("Game area %u KB%s; RAM left %u KB, block %u KB; draw task %s", unsigned(arena::size() / 1024),
+                ok ? "" : " (NONE)", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
+                unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
+                s_draw ? "on core 0" : "NONE");
+    return ok;
+}
 
 void run(int index, AudioRing& ring)
 {
     const games::Info& g = games::kGames[index];
-    // The machine first (its object is the biggest block), then the ROMs:
-    // into RAM while kKeepFree stays free for the runner's buffers and
-    // Bluetooth, the rest streamed into flash and read from there. v0.14.0
-    // loaded every ROM into RAM first: the big games left Bluetooth no RAM
-    // and the board reset (Tom: Dig Dug, Mr. Do!, Q*bert, Robotron,
-    // Defender, Qix, Star Wars).
-    ESP_LOGI(kTag, "%s: %u KB free, largest block %u KB", g.id,
-             unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
-             unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
-    crash_note::step(g.title, "making its machine");
-    games::Machine* m = g.make();
-    if (!m) {
-        char buf[48];
-        std::snprintf(buf, sizeof buf, "%u KB free, largest %u KB",
-                      unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
-                      unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
-        ESP_LOGE(kTag, "%s: no memory for the machine (%s)", g.id, buf);
-        crash_note::clear();
-        message("Not enough memory", buf);
-        return;
-    }
-    crash_note::step(g.title, "loading its ROMs");
+    // Everything this game needs comes from the game area, which starts
+    // empty: the machine, the runner's buffers, the snapshot for drawing on
+    // core 0, then as many ROM regions as fit (the rest stream into flash).
+    // When the game ends the area is emptied in one go, so the next game
+    // starts from the same memory, whatever ran before (Tom, v0.14.6).
+    arena::reset();
+    const uint32_t area_kb = arena::size() / 1024;
+    devlog::add("%s: start; game area %u KB; RAM outside %u KB free, block %u KB", g.id, unsigned(area_kb),
+                unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
+                unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+    games::Machine* m = nullptr;
     catalog::Loaded roms;
-    if (!catalog::load(g, roms, kKeepFree)) {
+    auto give_up = [&](const char* title, const char* text) {
         delete m;
+        catalog::unload(roms);
+        arena::reset();
         crash_note::clear();
-        message("Can't load the ROMs", catalog::last_error());
+        screen::apply_rotation();
+        devlog::add("%s: %s - %s", g.id, title, text);
+        message(title, text);
+    };
+    char why[64];
+
+    crash_note::step(g.title, "making its machine");
+    m = g.make();
+    if (!m) {
+        std::snprintf(why, sizeof why, "Its machine doesn't fit the %u KB game area", unsigned(area_kb));
+        give_up("Not enough memory", why);
         return;
     }
+    const uint32_t machine_kb = arena::used() / 1024;
     LGFX& lcd = screen::lcd();
     if (g.orientation == games::Orientation::Landscape) screen::landscape();
     // Scale: as large as fits with the shape kept, never smaller than 1:1
@@ -174,33 +198,36 @@ void run(int index, AudioRing& ring)
     const int out_w = std::min(lcd_w, int(g.width * scale + 0.5f));
     const int out_h = std::min(lcd_h, int(g.height * scale + 0.5f));
     const size_t strip_bytes = size_t(out_w) * kStrip * sizeof(uint16_t);
-    uint16_t* strip = static_cast<uint16_t*>(heap_caps_malloc(strip_bytes, MALLOC_CAP_8BIT));
-    uint16_t* src = static_cast<uint16_t*>(heap_caps_malloc(size_t(g.width) * sizeof(uint16_t), MALLOC_CAP_8BIT));
-    uint16_t* x_map = static_cast<uint16_t*>(heap_caps_malloc(size_t(out_w) * sizeof(uint16_t), MALLOC_CAP_8BIT));
     const line_diff::Layout segs = line_diff::layout(g.width);
-    uint32_t* seg_hash = static_cast<uint32_t*>(
-        heap_caps_malloc(size_t(g.height) * size_t(segs.segs) * sizeof(uint32_t), MALLOC_CAP_8BIT));
-    int16_t* audio = static_cast<int16_t*>(heap_caps_malloc(kAudioCap * sizeof(int16_t), MALLOC_CAP_8BIT));
-    if (!m || !strip || !src || !x_map || !seg_hash || !audio || g.height > kMaxLines) {
-        ESP_LOGE(kTag, "%s: out of memory (largest block %u)", g.id,
-                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)));
-        delete m;
-        heap_caps_free(strip);
-        heap_caps_free(src);
-        heap_caps_free(x_map);
-        heap_caps_free(seg_hash);
-        heap_caps_free(audio);
-        catalog::unload(roms);
-        crash_note::clear();
-        screen::apply_rotation();
-        message("Not enough memory", g.title);
+    uint16_t* strip = static_cast<uint16_t*>(arena::alloc(strip_bytes));
+    uint16_t* src = static_cast<uint16_t*>(arena::alloc(size_t(g.width) * sizeof(uint16_t)));
+    uint16_t* x_map = static_cast<uint16_t*>(arena::alloc(size_t(out_w) * sizeof(uint16_t)));
+    uint32_t* seg_hash =
+        static_cast<uint32_t*>(arena::alloc(size_t(g.height) * size_t(segs.segs) * sizeof(uint32_t)));
+    int16_t* audio = static_cast<int16_t*>(arena::alloc(kAudioCap * sizeof(int16_t)));
+    if (!strip || !src || !x_map || !seg_hash || !audio || g.height > kMaxLines) {
+        std::snprintf(why, sizeof why, "Machine %u KB + buffers don't fit the %u KB game area",
+                      unsigned(machine_kb), unsigned(area_kb));
+        give_up("Not enough memory", why);
+        return;
+    }
+    // Drawing on core 0 while core 1 emulates, for machines that can copy
+    // their picture (see the top of the file); else between frames here.
+    // The first snapshot makes the copy's room, before the ROMs take theirs.
+    const bool async = s_draw && m->snapshot();
+
+    crash_note::step(g.title, "loading its ROMs");
+    if (!catalog::load(g, roms)) {
+        give_up("Can't load the ROMs", catalog::last_error());
         return;
     }
     crash_note::step(g.title, "starting its machine");
     m->init(roms.regions, 24000, true);
-    ESP_LOGI(kTag, "%s started, %u KB free, largest block %u KB", g.id,
-             unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
-             unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+    m->set_demo_sounds(settings::get().demo_sounds);
+    devlog::add("%s: machine %u KB, game area used %u of %u KB, ROM %u KB in RAM / %u KB from flash; drawn %s",
+                g.id, unsigned(machine_kb), unsigned(arena::used() / 1024), unsigned(area_kb),
+                unsigned(roms.ram_used / 1024), unsigned(roms.flash_used / 1024),
+                async ? "on core 0" : "between frames");
 
     lcd.fillScreen(TFT_BLACK);
     const int x0 = (lcd_w - out_w) / 2;
@@ -222,19 +249,18 @@ void run(int index, AudioRing& ring)
     drawer.setup();
     ring.clear();
 
-    // Drawing on core 0 while core 1 emulates, for machines that can copy
-    // their picture (see the top of the file); else between frames here
-    DrawJob job;
-    job.m = m;
+    DrawJob& job = s_job;
+    job.busy = false;
+    job.drawn = 0;
+    job.draw_us = job.draw_max_us = job.send_us = 0;
+    job.pixels = 0;
+    job.lines_sent = 0;
+    job.warm = false;
     job.drawer = &drawer;
     job.lcd = &lcd;
     job.x0 = x0;
     job.y0 = y0;
-    job.bus = xSemaphoreCreateMutex();
-    TaskHandle_t draw_handle = nullptr;
-    bool async = job.bus && m->snapshot() &&
-                 xTaskCreatePinnedToCore(draw_task, "draw", 5120, &job, 1, &draw_handle, 0) == pdPASS;
-    ESP_LOGI(kTag, "%s: drawn %s", g.id, async ? "on core 0 from snapshots" : "between frames");
+    job.m = async ? m : nullptr;
 
     // The start-up tests (RAM / ROM checks, test patterns, noise) run unseen
     // and unheard, as fast as the board goes, behind a "Loading" card -
@@ -302,9 +328,9 @@ void run(int index, AudioRing& ring)
         bool held = false;
         if (!async) {
             held = touch::held_long();
-        } else if (xSemaphoreTake(job.bus, 0) == pdTRUE) {
+        } else if (xSemaphoreTake(s_bus, 0) == pdTRUE) {
             held = touch::held_long();
-            xSemaphoreGive(job.bus);
+            xSemaphoreGive(s_bus);
         }
         if (in.back() || held) break;
         const uint32_t pad = g.four_way ? four_way.filter(in.game()) : in.game();
@@ -346,7 +372,7 @@ void run(int index, AudioRing& ring)
                 job.warm = warm;
                 if (m->snapshot()) {
                     job.busy = true;
-                    xTaskNotifyGive(draw_handle);
+                    xTaskNotifyGive(s_draw);
                 }
             }
         } else if (ring.count() >= draw_est + frame_samples / 2) {
@@ -412,11 +438,9 @@ void run(int index, AudioRing& ring)
     all_frames += frames;
     all_emu_us += emu_us;
     if (async) {
-        // Let the last picture finish, then end the task
+        // Let the last picture finish; the task then waits for the next game
         while (job.busy) vTaskDelay(1);
-        job.quit = true;
-        xTaskNotifyGive(draw_handle);
-        while (!job.done) vTaskDelay(1);
+        job.m = nullptr;
         all_drawn = job.drawn.load();
         all_draw_us = job.draw_us;
         all_send_us = job.send_us;
@@ -426,7 +450,6 @@ void run(int index, AudioRing& ring)
         all_drawn += drawn;
         all_draw_us += draw_us;
     }
-    if (job.bus) vSemaphoreDelete(job.bus);
     const float secs = float(esp_timer_get_time() - run_t0) / 1e6f;
     s_last = Stats{};
     if (secs > 0.5f) {
@@ -444,21 +467,17 @@ void run(int index, AudioRing& ring)
     s_last.draw_max_ms = float(draw_max_us) / 1000.0f;
     s_last.worst_frames = std::max(worst_frames, 0);
     s_last.worst_drawn = worst_drawn;
-    ESP_LOGI(kTag, "%s ran %.1f s: %.1f frames/s, %.1f drawn/s; emu %.2f ms (max %.2f), draw %.2f ms (max %.2f, "
-             "send %.2f, %.1fK pixels); slowest second %d frames, %d drawn", g.id, double(secs),
-             double(s_last.frames_per_s), double(s_last.drawn_per_s), double(s_last.emu_ms), double(s_last.emu_max_ms),
-             double(s_last.draw_ms), double(s_last.draw_max_ms), double(s_last.send_ms), double(s_last.kpixels),
-             s_last.worst_frames, s_last.worst_drawn);
+    devlog::add("%s: ran %.0f s, %.1f fps (game %.1f), %.0f shown/s; emu %.1f ms (worst %.1f), picture %.1f "
+                "(worst %.1f, send %.1f, %.1fK px); slowest second %d frames, %d shown",
+                g.id, double(secs), double(s_last.frames_per_s), double(s_last.game_hz), double(s_last.drawn_per_s),
+                double(s_last.emu_ms), double(s_last.emu_max_ms), double(s_last.draw_ms), double(s_last.draw_max_ms),
+                double(s_last.send_ms), double(s_last.kpixels), s_last.worst_frames, s_last.worst_drawn);
 
     ring.clear();
     delete m;
-    heap_caps_free(strip);
-    heap_caps_free(src);
-    heap_caps_free(x_map);
-    heap_caps_free(seg_hash);
-    heap_caps_free(audio);
-    crash_note::clear();
     catalog::unload(roms);
+    arena::reset();     // the game area is empty again for the next game
+    crash_note::clear();
     screen::apply_rotation();
     lcd.fillScreen(screen::kBg);
 }

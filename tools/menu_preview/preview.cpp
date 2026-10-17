@@ -157,6 +157,39 @@ void render(int w, int h)
         save(s, "7b_speed");
     }
 
+    {   // Settings > Log: a paged text page, newest first
+        static const char* const lines[] = {
+            "[4 312.5s] galaga: ran 280 s, 60.6 fps (game 60.6), 60 shown/s; emu 11.8 ms (worst 15.2), picture 6.1 (worst 9.4, send 3.2, 13.5K px); slowest second 60 frames, 58 shown",
+            "[4 32.1s] galaga: machine 64 KB, game area used 92 of 98 KB, ROM 24 KB in RAM / 8 KB from flash; drawn on core 0",
+            "[4 31.6s] galaga: start; game area 98 KB; RAM outside 41 KB free, block 30 KB",
+            "[4 6.2s] BT: controller 1 ready: 8BitDo Ultimate",
+            "[4 5.9s] BT: connected 8BitDo Ultimate 2.4G (e4:17:d8:12:34:56)",
+            "[4 3.1s] Game area 98 KB; RAM left 41 KB, block 30 KB; draw task on core 0",
+            "[4 3.0s] Ready: RAM 139 KB free, block 108 KB",
+            "[4 2.4s] Games ready 14 of 16; 16 zips stored, 812 KB free; no ROMs: spyhunt rthunder",
+            "[4 1.2s] BT: started, 1 controller(s) paired",
+            "[4 0.6s] Backtrace: 400d4a2c 400d51f0 400e0a11 4008a8f2",
+            "[4 0.6s] Crash: LoadProhibited: Exception was unhandled. (task ui, core 1, at 400d4a2c)",
+            "[4 0.6s] RESET: Qix crashed while making its machine (77 KB free, block 28 KB).",
+            "[4 0.5s] Start v0.15.0 (abc1234) on 4.0\" ST7796 Resistive; reset: crash",
+            "[3 845.0s] qix: start; game area 98 KB; RAM outside 41 KB free, block 30 KB",
+            "[3 610.2s] robotron: ran 220 s, 60.1 fps (game 60.1), 41 shown/s; emu 12.0 ms (worst 14.9), picture 9.8",
+        };
+        ui::TextPage log;
+        log.title = "Log";
+        log.lines = lines;
+        log.count = int(sizeof lines / sizeof lines[0]);
+        log.paged = true;
+        log.small = true;
+        int starts[32];
+        const int pages = ui::text_pages(s, log, starts, 32);
+        ui::draw_text(s, log, footer(1, ""), starts, pages);
+        save(s, "7c_log");
+        log.page = pages - 1;
+        ui::draw_text(s, log, footer(1, ""), starts, pages);
+        save(s, "7d_log_last");
+    }
+
     char info_buf[12][96];
     const char* info_lines[12];
     ui::TextPage info;

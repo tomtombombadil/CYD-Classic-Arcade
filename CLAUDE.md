@@ -178,7 +178,15 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   comes first. Settings: Volume [-] [+], Swap A/B and X/Y and Rotate
   Screen 180 switches, Sound Output DAC / PWM (DAC boards), Controller
   Test, Forget Controllers, Calibrate Touch (resistive), How to Add Games,
-  Last Game Speed, About (version, board, games ready, ROM storage, RAM / PSRAM). No
+  Last Game Speed, Log, About (version, board, games ready, ROM storage,
+  game area, RAM / PSRAM); v0.15.0 added Demo Sounds (a switch, NVS
+  demo_snd, default off; Tom, 2026-10-17: leave a game in its attract mode
+  "and get all those classic arcade sounds" - the cabinet's demo sounds
+  switch where it has one, `games::Machine::set_demo_sounds()`) and Log.
+  The game list is A to Z by title, playable games first (Tom,
+  2026-10-17: the order games were added in "isn't suitable to a finished
+  product"). Select (either controller) opens Settings from the game list
+  and goes back (Tom: there was no way to Settings with a controller). No
   scrolling or dragging: rows per page come from the panel size (240x320:
   5 rows of 43 px, 320x480: 6 of 57) with < > page keys - nothing can
   clip. Fonts: FreeSansBold 9 / 12 pt titles, DejaVu 9 / 12 second lines,
@@ -296,6 +304,58 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Invaders) still draw between frames on core 1. `arcade_host --panel`
   draws the tile games from a snapshot one or two frames old (as the other
   core would) and checks it against that frame's full picture: 0 wrong.
+- Game area (v0.15.0; Tom, v0.14.6 on the 3.2" and 4.0": Qix crashed
+  "while making its machine" (77 KB free, block 28 KB; once 5 KB), Robotron
+  crashed (77 / 29 KB), a game that crashed said "Not enough memory" right
+  after, yet another one then played - "Exiting a game should be similar
+  almost to a reboot ... start each game from a unified ready state ...
+  Memory management on these boards is critical"): `main/arena.*` - one
+  block of internal RAM set aside at start-up once Bluetooth has started
+  (`pad_bt_ready()`, waited up to 5 s), as big as leaves `kSystemReserve`
+  (40 KB) to Bluetooth, the USB loader and the system. A game takes
+  everything from it, in this order: the machine (games::Machine's own
+  operator new -> `emu::alloc`, `emu/util/alloc.h`; the firmware points it
+  at the area, the PC tools at malloc), the runner's buffers, the tile
+  games' snapshot, then ROM regions while they fit (the rest into the
+  scratch flash; PSRAM first on the S3); `arena::reset()` empties it when
+  the game ends. Allocation goes up from the bottom; freeing gives room
+  back only for the newest block. The draw task (core 0) is made once at
+  start-up, outside the area. The Log page borrows the area while it's
+  open (no game then). About shows the area's size and the most a game
+  used; the log line at each game start gives machine / area / ROM in RAM
+  vs flash. Emulator code allocates only through emu::alloc (Qix's two 32
+  KB video halves, Shot<>); nothing in emu/ may use new / malloc directly.
+- ROMs live in flash, not RAM (Tom, 2026-10-17, asked why zips are "in
+  memory all the time"): the zips are copied from the SD card / USB into
+  the `roms` flash partition (storage, read in place, no RAM); only the
+  running game's chips are unpacked, into the game area or the scratch
+  flash, and gone when it ends. They can't be emulated from the SD card:
+  the CPUs read their program at random every few microseconds, which the
+  ESP32 can do from its own (memory-mapped) flash but not from a card.
+- Log (v0.15.0; Tom: crash messages went by too fast and the news line cut
+  them off - "add a log button ... see game speeds, crash info, etc"):
+  `main/devlog.*` over `core/log_ring.h` (host-tested) - 4 KB of lines in
+  RTC memory, kept through crashes, watchdog and software resets (not
+  power-off), oldest dropped first; each line "[boot seconds] text", also
+  to serial. Settings > Log shows them newest first, paged with < > (also
+  d-pad / L / R). Logged: each start (version, commit, board, reset
+  reason), a crash's details, Bluetooth (started + pairings, connected,
+  ready, disconnected, a pairing kept after a failed attempt or forgotten
+  because the pad refused it, Forget Controllers), the SD import (copied /
+  couldn't copy with the store's free room / skipped zips), games ready
+  and which have no ROMs, the game area at start-up, each game's start
+  (area, RAM outside it) and setup (machine, area used, ROM in RAM /
+  flash, drawn on which core), its end (speed numbers as on Last Game
+  Speed), a failed start's message. Crashes: ESP-IDF's panic handler is
+  linked through `crash_note.cpp` (`-Wl,--wrap=esp_panic_handler`,
+  main/CMakeLists.txt), which keeps the exception (or abort()'s / an
+  assert's text, `g_panic_abort_details`), the task, the address and 8
+  backtrace PCs in RTC memory; the next start logs them ("Crash: ...",
+  "Backtrace: ...") - decode with the build's firmware.elf (CI artifact
+  `elf-<env>`, 90 days). A crash's message and every failed-start message
+  stay until a tap or a controller button (`touch::wait_tap_or_button()`);
+  the news line then says "The board restarted: see Settings > Log". Ask
+  Tom for the Log page (a photo) when something goes wrong.
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
   checked by `arcade_host --check-table`; the USB loader's GAMES reply has
   room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).
@@ -500,7 +560,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   rows, 244 px wide in the middle, black sides; lines cut at the window's
   sides. On 320x480 panels the runner shows it 427 x 320. Controls: A =
   fire (held = autofire, as the cabinet's button), B = Superzapper, d-pad
-  / left stick = the spinner, Select = coin, Start = 1P, L = 2P. Spinner:
+  / left stick = the spinner, right = counter-clockwise on the screen
+  (Tom, v0.14.4: the player sits at the bottom, where that is to the
+  right; v0.14.4 had it the other way), Select = coin, Start = 1P, L = 2P. Spinner:
   clockwise on the screen counts the knob down; d-pad 1.5 counts a frame
   (a lane every ~5 frames), the stick up to 4 a frame in proportion
   (`set_spinner()`; the game reads the 4-bit count's change, so faster
@@ -583,6 +645,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   stays on UART0 and the log is copied to USB (dropped when nobody reads).
   8 MB octal PSRAM (`sdkconfig.defaults.esp32s3`): ROM regions go there
   first, machines (< 128 KB) internal RAM. BLE controllers only on the S3.
+  Tom owns the 4.0" (FNK0104S, tested since v0.14); he has no 2.8"
+  (FNK0104B), so `fnk28_ili9341_cap` stays `custom_board_tested = no`.
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
   game draws lies in lines 16-240, and 256 scaled down to 240 would drop

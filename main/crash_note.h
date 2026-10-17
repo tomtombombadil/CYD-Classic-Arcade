@@ -15,7 +15,19 @@ void step(const char* game, const char* what);
 void clear();
 
 // At start-up: true (and a line for the screen in `out`) when the last
-// reset was a crash, a watchdog or a brownout. Clears the note.
+// reset was a crash, a watchdog or a brownout. Clears the note. Also writes
+// the crash's details to the log (Settings > Log): what it was (the
+// exception, or abort()'s / an assert's text), the task, the address and a
+// backtrace (decode with the build's firmware.elf).
 bool last(char* out, size_t cap);
+
+// At start-up, right after the log's first line: reads the last reset
+// (last()) once; start_message() then gives its line, or null.
+void at_start();
+const char* start_message();
+
+// The panic handler's hook (main/CMakeLists.txt links ESP-IDF's
+// esp_panic_handler through it): keeps the crash in RTC memory.
+void on_panic(const void* panic_info);
 
 }  // namespace crash_note

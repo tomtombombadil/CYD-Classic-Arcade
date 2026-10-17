@@ -3,6 +3,8 @@
 // Written in C because Bluepad32's headers are C.
 #include "pad.h"
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <btstack_port_esp32.h>
@@ -19,6 +21,18 @@
 #endif
 
 static pad_state_t s_pads[PAD_MAX];
+static volatile bool s_ready = false;
+
+void devlog_c(const char* text);    // main/devlog.h (C++)
+
+static void logf_(const char* fmt, ...) {
+    char text[100];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(text, sizeof text, fmt, ap);
+    va_end(ap);
+    devlog_c(text);
+}
 static volatile bool s_swap_ab = false;
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -64,7 +78,7 @@ static void keys_put(bd_addr_t addr, link_key_t key, link_key_type_t type) {
 
 static void keys_delete(bd_addr_t addr) {
     if (!s_forgetting) {
-        logi("pad: kept the pairing of %s\n", bd_addr_to_str(addr));
+        logf_("BT: kept the pairing of %s (a connection attempt failed)", bd_addr_to_str(addr));
         return;
     }
     s_keys->delete_link_key(addr);
@@ -81,7 +95,7 @@ static void on_hci_event(uint8_t type, uint16_t channel, uint8_t* packet, uint16
     hci_connection_t* c = hci_connection_for_handle(hci_event_authentication_complete_get_connection_handle(packet));
     if (!c) return;
     // The controller refused our key: it was paired with something else
-    logi("pad: %s refused its key, forgetting it\n", bd_addr_to_str(c->address));
+    logf_("BT: %s refused its key (paired elsewhere since): forgotten", bd_addr_to_str(c->address));
     s_keys->delete_link_key(c->address);
     count_keys();
 }
@@ -99,6 +113,7 @@ static void keep_pairings(void) {
 
 static void forget_now(void* ctx) {
     (void)ctx;
+    logf_("BT: Forget Controllers");
     s_forgetting = true;
     uni_bt_del_keys_unsafe();
     s_forgetting = false;
@@ -125,7 +140,11 @@ static void on_init_complete(void) {
     uni_bt_list_keys_unsafe();
 #if defined(ENABLE_CLASSIC)
     count_keys();
+    logf_("BT: started, %d controller(s) paired", s_paired);
+#else
+    logf_("BT: started (BLE)");
 #endif
+    s_ready = true;
 }
 
 static uni_error_t on_discovered(bd_addr_t addr, const char* name, uint16_t cod, uint8_t rssi) {
@@ -141,12 +160,12 @@ static uni_error_t on_discovered(bd_addr_t addr, const char* name, uint16_t cod,
 }
 
 static void on_connected(uni_hid_device_t* d) {
-    logi("pad: connected %s\n", d->name);
+    logf_("BT: connected %s (%s)", d->name, bd_addr_to_str(d->conn.btaddr));
 }
 
 static void on_disconnected(uni_hid_device_t* d) {
     int i = slot_of(d);
-    logi("pad: disconnected %d\n", i);
+    logf_("BT: controller %d disconnected", i + 1);
     if (i < 0) return;
     taskENTER_CRITICAL(&s_lock);
     memset(&s_pads[i], 0, sizeof(s_pads[i]));
@@ -165,7 +184,7 @@ static uni_error_t on_ready(uni_hid_device_t* d) {
     taskEXIT_CRITICAL(&s_lock);
     // Player LED on controllers that have one
     if (d->report_parser.set_player_leds) d->report_parser.set_player_leds(d, 1 << i);
-    logi("pad: ready %d %s\n", i, model);
+    logf_("BT: controller %d ready: %s", i + 1, model);
     return UNI_ERROR_SUCCESS;
 }
 
@@ -236,6 +255,10 @@ void pad_bt_run(void) {
     uni_platform_set_custom(&s_platform);
     uni_init(0, NULL);
     btstack_run_loop_execute();  // never returns
+}
+
+bool pad_bt_ready(void) {
+    return s_ready;
 }
 
 void pad_set_swap_ab(bool swap) {

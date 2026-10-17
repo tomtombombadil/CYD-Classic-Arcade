@@ -5,8 +5,10 @@
 #pragma once
 
 #include "rom/romset.h"
+#include "util/alloc.h"
 
 #include <cstdint>
+#include <new>
 
 namespace samples { struct Wav; }
 
@@ -34,6 +36,10 @@ struct Analog {
 class Machine {
 public:
     virtual ~Machine() = default;
+    // Machines live in emu::alloc's memory (the firmware's game area)
+    static void* operator new(size_t n) noexcept { return emu::alloc(n); }
+    static void* operator new(size_t n, const std::nothrow_t&) noexcept { return emu::alloc(n); }
+    static void  operator delete(void* p) noexcept { emu::free(p); }
     // `swap_rgb565_bytes`: pixels byte-swapped, as SPI LCDs take them.
     virtual void init(const uint8_t* const* regions, uint32_t audio_rate, bool swap_rgb565_bytes) = 0;
     virtual void set_dips(uint8_t dips) = 0;

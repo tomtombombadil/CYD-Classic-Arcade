@@ -49,6 +49,8 @@
 // own slack.
 #include "qix.h"
 
+#include "../util/alloc.h"
+
 #include <climits>
 #include <cstring>
 #include <new>
@@ -105,16 +107,16 @@ const romset::Set kRomSet = {
 
 Machine::Machine()
 {
-    vram_[0] = new (std::nothrow) uint8_t[0x8000];
-    vram_[1] = new (std::nothrow) uint8_t[0x8000];
+    vram_[0] = static_cast<uint8_t*>(emu::alloc(0x8000));
+    vram_[1] = static_cast<uint8_t*>(emu::alloc(0x8000));
     for (uint8_t* half : vram_)
         if (half) std::memset(half, 0, 0x8000);
 }
 
 Machine::~Machine()
 {
-    delete[] vram_[0];
-    delete[] vram_[1];
+    emu::free(vram_[0]);
+    emu::free(vram_[1]);
 }
 
 void Machine::init(const uint8_t* const* regions, uint32_t audio_rate, bool swap_rgb565_bytes)

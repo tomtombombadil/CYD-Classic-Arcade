@@ -483,37 +483,90 @@ Target hit_list(Gfx& g, const ListPage& p, int x, int y)
     return t;
 }
 
-void draw_text(Gfx& g, const TextPage& p, const Footer& f)
+namespace {
+
+// Where a text page's lines go, and how tall a line is
+struct TextBox {
+    int x, w, y0, y_end;
+};
+
+TextBox text_box(const Metrics& m, bool paged)
+{
+    TextBox b;
+    b.x = m.margin + 6;
+    b.w = m.w - 2 * b.x;
+    b.y0 = m.list_y + (m.big ? 10 : 6);
+    b.y_end = paged ? m.list_y + m.list_h : m.h - m.pads_h - m.news_h;
+    return b;
+}
+
+// One line (draw = false only measures); returns its height
+int text_line(Gfx& g, const Metrics& m, const TextPage& p, const char* s, const TextBox& b, int y, bool draw)
+{
+    const lgfx::IFont* body = p.small ? m.sub : m.text;
+    if (!s[0]) {
+        g.setFont(body);
+        return g.fontHeight() / 2;
+    }
+    if (s[0] == '#') {
+        g.setFont(m.body);
+        return wrap(g, s + 1, b.x, y, b.w, kGold, draw, b.y_end) + 2;
+    }
+    g.setFont(body);
+    return wrap(g, s, b.x, y, b.w, kText, draw, b.y_end);
+}
+
+}  // namespace
+
+int text_pages(Gfx& g, const TextPage& p, int* starts, int cap)
+{
+    const Metrics m = metrics(g);
+    const TextBox b = text_box(m, true);
+    int n = 0;
+    if (cap > 0) starts[n++] = 0;
+    int y = b.y0;
+    for (int i = 0; i < p.count; i++) {
+        TextBox big = b;
+        big.y_end = 1 << 30;    // measure whole
+        const int h = text_line(g, m, p, p.lines[i], big, 0, false);
+        if (y + h > b.y_end && y > b.y0) {
+            if (n >= cap) break;
+            starts[n++] = i;
+            y = b.y0;
+        }
+        y += h;
+    }
+    return n < 1 ? 1 : n;
+}
+
+void draw_text(Gfx& g, const TextPage& p, const Footer& f, const int* starts, int pages)
 {
     const Metrics m = metrics(g);
     g.fillRect(0, m.header_h, m.w, m.h - m.header_h, kBg);
     header(g, m, p.title, true, false);
-    const int x = m.margin + 6, w = m.w - 2 * x;
-    const int y_end = m.h - m.pads_h - m.news_h;
-    int y = m.list_y + (m.big ? 10 : 6);
-    for (int i = 0; i < p.count && y < y_end; i++) {
-        const char* s = p.lines[i];
-        if (!s[0]) {
-            g.setFont(m.text);
-            y += g.fontHeight() / 2;
-        } else if (s[0] == '#') {
-            g.setFont(m.body);
-            y += wrap(g, s + 1, x, y, w, kGold, true, y_end) + 2;
-        } else {
-            g.setFont(m.text);
-            y += wrap(g, s, x, y, w, kText, true, y_end);
-        }
-    }
+    const TextBox b = text_box(m, p.paged);
+    const int first = p.paged && starts ? starts[p.page] : 0;
+    const int last = p.paged && starts && p.page + 1 < pages ? starts[p.page + 1] : p.count;
+    int y = b.y0;
+    for (int i = first; i < last && y < b.y_end; i++) y += text_line(g, m, p, p.lines[i], b, y, true);
+    if (p.paged) pager(g, m, p.page, pages);
     draw_footer(g, f);
 }
 
 void draw_header(Gfx& g, const char* title, bool back, bool gear) { header(g, metrics(g), title, back, gear); }
 
-Target hit_text(Gfx& g, int x, int y)
+Target hit_text(Gfx& g, int x, int y, bool paged)
 {
     const Metrics m = metrics(g);
     Target t;
     if (back_rect(m).contains(x, y)) t.hit = Hit::Back;
+    if (paged && t.hit == Hit::None)
+        for (int k = 0; k < 2; k++) {
+            Rect r = pager_key(m, k == 1);
+            r.y -= m.gap;
+            r.h += 2 * m.gap;
+            if (r.contains(x, y)) t.hit = k ? Hit::Next : Hit::Prev;
+        }
     return t;
 }
 

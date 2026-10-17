@@ -14,6 +14,9 @@ struct Values {
                                 // at the top on most boards (Tom: the board
                                 // stands up, cable out the top); which end is
                                 // up differs between boards (2.8" ILI9341)
+    bool    demo_sounds = false;  // Attract Mode Sounds (Tom, 2026-10-17: leave a
+                                  // game in its demo and hear the classic sounds) -
+                                  // the cabinet's demo sounds switch where it has one
 };
 
 void load();

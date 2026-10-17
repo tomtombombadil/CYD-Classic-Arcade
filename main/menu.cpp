@@ -8,9 +8,11 @@
 // or the page, L / R change the page.
 #include "menu.h"
 
+#include "arena.h"
 #include "audio_out.h"
 #include "catalog.h"
 #include "crash_note.h"
+#include "devlog.h"
 #include "flash_store.h"
 #include "game_runner.h"
 #include "input.h"
@@ -62,6 +64,9 @@ struct Menu {
     Page text_back = Page::Home;
     const char* text_lines[24] = {};
     char text_buf[16][96] = {};
+    // Paged text pages (the Log): where each page starts
+    int text_starts[48] = {};
+    int text_pages = 1;
 
     ui::Footer footer;
     char news[72] = "";
@@ -79,6 +84,7 @@ struct Menu {
         const settings::Values& v = settings::get();
         s.volume = v.volume;
         s.swap_ab = v.swap_ab;
+        s.demo_sounds = v.demo_sounds;
         s.rotate180 = v.rotate180;
         s.sound_pwm = v.sound_pwm;
         s.has_sound_choice = audio::has_output_choice();
@@ -138,7 +144,7 @@ struct Menu {
     void draw()
     {
         footer.news = shown_news();
-        if (page == Page::Text) ui::draw_text(g(), text, footer);
+        if (page == Page::Text) ui::draw_text(g(), text, footer, text_starts, text_pages);
         else ui::draw_list(g(), *list(), footer);
     }
 
@@ -149,14 +155,51 @@ struct Menu {
         draw();
     }
 
-    void open_text(const char* title, const char* const* lines, int count, Page back)
+    void open_text(const char* title, const char* const* lines, int count, Page back, bool paged = false)
     {
         text.title = title;
         text.lines = lines;
         text.count = count;
+        text.paged = paged;
+        text.small = paged;
+        text.page = 0;
+        text_pages = paged ? ui::text_pages(g(), text, text_starts, int(sizeof text_starts / sizeof text_starts[0])) : 1;
         text_back = back;
         page = Page::Text;
         draw();
+    }
+
+    void turn_text_page(int dir)
+    {
+        const int p = text.page + dir;
+        if (!text.paged || p < 0 || p >= text_pages) return;
+        text.page = p;
+        draw();
+    }
+
+    // Settings > Log: the board's log, newest first. Its lines are copied
+    // into the game area while the page is open (no game runs then; the
+    // next game empties it), so the menu keeps no buffer for them.
+    void open_log()
+    {
+        arena::reset();
+        constexpr size_t kLine = 112;
+        const int want = devlog::count();
+        int n = 0;
+        const char** lines = static_cast<const char**>(arena::alloc(sizeof(char*) * size_t(want > 0 ? want : 1)));
+        char* buf = static_cast<char*>(arena::alloc(kLine * size_t(want > 0 ? want : 1)));
+        if (lines && buf)
+            for (int i = 0; i < want; ++i)
+                if (devlog::line(i, buf + kLine * size_t(n), kLine)) {
+                    lines[n] = buf + kLine * size_t(n);
+                    ++n;
+                }
+        if (!lines || !buf || n == 0) {
+            static const char* const kEmpty[] = {"The log is empty."};
+            open_text("Log", kEmpty, 1, Page::Settings);
+            return;
+        }
+        open_text("Log", lines, n, Page::Settings, true);
     }
 
     void open_about()
@@ -168,6 +211,8 @@ struct Menu {
         a.ram_free_kb = unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024);
         a.ram_block_kb = unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024);
         a.psram_kb = unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024);
+        a.area_kb = arena::size() / 1024;
+        a.area_peak_kb = arena::peak() / 1024;
         {
             flash_store::Lock lock;
             a.rom_free_kb = unsigned(flash_store::store().free_bytes() / 1024);
@@ -289,6 +334,9 @@ struct Menu {
             v.swap_ab = !v.swap_ab;
             pad_set_swap_ab(v.swap_ab);
             break;
+        case menu_model::kDemoSounds:
+            v.demo_sounds = !v.demo_sounds;
+            break;
         case menu_model::kRotate:
             v.rotate180 = !v.rotate180;
             settings::save();
@@ -319,6 +367,7 @@ struct Menu {
         case menu_model::kVolume:
             return;   // the - + keys
         case menu_model::kSwap:
+        case menu_model::kDemoSounds:
         case menu_model::kRotate:
         case menu_model::kSound:
             change_setting(i, 0);
@@ -342,6 +391,9 @@ struct Menu {
             return;
         case menu_model::kSpeed:
             open_speed();
+            return;
+        case menu_model::kLog:
+            open_log();
             return;
         case menu_model::kAbout:
             open_about();
@@ -369,7 +421,7 @@ struct Menu {
     {
         ui::ListPage* l = list();
         if (e.kind == touch::Event::Down) {
-            down = l ? ui::hit_list(g(), *l, e.x, e.y) : ui::hit_text(g(), e.x, e.y);
+            down = l ? ui::hit_list(g(), *l, e.x, e.y) : ui::hit_text(g(), e.x, e.y, text.paged);
             if (l && down.hit == ui::Hit::Row) {
                 l->pressed = down.index;
                 ui::draw_row(g(), *l, down.index);
@@ -394,8 +446,8 @@ struct Menu {
         switch (t.hit) {
         case ui::Hit::Back: back(); break;
         case ui::Hit::Gear: open(Page::Settings); break;
-        case ui::Hit::Prev: if (l) turn_page(*l, -1); break;
-        case ui::Hit::Next: if (l) turn_page(*l, +1); break;
+        case ui::Hit::Prev: if (l) turn_page(*l, -1); else turn_text_page(-1); break;
+        case ui::Hit::Next: if (l) turn_page(*l, +1); else turn_text_page(+1); break;
         case ui::Hit::Minus: change_setting(t.index, -1); break;
         case ui::Hit::Plus: change_setting(t.index, +1); break;
         case ui::Hit::Row: choose(t.index); break;
@@ -409,7 +461,15 @@ struct Menu {
     {
         if (!p) return;
         if (page == Page::Text) {
-            if (p & (PAD_A | PAD_B | PAD_START)) back();
+            if (p & (PAD_LEFT | PAD_L | PAD_UP)) turn_text_page(-1);
+            else if (p & (PAD_RIGHT | PAD_R | PAD_DOWN)) turn_text_page(+1);
+            else if (p & (PAD_A | PAD_B | PAD_START)) back();
+            return;
+        }
+        // Select: Settings from the game list, and back (Tom, 2026-10-17:
+        // there was no way to Settings with a controller)
+        if (p & PAD_SELECT) {
+            open(page == Page::Home ? Page::Settings : Page::Home);
             return;
         }
         ui::ListPage& l = *list();
@@ -463,17 +523,15 @@ void run(AudioRing& ring)
     m.read_pads(true);
     // The last start ended in a crash or a watchdog reset: say what was
     // going on (crash_note), so a report can name it
-    char crash[160];
-    if (crash_note::last(crash, sizeof crash)) {
+    // It stays until a tap or a button (Tom: it went by too fast to copy);
+    // the details are in Settings > Log
+    if (const char* crash = crash_note::start_message()) {
+        char body[220];
+        std::snprintf(body, sizeof body, "%s Details: Settings > Log.", crash);
         m.g().fillScreen(ui::kBg);
-        ui::message(m.g(), "The board restarted", crash, ui::kRed);
-        const uint32_t t0 = now_ms();
-        while (now_ms() - t0 < 8000 && touch::poll().kind != touch::Event::Up) {
-            m.in.update(now_ms());
-            if (m.in.pressed()) break;
-            vTaskDelay(pdMS_TO_TICKS(16));
-        }
-        std::snprintf(m.news, sizeof m.news, "Last start: %s", crash);
+        ui::message(m.g(), "The board restarted", body, ui::kRed);
+        touch::wait_tap_or_button();
+        std::snprintf(m.news, sizeof m.news, "%s", "The board restarted: see Settings > Log");
         m.in.wait_for_release();
     }
     m.draw();

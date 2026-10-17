@@ -2,6 +2,7 @@
 #include "touch.h"
 
 #include "board_select.h"
+#include "pad.h"
 #include "screen.h"
 #include "ui.h"
 
@@ -151,6 +152,27 @@ bool held_long()
     const Event e = poll();
     (void)e;
     return s_down && now_ms() - s_since >= 1000;
+}
+
+void wait_tap_or_button()
+{
+    auto buttons = []() {
+        uint32_t b = 0;
+        for (int i = 0; i < PAD_MAX; ++i) {
+            pad_state_t p;
+            pad_get(i, &p);
+            if (p.connected) b |= p.buttons;
+        }
+        return b;
+    };
+    wait_release();
+    while (buttons()) vTaskDelay(pdMS_TO_TICKS(20));
+    for (;;) {
+        if (poll().kind == Event::Up || buttons()) break;
+        vTaskDelay(pdMS_TO_TICKS(16));
+    }
+    while (buttons()) vTaskDelay(pdMS_TO_TICKS(20));
+    wait_release();
 }
 
 void wait_release()

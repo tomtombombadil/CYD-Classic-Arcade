@@ -5,6 +5,7 @@
 
 #include <esp_heap_caps.h>
 #include <esp_log.h>
+#include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <nvs_flash.h>
@@ -13,6 +14,9 @@
 #include "audio_ring.h"
 #include "board_select.h"
 #include "catalog.h"
+#include "crash_note.h"
+#include "devlog.h"
+#include "game_runner.h"
 #include "flash_store.h"
 #include "menu.h"
 #include "pad.h"
@@ -72,9 +76,13 @@ void ui_task(void*)
     }
     audio::start(audio_fill, nullptr, settings::get().sound_pwm);
     audio::set_volume(settings::get().volume);
-    ESP_LOGI(kTag, "ready: %u KB free, largest block %u KB",
-             unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
-             unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
+    // The game area is set aside once Bluetooth has started (its own RAM
+    // taken first), so every game starts from the same memory
+    for (int i = 0; i < 100 && !pad_bt_ready(); ++i) vTaskDelay(pdMS_TO_TICKS(50));
+    devlog::add("Ready%s: RAM %u KB free, block %u KB", pad_bt_ready() ? "" : " (Bluetooth not started yet)",
+                unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
+                unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+    game_runner::init();
     menu::run(s_ring);
 }
 
@@ -82,6 +90,15 @@ void ui_task(void*)
 
 extern "C" void app_main(void)
 {
+    devlog::init();
+    {
+        const esp_reset_reason_t r = esp_reset_reason();
+        const char* why = r == ESP_RST_POWERON ? "power on" : r == ESP_RST_SW ? "restart" : r == ESP_RST_PANIC ? "crash"
+                          : r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT ? "watchdog"
+                          : r == ESP_RST_BROWNOUT ? "brownout" : "other";
+        devlog::add("Start %s (%s) on %s; reset: %s", CYD_ARCADE_VERSION, CYD_ARCADE_BUILD, BOARD_NAME, why);
+        crash_note::at_start();   // a crash's details into the log
+    }
     // BTstack keeps controller pairings in NVS; our settings live there too
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {

@@ -33,4 +33,9 @@ bool held_long();
 // Wait until nothing touches the screen.
 void wait_release();
 
+// A message on screen stays until it's dismissed (Tom, v0.14.6: a crash
+// report gone in 8 s can't be copied): waits for a tap or a controller
+// button, after both are let go (a press already held doesn't count).
+void wait_tap_or_button();
+
 }  // namespace touch

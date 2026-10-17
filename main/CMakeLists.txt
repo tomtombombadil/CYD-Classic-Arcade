@@ -12,3 +12,7 @@ idf_component_register(
     SRCS ${MAIN_SRCS}
     INCLUDE_DIRS "." "boards"
     REQUIRES ${MAIN_REQUIRES})
+
+# The panic handler goes through crash_note.cpp first, which keeps what the
+# crash was in RTC memory for the log (Settings > Log)
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_panic_handler")

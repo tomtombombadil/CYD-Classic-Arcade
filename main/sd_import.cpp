@@ -2,6 +2,7 @@
 #include "sd_import.h"
 
 #include "board_select.h"
+#include "devlog.h"
 #include "flash_store.h"
 
 #include "emu/games.h"
@@ -206,16 +207,19 @@ int run(Status status)
                 if (status) status(line);
                 if (copy(f, name, long(stt.st_size))) {
                     ++copied;
-                    ESP_LOGI(kTag, "copied %s", name);
+                    devlog::add("SD: copied %s (%ld KB)", name, long(stt.st_size) / 1024);
                 } else {
-                    ESP_LOGE(kTag, "couldn't copy %s (no room?)", name);
+                    devlog::add("SD: couldn't copy %s (%ld KB): store full? %u KB free", name,
+                                long(stt.st_size) / 1024, unsigned(flash_store::store().free_bytes() / 1024));
                 }
+            } else {
+                devlog::add("SD: %s holds no ROM of a game here: skipped", name);
             }
             std::fclose(f);
         }
         closedir(d);
     } else {
-        ESP_LOGI(kTag, "no %s folder on the card", kFolder + 8);
+        devlog::add("SD: no %s folder on the card", kFolder + 8);
     }
     unmount(card);
     return copied;

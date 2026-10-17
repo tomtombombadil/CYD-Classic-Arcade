@@ -123,9 +123,17 @@ struct TextPage {
     const char* title = "";
     const char* const* lines = nullptr;
     int count = 0;
+    // Longer pages (the Log): < > keys at the bottom, `page` of the pages
+    // text_pages() found; small = the second-line font (more per page)
+    bool paged = false;
+    bool small = false;
+    int page = 0;
 };
-void draw_text(Gfx& g, const TextPage& p, const Footer& f);
-Target hit_text(Gfx& g, int x, int y);   // Back only
+// A paged page's pages: writes where each starts (line index) into
+// `starts`, returns how many (at least 1).
+int  text_pages(Gfx& g, const TextPage& p, int* starts, int cap);
+void draw_text(Gfx& g, const TextPage& p, const Footer& f, const int* starts = nullptr, int pages = 1);
+Target hit_text(Gfx& g, int x, int y, bool paged = false);   // Back (and Prev / Next when paged)
 
 // Just the header bar (pages drawn elsewhere, e.g. the Controller Test);
 // hit_text() finds its back key.

@@ -18,6 +18,7 @@ int build_home(ui::Item* out, int* what, const bool* available);
 // Settings rows
 enum Setting : int {
     kVolume,
+    kDemoSounds,    // attract mode sounds (the cabinets' demo sounds switch)
     kSwap,
     kRotate,
     kSound,         // DAC / PWM, only where the board has the choice
@@ -26,12 +27,14 @@ enum Setting : int {
     kCalibrate,     // resistive touch only
     kRoms,
     kSpeed,
+    kLog,
     kAbout,
 };
 
 struct SettingsState {
     int  volume = 50;
     bool swap_ab = false;
+    bool demo_sounds = false;
     bool rotate180 = false;
     bool sound_pwm = false;
     bool has_sound_choice = true;
@@ -53,6 +56,7 @@ struct AboutInfo {
     const char* version = "";
     const char* board = "";
     unsigned ram_free_kb = 0, ram_block_kb = 0, psram_kb = 0;
+    unsigned area_kb = 0, area_peak_kb = 0;     // the game area, and the most a game used
     unsigned rom_free_kb = 0;
     int games_ready = 0, games_total = 0;
     int paired = -1;    // controllers paired (-1 = not known: BLE-only chips)

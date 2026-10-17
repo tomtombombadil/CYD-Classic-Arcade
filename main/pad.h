@@ -50,6 +50,9 @@ typedef struct {
 // pad_forget_all().
 void pad_bt_run(void);
 
+// Bluetooth has started (BTstack's init is done); the game area waits for it.
+bool pad_bt_ready(void);
+
 // A copy of controller `idx` (0 .. PAD_MAX-1); safe from any task.
 void pad_get(int idx, pad_state_t* out);
 

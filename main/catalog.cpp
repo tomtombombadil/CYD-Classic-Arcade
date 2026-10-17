@@ -1,6 +1,8 @@
 // Game catalogue over the ROM store (see catalog.h).
 #include "catalog.h"
 
+#include "arena.h"
+#include "devlog.h"
 #include "flash_store.h"
 
 #include <cstdio>
@@ -40,10 +42,21 @@ void refresh()
     static romset::Source src[kMaxSources];
     flash_store::Lock lock;
     const int n = sources(src);
+    char none[160] = "";
+    size_t used = 0;
+    int ready = 0;
     for (int g = 0; g < games::kGameCount && g < games::kMaxGames; ++g) {
         s_available[g] = romset::available(*games::kGames[g].set, src, n);
         ESP_LOGI(kTag, "%-10s %s", games::kGames[g].id, s_available[g] ? "ready" : "no ROMs");
+        if (s_available[g]) {
+            ++ready;
+        } else if (used < sizeof none) {
+            const int k = std::snprintf(none + used, sizeof none - used, " %s", games::kGames[g].id);
+            if (k > 0) used += size_t(k);
+        }
     }
+    devlog::add("Games ready %d of %d; %d zips stored, %u KB free%s%s", ready, games::kGameCount, n,
+                unsigned(flash_store::store().free_bytes() / 1024), used ? "; no ROMs:" : "", none);
 }
 
 bool available(int game) { return game >= 0 && game < games::kMaxGames && s_available[game]; }
@@ -142,7 +155,7 @@ bool zero_gaps(const romset::Set& set, const romset::Status* status, int region,
 
 }  // namespace
 
-bool load(const games::Info& game, Loaded& out, uint32_t keep_free)
+bool load(const games::Info& game, Loaded& out)
 {
     const romset::Set& set = *game.set;
     out = Loaded{};
@@ -155,13 +168,16 @@ bool load(const games::Info& game, Loaded& out, uint32_t keep_free)
     out.count = set.region_count;
     for (int r = 0; r < set.region_count; ++r) out.sizes[r] = set.regions[r].size;
 
-    // Where each region goes: PSRAM if the board has it; internal RAM while
-    // `keep_free` stays free (biggest regions to flash first); else flash.
+    // Where each region goes: PSRAM if the board has it; what's left of the
+    // game area (biggest regions to flash first, so the most fit); else
+    // flash, read in place.
     bool flash[romset::kMaxRegions] = {};
-    for (int r = 0; r < set.region_count; ++r)
+    for (int r = 0; r < set.region_count; ++r) {
         out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(out.sizes[r], MALLOC_CAP_SPIRAM));
-    const uint32_t free_now = uint32_t(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-    const uint32_t budget = free_now > keep_free ? free_now - keep_free : 0;
+        out.in_psram[r] = out.regions[r] != nullptr;
+    }
+    // Each block in the area costs a few bytes of its own
+    const uint32_t budget = arena::room() > 64u * romset::kMaxRegions ? arena::room() - 64u * romset::kMaxRegions : 0;
     for (;;) {
         uint32_t want = 0;
         int biggest = -1;
@@ -175,8 +191,9 @@ bool load(const games::Info& game, Loaded& out, uint32_t keep_free)
     }
     for (int r = 0; r < set.region_count; ++r) {
         if (out.regions[r] || flash[r]) continue;
-        out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(out.sizes[r], MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-        if (!out.regions[r]) flash[r] = true;   // fragmented: flash after all
+        out.regions[r] = static_cast<uint8_t*>(arena::alloc(out.sizes[r]));
+        if (out.regions[r]) out.ram_used += out.sizes[r];
+        else flash[r] = true;
     }
 
     // The flash regions' places, after the header sector
@@ -209,7 +226,11 @@ bool load(const games::Info& game, Loaded& out, uint32_t keep_free)
 
     static romset::Source src[kMaxSources];
     romset::Status* status = static_cast<romset::Status*>(std::calloc(size_t(set.rom_count), sizeof(romset::Status)));
-    uint8_t* scratch = biggest_rom ? static_cast<uint8_t*>(heap_caps_malloc(biggest_rom, MALLOC_CAP_8BIT)) : nullptr;
+    // The unpacking buffer: from the game area if there's room (given back
+    // right after), else for a moment from the rest of RAM
+    uint8_t* scratch = biggest_rom ? static_cast<uint8_t*>(arena::alloc(biggest_rom)) : nullptr;
+    const bool scratch_in_area = scratch != nullptr;
+    if (biggest_rom && !scratch) scratch = static_cast<uint8_t*>(heap_caps_malloc(biggest_rom, MALLOC_CAP_8BIT));
     bool ok = status && (scratch || !biggest_rom);
     if (ok) {
         flash_store::Lock lock;
@@ -240,7 +261,8 @@ bool load(const games::Info& game, Loaded& out, uint32_t keep_free)
             ok = romset::load(set, src, n, bufs, status);
         }
     }
-    heap_caps_free(scratch);
+    if (scratch_in_area) arena::free(scratch);
+    else heap_caps_free(scratch);
     if (!ok) {
         char msg[512];
         if (status) romset::report(set, status, msg, sizeof msg);
@@ -263,8 +285,9 @@ bool load(const games::Info& game, Loaded& out, uint32_t keep_free)
 
 void unload(Loaded& l)
 {
+    // Regions in the game area go with it (arena::reset); PSRAM ones here
     for (int r = 0; r < l.count; ++r)
-        if (!l.in_flash[r]) heap_caps_free(l.regions[r]);
+        if (l.in_psram[r]) heap_caps_free(l.regions[r]);
     l = Loaded{};
 }
 
