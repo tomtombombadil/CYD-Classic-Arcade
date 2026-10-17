@@ -67,41 +67,180 @@ void list_ids(char* out, size_t cap)
     }
 }
 
-bool load(const games::Info& game, Loaded& out)
+namespace {
+
+// The scratch flash: a header sector saying which game's ROMs are there and
+// where, then the regions. A game started again finds its ROMs already in
+// place (checked byte for byte) and writes nothing.
+constexpr uint32_t kMagic = 0x31435343;     // "CSC1"
+constexpr uint32_t kData = rom_store::kSector;
+
+struct Header {
+    uint32_t magic;
+    char     game[16];
+    int32_t  variant;
+    uint32_t count;
+    uint8_t  region[romset::kMaxRegions];
+    uint32_t offset[romset::kMaxRegions];
+    uint32_t size[romset::kMaxRegions];
+    uint32_t complete;
+};
+
+struct FlashSink {
+    uint32_t base[romset::kMaxRegions] = {};
+    bool verify = false;        // compare with what's there instead of writing
+    bool mismatch = false;
+};
+
+bool flash_put(void* ctx, int region, uint32_t off, const uint8_t* data, uint32_t len)
+{
+    FlashSink& f = *static_cast<FlashSink*>(ctx);
+    const uint32_t at = f.base[region] + off;
+    if (f.verify) {
+        if (std::memcmp(flash_store::scratch_map(at), data, len) != 0) f.mismatch = true;
+        return true;
+    }
+    return flash_store::scratch_write(at, data, len);
+}
+
+// Zeros where no loaded ROM lands in a flash region (it was erased to FF;
+// RAM regions are cleared the same way by romset::load).
+bool zero_gaps(const romset::Set& set, const romset::Status* status, int region, uint32_t base, uint8_t* buf,
+               uint32_t buf_size)
+{
+    struct Span { uint32_t from, to; };
+    Span spans[64];
+    int n = 0;
+    for (int i = 0; i < set.rom_count && n < 64; ++i) {
+        const romset::Rom& r = set.roms[i];
+        if (r.region != region || status[i] != romset::Status::Ok) continue;
+        Span sp{r.offset, r.offset + r.size};
+        int j = n++;
+        while (j > 0 && spans[j - 1].from > sp.from) {
+            spans[j] = spans[j - 1];
+            --j;
+        }
+        spans[j] = sp;
+    }
+    std::memset(buf, 0, buf_size);
+    uint32_t pos = 0;
+    const uint32_t end = set.regions[region].size;
+    auto fill = [&](uint32_t from, uint32_t to) {
+        while (from < to) {
+            const uint32_t k = to - from < buf_size ? to - from : buf_size;
+            if (!flash_store::scratch_write(base + from, buf, k)) return false;
+            from += k;
+        }
+        return true;
+    };
+    for (int i = 0; i < n; ++i) {
+        if (spans[i].from > pos && !fill(pos, spans[i].from)) return false;
+        if (spans[i].to > pos) pos = spans[i].to;
+    }
+    return pos >= end || fill(pos, end);
+}
+
+}  // namespace
+
+bool load(const games::Info& game, Loaded& out, uint32_t keep_free)
 {
     const romset::Set& set = *game.set;
     out = Loaded{};
+    s_error[0] = 0;
     if (set.region_count > romset::kMaxRegions) {
         ESP_LOGE(kTag, "%s: %d ROM regions, the loader holds %d", game.id, set.region_count, romset::kMaxRegions);
+        std::snprintf(s_error, sizeof s_error, "Too many ROM regions");
         return false;
     }
-    s_error[0] = 0;
-    for (int r = 0; r < set.region_count; ++r) {
-        // PSRAM first where the board has it (ESP32-S3 boards): internal
-        // RAM stays for the machine and the screen strips
-        out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(set.regions[r].size, MALLOC_CAP_SPIRAM));
-        if (!out.regions[r])
-            out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(set.regions[r].size, MALLOC_CAP_8BIT));
-        if (!out.regions[r]) {
-            const unsigned largest = unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-            ESP_LOGE(kTag, "%s: no memory for region %s (%u bytes, largest block %u)", game.id,
-                     set.regions[r].name, unsigned(set.regions[r].size), largest);
-            std::snprintf(s_error, sizeof s_error, "No RAM for %u KB of ROM (%u KB free)",
-                          unsigned(set.regions[r].size / 1024), largest / 1024);
-            unload(out);
-            return false;
+    out.count = set.region_count;
+    for (int r = 0; r < set.region_count; ++r) out.sizes[r] = set.regions[r].size;
+
+    // Where each region goes: PSRAM if the board has it; internal RAM while
+    // `keep_free` stays free (biggest regions to flash first); else flash.
+    bool flash[romset::kMaxRegions] = {};
+    for (int r = 0; r < set.region_count; ++r)
+        out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(out.sizes[r], MALLOC_CAP_SPIRAM));
+    const uint32_t free_now = uint32_t(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    const uint32_t budget = free_now > keep_free ? free_now - keep_free : 0;
+    for (;;) {
+        uint32_t want = 0;
+        int biggest = -1;
+        for (int r = 0; r < set.region_count; ++r) {
+            if (out.regions[r] || flash[r]) continue;
+            want += out.sizes[r];
+            if (biggest < 0 || out.sizes[r] > out.sizes[biggest]) biggest = r;
         }
-        out.sizes[r] = set.regions[r].size;
-        out.count = r + 1;
+        if (biggest < 0 || want <= budget) break;
+        flash[biggest] = true;
     }
+    for (int r = 0; r < set.region_count; ++r) {
+        if (out.regions[r] || flash[r]) continue;
+        out.regions[r] = static_cast<uint8_t*>(heap_caps_malloc(out.sizes[r], MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        if (!out.regions[r]) flash[r] = true;   // fragmented: flash after all
+    }
+
+    // The flash regions' places, after the header sector
+    FlashSink sink_ctx;
+    Header want{};
+    want.magic = kMagic;
+    std::snprintf(want.game, sizeof want.game, "%s", game.id);
+    uint32_t pos = kData, biggest_rom = 0;
+    for (int r = 0; r < set.region_count; ++r) {
+        if (!flash[r]) continue;
+        sink_ctx.base[r] = pos;
+        want.region[want.count] = uint8_t(r);
+        want.offset[want.count] = pos;
+        want.size[want.count] = out.sizes[r];
+        want.count++;
+        out.in_flash[r] = true;
+        out.flash_used += out.sizes[r];
+        pos += (out.sizes[r] + rom_store::kSector - 1) / rom_store::kSector * rom_store::kSector;
+    }
+    for (int i = 0; i < set.rom_count; ++i)
+        if (flash[set.roms[i].region] && set.roms[i].size > biggest_rom) biggest_rom = set.roms[i].size;
+    if (want.count && pos > flash_store::scratch_size()) {
+        ESP_LOGE(kTag, "%s: %u bytes of ROM for flash, %u bytes of room", game.id, unsigned(pos),
+                 unsigned(flash_store::scratch_size()));
+        std::snprintf(s_error, sizeof s_error, flash_store::scratch_size() ? "Not enough flash room for its ROMs"
+                                                                          : "No flash room: reinstall, erasing");
+        unload(out);
+        return false;
+    }
+
     static romset::Source src[kMaxSources];
     romset::Status* status = static_cast<romset::Status*>(std::calloc(size_t(set.rom_count), sizeof(romset::Status)));
-    bool ok = status != nullptr;
+    uint8_t* scratch = biggest_rom ? static_cast<uint8_t*>(heap_caps_malloc(biggest_rom, MALLOC_CAP_8BIT)) : nullptr;
+    bool ok = status && (scratch || !biggest_rom);
     if (ok) {
         flash_store::Lock lock;
         const int n = sources(src);
-        ok = romset::load(set, src, n, out.regions, status);
+        want.variant = romset::pick_variant(set, src, n);
+        for (int r = 0; r < set.region_count; ++r)
+            if (flash[r]) out.regions[r] = const_cast<uint8_t*>(flash_store::scratch_map(sink_ctx.base[r]));
+        uint8_t* bufs[romset::kMaxRegions] = {};
+        for (int r = 0; r < set.region_count; ++r) bufs[r] = flash[r] ? nullptr : out.regions[r];
+        romset::Sink sink{flash_put, &sink_ctx, scratch, biggest_rom};
+        Header have;
+        std::memcpy(&have, flash_store::scratch_map(0), sizeof have);
+        want.complete = 1;
+        const bool same = want.count && std::memcmp(&have, &want, sizeof want) == 0;
+        if (same) {     // the same game's ROMs are there: check them
+            sink_ctx.verify = true;
+            ok = romset::load(set, src, n, bufs, status, &sink);
+        }
+        if (want.count && (!same || sink_ctx.mismatch || !ok)) {
+            ESP_LOGI(kTag, "%s: writing %u KB of ROM to flash", game.id, unsigned(out.flash_used / 1024));
+            sink_ctx.verify = false;
+            ok = flash_store::scratch_erase(0, pos);
+            if (ok) ok = romset::load(set, src, n, bufs, status, &sink);
+            for (int r = 0; ok && r < set.region_count; ++r)
+                if (flash[r]) ok = zero_gaps(set, status, r, sink_ctx.base[r], scratch, biggest_rom);
+            if (ok) ok = flash_store::scratch_write(0, &want, sizeof want);
+        } else if (!want.count) {
+            ok = romset::load(set, src, n, bufs, status);
+        }
     }
+    heap_caps_free(scratch);
     if (!ok) {
         char msg[512];
         if (status) romset::report(set, status, msg, sizeof msg);
@@ -115,6 +254,8 @@ bool load(const games::Info& game, Loaded& out)
             break;
         }
         unload(out);
+    } else if (out.flash_used) {
+        ESP_LOGI(kTag, "%s: %u KB of ROM read from flash", game.id, unsigned(out.flash_used / 1024));
     }
     std::free(status);
     return ok;
@@ -125,26 +266,6 @@ void unload(Loaded& l)
     for (int r = 0; r < l.count; ++r)
         if (!l.in_flash[r]) heap_caps_free(l.regions[r]);
     l = Loaded{};
-}
-
-bool move_to_flash(Loaded& l)
-{
-    int best = -1;
-    for (int r = 0; r < l.count; ++r)
-        if (!l.in_flash[r] && (best < 0 || l.sizes[r] > l.sizes[best])) best = r;
-    if (best < 0) return false;
-    flash_store::Lock lock;
-    const uint8_t* p = flash_store::scratch_put(l.flash_used, l.regions[best], l.sizes[best]);
-    if (!p) {
-        ESP_LOGW(kTag, "no scratch flash for a %u byte region", unsigned(l.sizes[best]));
-        return false;
-    }
-    heap_caps_free(l.regions[best]);
-    l.regions[best] = const_cast<uint8_t*>(p);     // read only from here on
-    l.in_flash[best] = true;
-    l.flash_used += (l.sizes[best] + rom_store::kSector - 1) / rom_store::kSector * rom_store::kSector;
-    ESP_LOGI(kTag, "a %u byte region moved to flash (RAM short)", unsigned(l.sizes[best]));
-    return true;
 }
 
 const char* last_error() { return s_error[0] ? s_error : "Reload them from the web page"; }

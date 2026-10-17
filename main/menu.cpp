@@ -10,6 +10,7 @@
 
 #include "audio_out.h"
 #include "catalog.h"
+#include "crash_note.h"
 #include "flash_store.h"
 #include "game_runner.h"
 #include "input.h"
@@ -172,6 +173,7 @@ struct Menu {
         }
         a.games_ready = catalog::available_count();
         a.games_total = games::kGameCount;
+        a.paired = pad_paired_count();
         const int n = menu_model::build_about(a, buf, text_lines, 16);
         open_text("About", text_lines, n, Page::Settings);
     }
@@ -431,6 +433,21 @@ void run(AudioRing& ring)
     if (!audio::running()) std::snprintf(m.news, sizeof m.news, "No sound: the audio output didn't start");
     m.build_home();
     m.read_pads(true);
+    // The last start ended in a crash or a watchdog reset: say what was
+    // going on (crash_note), so a report can name it
+    char crash[160];
+    if (crash_note::last(crash, sizeof crash)) {
+        m.g().fillScreen(ui::kBg);
+        ui::message(m.g(), "The board restarted", crash, ui::kRed);
+        const uint32_t t0 = now_ms();
+        while (now_ms() - t0 < 8000 && touch::poll().kind != touch::Event::Up) {
+            m.in.update(now_ms());
+            if (m.in.pressed()) break;
+            vTaskDelay(pdMS_TO_TICKS(16));
+        }
+        std::snprintf(m.news, sizeof m.news, "Last start: %s", crash);
+        m.in.wait_for_release();
+    }
     m.draw();
     for (;;) {
         m.read_pads(false);

@@ -80,9 +80,10 @@ int pick_variant(const Set& set, const Source* sources, int source_count)
 }
 
 bool load(const Set& set, const Source* sources, int source_count, uint8_t* const* regions,
-          Status* status)
+          Status* status, const Sink* sink)
 {
-    for (int r = 0; r < set.region_count; ++r) std::memset(regions[r], 0, set.regions[r].size);
+    for (int r = 0; r < set.region_count; ++r)
+        if (regions[r]) std::memset(regions[r], 0, set.regions[r].size);
     // Another variant's ROMs are left out (they would load over this one's).
     const int variant = pick_variant(set, sources, source_count);
     for (int i = 0; i < set.rom_count; ++i)
@@ -100,8 +101,14 @@ bool load(const Set& set, const Source* sources, int source_count, uint8_t* cons
                     if (status[i] == Status::Ok || status[i] == Status::Unused) continue;
                     if (e.size == rom.size && e.crc == rom.crc) {
                         if (uint64_t(rom.offset) + rom.size > set.regions[rom.region].size) continue;
-                        uint8_t* dst = regions[rom.region] + rom.offset;
-                        status[i] = z.extract(e, dst) ? Status::Ok : Status::Bad;
+                        if (regions[rom.region]) {
+                            uint8_t* dst = regions[rom.region] + rom.offset;
+                            status[i] = z.extract(e, dst) ? Status::Ok : Status::Bad;
+                        } else {
+                            const bool ok = sink && rom.size <= sink->scratch_size && z.extract(e, sink->scratch) &&
+                                            sink->put(sink->ctx, rom.region, rom.offset, sink->scratch, rom.size);
+                            status[i] = ok ? Status::Ok : Status::Bad;
+                        }
                     } else if (same_file_name(e.name, e.name_len, rom.name)) {
                         note_name_match(status[i], e.size, rom.size);
                     }
@@ -116,8 +123,13 @@ bool load(const Set& set, const Source* sources, int source_count, uint8_t* cons
             if (status[i] == Status::Ok || status[i] == Status::Unused) continue;
             if (src.len == rom.size && crc == rom.crc) {
                 if (uint64_t(rom.offset) + rom.size > set.regions[rom.region].size) continue;
-                std::memcpy(regions[rom.region] + rom.offset, src.data, rom.size);
-                status[i] = Status::Ok;
+                if (regions[rom.region]) {
+                    std::memcpy(regions[rom.region] + rom.offset, src.data, rom.size);
+                    status[i] = Status::Ok;
+                } else {
+                    const bool ok = sink && sink->put(sink->ctx, rom.region, rom.offset, src.data, rom.size);
+                    status[i] = ok ? Status::Ok : Status::Bad;
+                }
             } else if (src.name && same_file_name(src.name, std::strlen(src.name), rom.name)) {
                 note_name_match(status[i], uint32_t(src.len), rom.size);
             }

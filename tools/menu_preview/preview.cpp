@@ -125,6 +125,7 @@ void render(int w, int h)
     a.rom_free_kb = 412;
     a.games_ready = 13;
     a.games_total = games::kGameCount;
+    a.paired = 2;
     ui::TextPage about;
     about.title = "About";
     about.lines = about_lines;

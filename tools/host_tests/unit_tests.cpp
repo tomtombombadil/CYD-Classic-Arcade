@@ -169,6 +169,38 @@ void test_romset(const std::string& dir)
     CHECK(std::memcmp(r1.data(), gen(256, 7, 3).data(), 256) == 0);
     CHECK_EQ(romset::report(set, st, msg, sizeof msg), 0);
 
+    // Region 0 through a sink (the firmware's flash path): the same bytes
+    // arrive, ROM by ROM, at their offsets; region 1 still in RAM.
+    {
+        struct Collect {
+            std::vector<uint8_t> image = std::vector<uint8_t>(0x3000, 0xEE);
+            int puts = 0;
+        } c;
+        std::vector<uint8_t> scratch(4096);
+        romset::Sink sink;
+        sink.ctx = &c;
+        sink.scratch = scratch.data();
+        sink.scratch_size = uint32_t(scratch.size());
+        sink.put = [](void* ctx, int region, uint32_t off, const uint8_t* d, uint32_t n) {
+            Collect& k = *static_cast<Collect*>(ctx);
+            if (region != 0 || off + n > k.image.size()) return false;
+            std::memcpy(k.image.data() + off, d, n);
+            k.puts++;
+            return true;
+        };
+        uint8_t* half[2] = {nullptr, r1.data()};
+        CHECK(romset::load(set, three, 3, half, st, &sink));
+        CHECK_EQ(c.puts, 3);
+        CHECK(std::memcmp(c.image.data(), r0.data(), 0x3000) == 0);
+        CHECK(std::memcmp(r1.data(), gen(256, 7, 3).data(), 256) == 0);
+        // Too small a scratch: that ROM is Bad, not written past the end
+        sink.scratch_size = 1024;
+        CHECK(!romset::load(set, three, 3, half, st, &sink));
+        CHECK(st[0] == romset::Status::Bad);
+        // No sink: Bad, no crash
+        CHECK(!romset::load(set, three, 3, half, st));
+    }
+
     // No sources at all.
     CHECK(!romset::load(set, nullptr, 0, reg, st));
     CHECK_EQ(romset::report(set, st, msg, 8), 4);           // tiny buffer: still counts

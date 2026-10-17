@@ -10,3 +10,4 @@ sdkconfig.*
 __pycache__/
 /tmp/
 main/version_gen.h
+.claude/worktrees/

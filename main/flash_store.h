@@ -18,12 +18,12 @@ void lock();
 void unlock();
 
 // Scratch flash at the partition's end (kept out of the ROM store) for ROM
-// regions that don't fit in RAM: read in place, memory-mapped.
+// regions that don't fit in RAM: read in place, memory-mapped. The game
+// loader (catalog) decides what goes where; these only erase / write.
 uint32_t scratch_size();     // 0 = none (an old store already reaches into it)
-// Puts `len` bytes at sector-aligned `offset` in the scratch area (erasing
-// only when they differ from what's there) and returns where they're
-// mapped, or null.
-const uint8_t* scratch_put(uint32_t offset, const uint8_t* data, uint32_t len);
+const uint8_t* scratch_map(uint32_t offset);                    // mapped address
+bool scratch_erase(uint32_t offset, uint32_t len);              // whole sectors
+bool scratch_write(uint32_t offset, const void* data, uint32_t len);
 
 struct Lock {
     Lock() { lock(); }
