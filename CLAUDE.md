@@ -231,10 +231,24 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   56, Rally-X 41, Pac-Man 41, Asteroids 36, Invaders 18. The USB loader's
   UART RX buffer is 4 KB (was 16; the page waits for an ACK every 2 KB).
   Screen strips are 8 lines (7.5 KB at 480 wide).
+- Pairings kept, v0.14.2 (Tom, v0.14.0: a reboot drops the controller's
+  pairing - woken, it did NOT come back; my claim that it would was
+  wrong): Bluepad32 deletes a controller's link key whenever one L2CAP
+  connection attempt fails (uni_bt_bredr.c, "so that the connection can
+  start again"), so a controller paging the board while it starts or
+  searches lost its pairing. `pad_bt.c` wraps BTstack's NVS key store
+  (`hci_set_link_key_db`) and ignores those deletes; a key goes only when
+  the controller refuses it (authentication complete with PIN or key
+  missing / authentication failure - it was paired elsewhere since) or with
+  Forget Controllers. About shows "Paired with this board: N" (BR/EDR keys;
+  not on the BLE-only S3) so a kept pairing can be checked after a reset.
+  Not confirmed on a board yet. If pads still don't come back: host-
+  initiated paging of the stored keys at boot, and/or Tom's idea of
+  asking whether to re-pair.
 - Game start, v0.14.1 (Tom, v0.14.0 on the 4.0" and 3.2": Dig Dug, Mr. Do!
   - before its loading card -, Q*bert, Robotron, Defender, Qix, Star Wars
   reset the board; Ms. Pac-Man, Burger Time, Galaga ran; a reset also
-  lost the paired controller until it was woken): v0.10.1's order (every
+  lost the paired controller): v0.10.1's order (every
   ROM into RAM, then the machine, moving regions to flash only when the
   machine didn't fit) left Bluetooth no RAM for a moment - all the
   failing games need more than ~80 KB. Now: the machine first, then

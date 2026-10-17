@@ -173,6 +173,7 @@ struct Menu {
         }
         a.games_ready = catalog::available_count();
         a.games_total = games::kGameCount;
+        a.paired = pad_paired_count();
         const int n = menu_model::build_about(a, buf, text_lines, 16);
         open_text("About", text_lines, n, Page::Settings);
     }

@@ -120,6 +120,11 @@ int build_about(const AboutInfo& a, char (*buf)[64], const char** lines, int cap
     line("%s", "#Games");
     line("%d of %d ready", a.games_ready, a.games_total);
     line("ROM storage: %u KB free", a.rom_free_kb);
+    if (a.paired >= 0) {
+        line("%s", "");
+        line("%s", "#Controllers");
+        line("Paired with this board: %d", a.paired);
+    }
     line("%s", "");
     line("%s", "#Memory");
     line("RAM: %u KB free, largest block %u KB", a.ram_free_kb, a.ram_block_kb);

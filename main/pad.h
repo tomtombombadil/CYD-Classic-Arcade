@@ -44,7 +44,10 @@ typedef struct {
 
 // Starts Bluetooth and never returns (BTstack's run loop): call it last in
 // app_main, which runs on core 0. Controllers in pairing mode are found and
-// remembered; known ones reconnect by themselves.
+// remembered (link keys in NVS); a paired controller reconnects when it
+// pages the board (most do when woken). A pairing is kept when a connection
+// attempt fails; it goes only when the controller refuses the key or with
+// pad_forget_all().
 void pad_bt_run(void);
 
 // A copy of controller `idx` (0 .. PAD_MAX-1); safe from any task.
@@ -58,6 +61,10 @@ void pad_set_swap_ab(bool swap);
 // Drops every connection and forgets every paired controller (their keys in
 // NVS); controllers in pairing mode are found again. Safe from any task.
 void pad_forget_all(void);
+
+// Controllers paired with this board (BR/EDR link keys kept); -1 on BLE-only
+// chips, whose bonds aren't counted.
+int pad_paired_count(void);
 
 #ifdef __cplusplus
 }
