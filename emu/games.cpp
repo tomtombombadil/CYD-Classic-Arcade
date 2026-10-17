@@ -1,6 +1,11 @@
 // The game list (see games.h).
 #include "games.h"
 
+#include <memory>
+#include <new>
+#include <type_traits>
+#include <utility>
+
 #include "machines/asteroids.h"
 #include "machines/btime.h"
 #include "machines/digdug.h"
@@ -21,6 +26,30 @@
 #include <new>
 
 namespace games {
+
+namespace {
+
+// A copy of a tile machine's VideoState for drawing on another core
+// (Machine::snapshot); allocated at the first snapshot, ~2-5 KB. The
+// machines' render_line(vs, ...) read only the copy and tables made at
+// init.
+template <class M> class Shot {
+public:
+    using VS = std::remove_cv_t<std::remove_reference_t<decltype(std::declval<const M&>().video())>>;
+    bool take(const M& m)
+    {
+        if (!vs_) vs_.reset(new (std::nothrow) VS);
+        if (!vs_) return false;
+        *vs_ = m.video();
+        return true;
+    }
+    void render(const M& m, int y, uint16_t* out) const { m.render_line(*vs_, y, out); }
+
+private:
+    std::unique_ptr<VS> vs_;
+};
+
+}  // namespace
 namespace {
 
 // ---- Pac-Man ----------------------------------------------------------------
@@ -36,10 +65,13 @@ public:
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
 
 private:
     pacman::Machine m_;
+    Shot<pacman::Machine> shot_;
 };
 
 // Select = coin, Start = 1 player, L = 2 players (they take turns).
@@ -69,10 +101,13 @@ public:
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
 
 private:
     mspacman::Machine m_;
+    Shot<mspacman::Machine> shot_;
 };
 
 // ---- Space Invaders ---------------------------------------------------------
@@ -121,10 +156,13 @@ public:
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
 
 private:
     rallyx::Machine m_;
+    Shot<rallyx::Machine> shot_;
 };
 
 // A = smoke screen, Select = coin, Start = 1 player, L = 2 players (they
@@ -155,10 +193,13 @@ public:
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
 
 private:
     dkong::Machine m_;
+    Shot<dkong::Machine> shot_;
 };
 
 // The cabinet's 4-way stick and its one button: A (or B) jumps.
@@ -187,10 +228,13 @@ public:
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
 
 private:
     galaga::Machine m_;
+    Shot<galaga::Machine> shot_;
 };
 
 // ---- Dig Dug --------------------------------------------------------------
@@ -208,10 +252,13 @@ public:
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
 
 private:
     digdug::Machine m_;
+    Shot<digdug::Machine> shot_;
 };
 
 // The Namco boards share one panel layout (namco_galaga::Button). A or B
@@ -308,10 +355,13 @@ public:
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
     void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
 
 private:
     qbert::Machine m_;
+    Shot<qbert::Machine> shot_;
 };
 
 // The stick is turned 45 degrees (Info::diagonal): up = up-right, right =

@@ -279,6 +279,23 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   translates Xtensa code and models no clock, flash cache or SPI timing,
   so it can't show where frames drop; the board's own page is the
   measurement.
+- Two cores (v0.14.6, the next step after the speed page; Galaga's busy
+  waves on the 4.0"): the tile games (Pac-Man, Ms. Pac-Man, Galaga, Dig
+  Dug, Donkey Kong, Rally-X, Q*bert) copy their VideoState after a frame
+  (`Machine::snapshot()`, a `Shot<>` in games.cpp, ~2-5 KB allocated at the
+  first one) and a "draw" task on core 0 (priority 1, as BTstack's loop;
+  5 KB stack; 1 ms pause after each picture for the idle task's watchdog)
+  renders, hashes and sends that copy while core 1 emulates the next
+  frame. A snapshot is taken whenever the task is free, so slow drawing
+  skips pictures, never frames; four frames of sound are queued. Their
+  render_line(vs, ...) read only the copy and tables made at init
+  (checked: every member they read is written only in init). Touch shares
+  the display's bus on the ESP32-32E boards, so the game loop reads the
+  held-touch exit only when the bus mutex is free. Others (vector games,
+  Williams 38 KB and Qix 64 KB video RAM, Mr. Do!, Burger Time,
+  Invaders) still draw between frames on core 1. `arcade_host --panel`
+  draws the tile games from a snapshot one or two frames old (as the other
+  core would) and checks it against that frame's full picture: 0 wrong.
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
   checked by `arcade_host --check-table`; the USB loader's GAMES reply has
   room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).

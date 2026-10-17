@@ -16,6 +16,17 @@
 // On the bigger panels (320x480) the picture is scaled up to fill the
 // width, keeping its shape: each screen pixel takes the nearest game pixel
 // (no blending), so 224 game pixels become 320 - some two wide, some one.
+// Two cores (v0.14.6; Tom, v0.14.3: Galaga still bogged down in busy
+// waves - 57.3 frames a second): machines that can copy their picture's
+// state (Machine::snapshot - the tile games) are drawn by a task on core 0
+// while core 1 emulates the next frame, so core 1 only emulates. Core 0
+// otherwise runs Bluetooth, which needs little; the draw task has the same
+// priority as BTstack's loop, so they share it. A snapshot is taken after a
+// frame whenever the draw task is free (drawing slower than the game skips
+// pictures, never frames). The others (vector, Williams, Qix, Mr. Do!,
+// Burger Time, Invaders) are drawn between frames on core 1 as before.
+// Touch shares the display's bus on the ESP32-32E boards: the screen and
+// the touch read are kept apart by a mutex.
 // Plain blocking writes, no DMA: on the ESP32-32E boards the display's DMA
 // stopped working once the SD card's bus had been used (v0.2.0: no picture
 // in games, then none in the menu either), and Tom's other CYD projects
@@ -39,7 +50,10 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <freertos/task.h>
+
+#include <atomic>
 
 namespace game_runner {
 namespace {
@@ -49,12 +63,65 @@ constexpr int kStrip = 8;               // lines per strip sent (7.5 KB at 480 w
 constexpr int kMaxLines = 512;
 constexpr int kAudioCap = 1024;         // samples per frame, at most
 // Internal RAM left free when a game's ROMs are placed: the runner's buffers
-// (~13 KB) and Bluetooth's own needs while playing.
+// (~13-20 KB; + the draw task's 5 KB stack and a 2-5 KB snapshot for the
+// tile games) and Bluetooth's own needs while playing.
 constexpr uint32_t kKeepFree = 40 * 1024;
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
 Stats s_last;
+
+// The draw task's work (async drawing, see the top of the file)
+struct DrawJob {
+    games::Machine* m = nullptr;
+    line_diff::Drawer* drawer = nullptr;
+    LGFX* lcd = nullptr;
+    SemaphoreHandle_t bus = nullptr;   // the display's SPI bus (shared with touch on some boards)
+    int x0 = 0, y0 = 0;
+    std::atomic<bool> busy{false};     // a snapshot is being drawn
+    std::atomic<bool> quit{false};
+    std::atomic<bool> done{false};     // the task has ended
+    std::atomic<uint32_t> drawn{0};
+    // Read once the task has ended (and, roughly, for the 5 s log line)
+    volatile int64_t draw_us = 0, draw_max_us = 0, send_us = 0;
+    volatile uint64_t pixels = 0;
+    volatile uint32_t lines_sent = 0;
+    volatile bool warm = false;        // past the first 2 s: count the worst
+};
+
+void draw_task(void* arg)
+{
+    DrawJob& j = *static_cast<DrawJob*>(arg);
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (j.quit) break;
+        const int64_t t0 = esp_timer_get_time();
+        xSemaphoreTake(j.bus, portMAX_DELAY);
+        j.lcd->startWrite();
+        j.drawer->frame([&](int y, uint16_t* line) { j.m->render_snapshot_line(y, line); },
+                        [&](int x, int y, int w, int h, const uint16_t* px) {
+                            const int64_t s0 = esp_timer_get_time();
+                            j.lcd->pushImage(j.x0 + x, j.y0 + y, w, h,
+                                             reinterpret_cast<const lgfx::swap565_t*>(px));
+                            j.send_us = j.send_us + (esp_timer_get_time() - s0);
+                            j.pixels = j.pixels + uint64_t(w * h);
+                            j.lines_sent = j.lines_sent + uint32_t(h);
+                        },
+                        []() { return false; });
+        j.lcd->endWrite();
+        xSemaphoreGive(j.bus);
+        const int64_t took = esp_timer_get_time() - t0;
+        j.draw_us = j.draw_us + took;
+        if (j.warm && took > j.draw_max_us) j.draw_max_us = took;
+        j.drawn.fetch_add(1);
+        j.busy = false;
+        // Core 0's idle task must run now and then (the task watchdog
+        // checks it), even when pictures come back to back
+        vTaskDelay(1);
+    }
+    j.done = true;
+    vTaskDelete(nullptr);
+}
 
 void message(const char* a, const char* b)
 {
@@ -155,6 +222,20 @@ void run(int index, AudioRing& ring)
     drawer.setup();
     ring.clear();
 
+    // Drawing on core 0 while core 1 emulates, for machines that can copy
+    // their picture (see the top of the file); else between frames here
+    DrawJob job;
+    job.m = m;
+    job.drawer = &drawer;
+    job.lcd = &lcd;
+    job.x0 = x0;
+    job.y0 = y0;
+    job.bus = xSemaphoreCreateMutex();
+    TaskHandle_t draw_handle = nullptr;
+    bool async = job.bus && m->snapshot() &&
+                 xTaskCreatePinnedToCore(draw_task, "draw", 5120, &job, 1, &draw_handle, 0) == pdPASS;
+    ESP_LOGI(kTag, "%s: drawn %s", g.id, async ? "on core 0 from snapshots" : "between frames");
+
     // The start-up tests (RAM / ROM checks, test patterns, noise) run unseen
     // and unheard, as fast as the board goes, behind a "Loading" card -
     // drawn in the game's orientation, so a landscape game's card is the
@@ -191,6 +272,9 @@ void run(int index, AudioRing& ring)
     const uint32_t frame_samples = uint32_t(24000.0 / games::frame_rate(g) + 0.5);
     const uint32_t queue_max = AudioRing::kSize - kAudioCap;
     uint32_t draw_est = frame_samples;
+    // Async: core 1 only emulates; four frames of sound absorb the slower
+    // frames of busy moments
+    const uint32_t async_target = std::min(queue_max, frame_samples * 4);
 
     Input in;
     games::FourWay four_way;
@@ -206,17 +290,29 @@ void run(int index, AudioRing& ring)
     uint64_t all_pixels = 0;
     uint32_t sec_t = now_ms(), sec_frames = 0, sec_drawn = 0;
     int worst_frames = -1, worst_drawn = 0;
+    uint32_t sec_drawn_base = 0, log_drawn_base = 0, log_lines_base = 0;
+    int64_t log_draw_base = 0;
     crash_note::step(g.title, "playing");
     while (!cancelled) {
         in.update(now_ms());
         // Back to the menu: the controller's gesture, or the screen held
         // for a second (a game started without a controller)
-        if (in.back() || touch::held_long()) break;
+        // (async: only while the screen's bus is free - touch shares it on
+        // the ESP32-32E boards)
+        bool held = false;
+        if (!async) {
+            held = touch::held_long();
+        } else if (xSemaphoreTake(job.bus, 0) == pdTRUE) {
+            held = touch::held_long();
+            xSemaphoreGive(job.bus);
+        }
+        if (in.back() || held) break;
         const uint32_t pad = g.four_way ? four_way.filter(in.game()) : in.game();
         m->set_inputs(games::map_pad(g, pad));
         m->set_analog(in.analog());
 
-        const uint32_t queue_target = std::min(queue_max, std::max(frame_samples * 3, draw_est + frame_samples * 2));
+        const uint32_t queue_target =
+            async ? async_target : std::min(queue_max, std::max(frame_samples * 3, draw_est + frame_samples * 2));
         while (ring.count() > queue_target) vTaskDelay(1);
         const int64_t t0 = esp_timer_get_time();
         const int n = m->run_frame(audio, kAudioCap);
@@ -230,6 +326,11 @@ void run(int index, AudioRing& ring)
         {
             const uint32_t now = now_ms();
             if (now - sec_t >= 1000) {
+                if (async) {
+                    const uint32_t d = job.drawn.load();
+                    sec_drawn = d - sec_drawn_base;
+                    sec_drawn_base = d;
+                }
                 if (warm && (worst_frames < 0 || int(sec_frames) < worst_frames)) {
                     worst_frames = int(sec_frames);
                     worst_drawn = int(sec_drawn);
@@ -239,41 +340,61 @@ void run(int index, AudioRing& ring)
             }
         }
 
-        // Not enough sound queued to last through a draw: skip this one.
-        if (ring.count() < draw_est + frame_samples / 2) continue;
-
-        // Only the changed segments of each line go (line_diff::Drawer).
-        // The sound must not run dry while drawing: when less than a frame
-        // of it is left, the picture stops at a line boundary and the next
-        // one goes on from there (v0.6.1: Galaga's start tune crackled at
-        // its end, where the whole screen changes at once and one draw
-        // outlasted the queue).
-        lcd.startWrite();
-        const bool complete = drawer.frame(
-            [&](int y, uint16_t* line) { m->render_line(y, line); },
-            [&](int x, int y, int w, int h, const uint16_t* px) {
-                const int64_t s0 = esp_timer_get_time();
-                lcd.pushImage(x0 + x, y0 + y, w, h, reinterpret_cast<const lgfx::swap565_t*>(px));
-                all_send_us += esp_timer_get_time() - s0;
-                all_pixels += uint32_t(w * h);
-                lines_sent += uint32_t(h);
-            },
-            [&]() { return ring.count() < frame_samples; });
-        lcd.endWrite();
-        const int64_t took_us = esp_timer_get_time() - t1;
-        draw_us += took_us;
-        ++drawn;
-        ++sec_drawn;
-        if (warm) draw_max_us = std::max(draw_max_us, took_us);
-        // Up at once to a slower draw, down slowly (a quiet screen draws
-        // fast, the next scroll doesn't)
-        const uint32_t took = uint32_t(took_us * 24 / 1000);
-        if (took > draw_est) draw_est = took;
-        else if (complete) draw_est -= (draw_est - took) / 8;
-        draw_est = std::min(draw_est, queue_max - frame_samples * 2);
+        if (async) {
+            // Core 0 free: it draws this frame's picture from a copy
+            if (!job.busy) {
+                job.warm = warm;
+                if (m->snapshot()) {
+                    job.busy = true;
+                    xTaskNotifyGive(draw_handle);
+                }
+            }
+        } else if (ring.count() >= draw_est + frame_samples / 2) {
+            // (With less sound queued than a draw takes, it's skipped.)
+            // Only the changed segments of each line go (line_diff::Drawer).
+            // The sound must not run dry while drawing: when less than a frame
+            // of it is left, the picture stops at a line boundary and the next
+            // one goes on from there (v0.6.1: Galaga's start tune crackled at
+            // its end, where the whole screen changes at once and one draw
+            // outlasted the queue).
+            lcd.startWrite();
+            const bool complete = drawer.frame(
+                [&](int y, uint16_t* line) { m->render_line(y, line); },
+                [&](int x, int y, int w, int h, const uint16_t* px) {
+                    const int64_t s0 = esp_timer_get_time();
+                    lcd.pushImage(x0 + x, y0 + y, w, h, reinterpret_cast<const lgfx::swap565_t*>(px));
+                    all_send_us += esp_timer_get_time() - s0;
+                    all_pixels += uint32_t(w * h);
+                    lines_sent += uint32_t(h);
+                },
+                [&]() { return ring.count() < frame_samples; });
+            lcd.endWrite();
+            const int64_t took_us = esp_timer_get_time() - t1;
+            draw_us += took_us;
+            ++drawn;
+            ++sec_drawn;
+            if (warm) draw_max_us = std::max(draw_max_us, took_us);
+            // Up at once to a slower draw, down slowly (a quiet screen draws
+            // fast, the next scroll doesn't)
+            const uint32_t took = uint32_t(took_us * 24 / 1000);
+            if (took > draw_est) draw_est = took;
+            else if (complete) draw_est -= (draw_est - took) / 8;
+            draw_est = std::min(draw_est, queue_max - frame_samples * 2);
+        }
 
         const uint32_t now = now_ms();
         if (now - stat_t >= 5000) {
+            if (async) {
+                const uint32_t d = job.drawn.load();
+                const int64_t du = job.draw_us;
+                const uint32_t ls = job.lines_sent;
+                drawn = d - log_drawn_base;
+                draw_us = du - log_draw_base;
+                lines_sent = ls - log_lines_base;
+                log_drawn_base = d;
+                log_draw_base = du;
+                log_lines_base = ls;
+            }
             all_frames += frames;
             all_drawn += drawn;
             all_emu_us += emu_us;
@@ -289,9 +410,23 @@ void run(int index, AudioRing& ring)
     }
 
     all_frames += frames;
-    all_drawn += drawn;
     all_emu_us += emu_us;
-    all_draw_us += draw_us;
+    if (async) {
+        // Let the last picture finish, then end the task
+        while (job.busy) vTaskDelay(1);
+        job.quit = true;
+        xTaskNotifyGive(draw_handle);
+        while (!job.done) vTaskDelay(1);
+        all_drawn = job.drawn.load();
+        all_draw_us = job.draw_us;
+        all_send_us = job.send_us;
+        all_pixels = job.pixels;
+        draw_max_us = job.draw_max_us;
+    } else {
+        all_drawn += drawn;
+        all_draw_us += draw_us;
+    }
+    if (job.bus) vSemaphoreDelete(job.bus);
     const float secs = float(esp_timer_get_time() - run_t0) / 1e6f;
     s_last = Stats{};
     if (secs > 0.5f) {

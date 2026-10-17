@@ -47,6 +47,13 @@ public:
     // Line y of the last frame, `Info::width` RGB565 pixels.
     virtual void render_line(int y, uint16_t* out) = 0;
     virtual int  watchdog_resets() const = 0;
+    // Drawing on another core (the firmware's game_runner): snapshot()
+    // copies what the last frame's picture needs - false when this machine
+    // can't (its picture is too big to copy: drawn between frames with
+    // render_line instead); render_snapshot_line() then draws a line of
+    // that copy, and is safe while run_frame() goes on on another core.
+    virtual bool snapshot() { return false; }
+    virtual void render_snapshot_line(int y, uint16_t* out) { render_line(y, out); }
     // PC tool only: MAME sample recordings, indexed like Info::sample_names
     // (null = the sound model). The firmware never uses samples (Tom).
     virtual void set_samples(const samples::Wav* const*) {}

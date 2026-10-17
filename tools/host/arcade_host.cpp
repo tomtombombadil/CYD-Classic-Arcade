@@ -463,6 +463,9 @@ int main(int argc, char** argv)
         std::vector<uint16_t> px, want, x_map, src, strip;
         std::vector<uint32_t> seg_hash;
         line_diff::Drawer d;
+        bool async = false, shot_pending = false;
+        int shot_wait = 0;
+        std::vector<uint16_t> shot_frame;
         long long pictures = 0, finished = 0, cut = 0, blocks = 0, pixels = 0, line_pixels = 0, bad = 0;
         uint32_t rnd = 12345;
         uint32_t next() { rnd = rnd * 1103515245u + 12345u; return rnd >> 16; }
@@ -493,6 +496,8 @@ int main(int argc, char** argv)
         p.d.strip_rows = 8;
         p.d.seg_hash = p.seg_hash.data();
         p.d.setup();
+        p.async = m->snapshot();   // drawn on another core in the firmware
+        std::printf("%s", p.async ? "panel: drawn from snapshots (another core)\n" : "");
         std::printf("panel %dx%d: %dx%d shown as %dx%d, %d segments of %d pixels\n", p.w, p.h, gi.width,
                     gi.height, p.out_w, p.out_h, p.d.segs.segs, p.d.segs.seg_w);
     }
@@ -550,55 +555,80 @@ int main(int argc, char** argv)
             std::fprintf(hash_file, "%d %08x %08x %d\n", f,
                          unsigned(crc32::of(reinterpret_cast<const uint8_t*>(frame.data()), frame.size() * 2)),
                          unsigned(crc32::of(reinterpret_cast<const uint8_t*>(audio), size_t(n) * 2)), n);
-        if (panel_w && panel.next() % 4 != 0) {   // the firmware skips some pictures
+        if (panel_w) {
             Panel& p = panel;
-            const bool may_cut = p.next() % 5 == 0;
-            ++p.pictures;
-            // what v0.14 sent: every changed line in full
-            for (int r = 0; r < p.out_h; ++r) {
-                const uint16_t* gl = frame.data() + size_t(r * gi.height / p.out_h) * gi.width;
-                const uint16_t* row = &p.px[size_t(r) * p.out_w];
-                for (int x = 0; x < p.out_w; ++x)
-                    if (row[x] != gl[p.x_map[size_t(x)]]) {
-                        p.line_pixels += p.out_w;
-                        break;
-                    }
-            }
-            const bool done = p.d.frame(
-                [&](int y, uint16_t* line) { m->render_line(y, line); },
-                [&](int x, int y, int w, int h, const uint16_t* px) {
-                    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > p.out_w || y + h > p.out_h || h > 8) {
-                        std::fprintf(stderr, "frame %d: block %d,%d %dx%d off the picture\n", f, x, y, w, h);
-                        ++p.bad;
-                        return;
-                    }
-                    for (int r = 0; r < h; ++r)
-                        std::memcpy(&p.px[size_t(y + r) * p.out_w + x], px + r * w, size_t(w) * 2);
-                    ++p.blocks;
-                    p.pixels += w * h;
-                },
-                [&]() { return may_cut && p.next() % 64 == 0; });
-            if (done) {
+            // One picture: `exp` is the full picture it must leave on the panel
+            auto picture = [&](bool from_shot, const std::vector<uint16_t>& exp, bool may_cut) {
+                ++p.pictures;
+                // what v0.14 sent: every changed line in full
+                for (int r = 0; r < p.out_h; ++r) {
+                    const uint16_t* gl = exp.data() + size_t(r * gi.height / p.out_h) * gi.width;
+                    const uint16_t* row = &p.px[size_t(r) * p.out_w];
+                    for (int x = 0; x < p.out_w; ++x)
+                        if (row[x] != gl[p.x_map[size_t(x)]]) {
+                            p.line_pixels += p.out_w;
+                            break;
+                        }
+                }
+                const bool done = p.d.frame(
+                    [&](int y, uint16_t* line) {
+                        if (from_shot) m->render_snapshot_line(y, line);
+                        else m->render_line(y, line);
+                    },
+                    [&](int x, int y, int w, int h, const uint16_t* px) {
+                        if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > p.out_w || y + h > p.out_h || h > 8) {
+                            std::fprintf(stderr, "frame %d: block %d,%d %dx%d off the picture\n", f, x, y, w, h);
+                            ++p.bad;
+                            return;
+                        }
+                        for (int r = 0; r < h; ++r)
+                            std::memcpy(&p.px[size_t(y + r) * p.out_w + x], px + r * w, size_t(w) * 2);
+                        ++p.blocks;
+                        p.pixels += w * h;
+                    },
+                    [&]() { return may_cut && p.next() % 64 == 0; });
+                if (!done) {
+                    ++p.cut;
+                    return;
+                }
                 ++p.finished;
                 for (int r = 0; r < p.out_h; ++r) {
-                    const uint16_t* gl = frame.data() + size_t(r * gi.height / p.out_h) * gi.width;
+                    const uint16_t* gl = exp.data() + size_t(r * gi.height / p.out_h) * gi.width;
                     for (int x = 0; x < p.out_w; ++x) p.want[size_t(r) * p.out_w + x] = gl[p.x_map[size_t(x)]];
                 }
                 if (p.px != p.want) {
                     ++p.bad;
                     if (p.bad <= 5) {
-                        int n = 0, fx = -1, fy = -1;
+                        int nd = 0, fx = -1, fy = -1;
                         for (size_t i = 0; i < p.px.size(); ++i)
-                            if (p.px[i] != p.want[i] && n++ == 0) {
+                            if (p.px[i] != p.want[i] && nd++ == 0) {
                                 fx = int(i % size_t(p.out_w));
                                 fy = int(i / size_t(p.out_w));
                             }
                         std::fprintf(stderr, "frame %d: panel differs from the full picture: %d pixels, first at %d,%d\n",
-                                     f, n, fx, fy);
+                                     f, nd, fx, fy);
                     }
                 }
-            } else {
-                ++p.cut;
+            };
+            if (p.async) {
+                // As the firmware's other core does: the snapshot of an
+                // earlier frame is drawn after later frames have run (one
+                // or two), so it must not depend on the machine's state now
+                if (p.shot_pending && --p.shot_wait <= 0) {
+                    picture(true, p.shot_frame, false);
+                    p.shot_pending = false;
+                }
+                if (!p.shot_pending && p.next() % 4 != 0) {
+                    if (!m->snapshot()) {
+                        std::fprintf(stderr, "frame %d: snapshot failed\n", f);
+                        ++p.bad;
+                    }
+                    p.shot_frame = frame;
+                    p.shot_pending = true;
+                    p.shot_wait = 1 + int(p.next() % 2);
+                }
+            } else if (p.next() % 4 != 0) {    // the firmware skips some pictures
+                picture(false, frame, p.next() % 5 == 0);
             }
         }
         emu_sum += emu; ren_sum += ren;
