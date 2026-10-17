@@ -66,12 +66,26 @@ enum class Status : uint8_t {
     Unused,         // another variant's ROM (not needed for the one loaded)
 };
 
+// Where the ROMs of a region with no buffer (regions[r] == nullptr) go: each
+// ROM is unpacked into `scratch` (at least as big as the biggest of them)
+// and handed to put() - the firmware writes it to flash, so a big game's
+// ROMs never all sit in RAM at once. put() returning false makes that ROM
+// Bad. Bytes no ROM covers are the sink's to fill (load() clears only the
+// regions it has buffers for).
+struct Sink {
+    bool (*put)(void* ctx, int region, uint32_t offset, const uint8_t* data, uint32_t len);
+    void* ctx;
+    uint8_t* scratch;
+    uint32_t scratch_size;
+};
+
 // Fills `regions[r]` (each Set::regions[r].size bytes, cleared first) from
 // all sources and writes one status per ROM. Returns true when every ROM
 // that isn't optional is Ok. With variants, only pick_variant()'s ROMs are
-// loaded; the others' status is Unused.
+// loaded; the others' status is Unused. A region whose pointer is null goes
+// through `sink` (see Sink).
 bool load(const Set& set, const Source* sources, int source_count, uint8_t* const* regions,
-          Status* status);
+          Status* status, const Sink* sink = nullptr);
 
 // True when every ROM that isn't optional is in the sources, by size and
 // CRC (from ZIP directories - nothing is unpacked), for at least one

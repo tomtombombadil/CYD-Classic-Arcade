@@ -231,6 +231,27 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   56, Rally-X 41, Pac-Man 41, Asteroids 36, Invaders 18. The USB loader's
   UART RX buffer is 4 KB (was 16; the page waits for an ACK every 2 KB).
   Screen strips are 8 lines (7.5 KB at 480 wide).
+- Game start, v0.14.1 (Tom, v0.14.0 on the 4.0" and 3.2": Dig Dug, Mr. Do!
+  - before its loading card -, Q*bert, Robotron, Defender, Qix, Star Wars
+  reset the board; Ms. Pac-Man, Burger Time, Galaga ran; a reset also
+  lost the paired controller until it was woken): v0.10.1's order (every
+  ROM into RAM, then the machine, moving regions to flash only when the
+  machine didn't fit) left Bluetooth no RAM for a moment - all the
+  failing games need more than ~80 KB. Now: the machine first, then
+  `catalog::load(game, roms, kKeepFree = 40 KB)`: PSRAM first where there
+  is any; internal RAM for a region only while 40 KB stays free (biggest
+  regions go to flash first); the rest streams into the scratch flash ROM
+  by ROM through `romset::Sink` (unpacked into one buffer the size of the
+  biggest ROM, written at its offset; gaps zeroed after), so a big game's
+  ROMs never all sit in RAM. The scratch area starts with a header sector
+  ("CSC1": game, variant, the regions' places); the same game started
+  again is checked byte for byte and nothing is written. `crash_note`
+  keeps the game and step ("making its machine", "loading its ROMs",
+  "starting its machine", "running its start-up", "playing") and the free
+  RAM in RTC memory; after a crash / watchdog / brownout reset the menu
+  shows "The board restarted: Dig Dug crashed while loading its ROMs (31
+  KB free, block 20 KB)" and keeps it on the news line - ask Tom for that
+  line when something resets.
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
   checked by `arcade_host --check-table`; the USB loader's GAMES reply has
   room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).

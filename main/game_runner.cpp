@@ -22,6 +22,7 @@
 #include "game_runner.h"
 
 #include "catalog.h"
+#include "crash_note.h"
 #include "input.h"
 #include "screen.h"
 #include "touch.h"
@@ -45,6 +46,9 @@ constexpr const char* kTag = "game";
 constexpr int kStrip = 8;               // lines per strip sent (7.5 KB at 480 wide)
 constexpr int kMaxLines = 512;
 constexpr int kAudioCap = 1024;         // samples per frame, at most
+// Internal RAM left free when a game's ROMs are placed: the runner's buffers
+// (~13 KB) and Bluetooth's own needs while playing.
+constexpr uint32_t kKeepFree = 40 * 1024;
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
@@ -72,32 +76,35 @@ void message(const char* a, const char* b)
 void run(int index, AudioRing& ring)
 {
     const games::Info& g = games::kGames[index];
-    // The ROMs into RAM, then the machine. When RAM runs short (v0.10.0:
-    // "can't load" for every new game on every board), ROM regions move to
-    // the scratch flash, biggest first, until the machine and the runner's
-    // buffers (~12 KB) fit; they're then read in place from flash.
+    // The machine first (its object is the biggest block), then the ROMs:
+    // into RAM while kKeepFree stays free for the runner's buffers and
+    // Bluetooth, the rest streamed into flash and read from there. v0.14.0
+    // loaded every ROM into RAM first: the big games left Bluetooth no RAM
+    // and the board reset (Tom: Dig Dug, Mr. Do!, Q*bert, Robotron,
+    // Defender, Qix, Star Wars).
     ESP_LOGI(kTag, "%s: %u KB free, largest block %u KB", g.id,
              unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
              unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
-    catalog::Loaded roms;
-    if (!catalog::load(g, roms)) {
-        message("Can't load the ROMs", catalog::last_error());
-        return;
-    }
+    crash_note::step(g.title, "making its machine");
     games::Machine* m = g.make();
-    while (!m && catalog::move_to_flash(roms)) m = g.make();
-    while (m && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 16 * 1024 && catalog::move_to_flash(roms)) {}
     if (!m) {
         char buf[48];
         std::snprintf(buf, sizeof buf, "%u KB free, largest %u KB",
                       unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
                       unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) / 1024));
         ESP_LOGE(kTag, "%s: no memory for the machine (%s)", g.id, buf);
-        catalog::unload(roms);
+        crash_note::clear();
         message("Not enough memory", buf);
         return;
     }
-    if (roms.flash_used) ESP_LOGI(kTag, "%s: %u KB of ROM read from flash", g.id, unsigned(roms.flash_used / 1024));
+    crash_note::step(g.title, "loading its ROMs");
+    catalog::Loaded roms;
+    if (!catalog::load(g, roms, kKeepFree)) {
+        delete m;
+        crash_note::clear();
+        message("Can't load the ROMs", catalog::last_error());
+        return;
+    }
     LGFX& lcd = screen::lcd();
     if (g.orientation == games::Orientation::Landscape) screen::landscape();
     // Scale: as large as fits with the shape kept, never smaller than 1:1
@@ -121,10 +128,12 @@ void run(int index, AudioRing& ring)
         heap_caps_free(line_hash);
         heap_caps_free(audio);
         catalog::unload(roms);
+        crash_note::clear();
         screen::apply_rotation();
         message("Not enough memory", g.title);
         return;
     }
+    crash_note::step(g.title, "starting its machine");
     m->init(roms.regions, 24000, true);
     ESP_LOGI(kTag, "%s started, %u KB free, largest block %u KB", g.id,
              unsigned(heap_caps_get_free_size(MALLOC_CAP_8BIT) / 1024),
@@ -147,6 +156,7 @@ void run(int index, AudioRing& ring)
     bool cancelled = false;
     if (g.boot_frames > 0) {
         ui::loading(lcd, g.title, "", 0, g.boot_frames, true);
+        crash_note::step(g.title, "running its start-up");
         Input boot_in;
         boot_in.wait_for_release();
         const int64_t t0 = esp_timer_get_time();
@@ -184,6 +194,7 @@ void run(int index, AudioRing& ring)
     uint32_t all_frames = 0, all_drawn = 0;
     int64_t all_emu_us = 0, all_draw_us = 0;
     int64_t emu_us = 0, draw_us = 0;
+    crash_note::step(g.title, "playing");
     while (!cancelled) {
         in.update(now_ms());
         // Back to the menu: the controller's gesture, or the screen held
@@ -302,6 +313,7 @@ void run(int index, AudioRing& ring)
     heap_caps_free(x_map);
     heap_caps_free(line_hash);
     heap_caps_free(audio);
+    crash_note::clear();
     catalog::unload(roms);
     screen::apply_rotation();
     lcd.fillScreen(screen::kBg);
