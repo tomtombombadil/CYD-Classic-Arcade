@@ -86,6 +86,15 @@ constexpr uint8_t kStarB[4] = {0, 81, 174, 255};
 //                    0728-07AD / 080B-0826 the stack must hold the return
 //                    to the loop (0728 is called from elsewhere too); RST 10
 //                    (0010-0014) inside it is stepped through.
+//
+// Exact passes (Speedup::pass_cycles; v0.14.x, found in play between
+// stages and in the attract mode, ~15 % of the main CPU's cycles there):
+//   main 0540-0543   LD A,(HL) / AND A / JR NZ,0540 with HL = 92AE (set
+//                    just before): spins while 92AE != 0 - 23 T-states, 3
+//                    fetches a pass
+//   main 01BF-01C4   LD A,(92AE) / AND A / JR NZ,01BF: the same wait - 29 T
+//   main 03D8-03DE   LD A,(9201) / CP 02 / JR Z,03D8: spins while 9201 = 2
+//                    - 32 T
 using namco_galaga::Idle;
 template <uint16_t kTop, uint16_t kAddr, int kSpinValue>
 Idle while_equal(namco_galaga::Board& b, uint16_t pc)
@@ -98,6 +107,19 @@ Idle while_nonzero(namco_galaga::Board& b, uint16_t pc)
 {
     if (pc != kTop) return Idle::kStep;
     return b.peek(kAddr) ? Idle::kYes : Idle::kNo;
+}
+
+Idle wait_92ae_hl(namco_galaga::Board& b, uint16_t pc)
+{
+    if (b.cpu(namco_galaga::kMain).hl.w != 0x92ae) return Idle::kNo;
+    if (pc != 0x0540) return Idle::kStep;
+    return b.peek(0x92ae) ? Idle::kYes : Idle::kNo;
+}
+template <uint16_t kTop, uint16_t kAddr, bool kWhileEqual, int kValue>
+Idle exact_wait(namco_galaga::Board& b, uint16_t pc)
+{
+    if (pc != kTop) return Idle::kStep;
+    return (b.peek(kAddr) == kValue) == kWhileEqual ? Idle::kYes : Idle::kNo;
 }
 
 Idle stage_wait(namco_galaga::Board& b, uint16_t pc)
@@ -141,6 +163,9 @@ constexpr namco_galaga::Speedup kSpeedups[] = {
     {namco_galaga::kMain, 0x0728, 0x07ad, background_loop, 5},
     {namco_galaga::kMain, 0x080b, 0x0826, background_loop, 5},
     {namco_galaga::kMain, 0x0010, 0x0014, background_loop, 5},
+    {namco_galaga::kMain, 0x0540, 0x0543, wait_92ae_hl, 8, 23, 3},
+    {namco_galaga::kMain, 0x01bf, 0x01c4, exact_wait<0x01bf, 0x92ae, false, 0>, 10, 29, 3},
+    {namco_galaga::kMain, 0x03d8, 0x03de, exact_wait<0x03d8, 0x9201, true, 2>, 11, 32, 3},
 };
 
 } // namespace
@@ -180,7 +205,13 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap)
         star_pen_[c] = namco_galaga::rgb565(kStarRG[c & 3], kStarRG[(c >> 2) & 3], kStarB[(c >> 4) & 3], swap);
 
     namco_galaga::decode_chars_2bpp(roms.chars, 128, char_rows_);
+    for (int code = 0; code < 128; ++code) {
+        uint16_t any = 0;
+        for (int r = 0; r < 8; ++r) any |= char_rows_[code * 8 + r];
+        char_blank_[code] = any == 0;
+    }
     namco_galaga::decode_sprites(roms.sprites, 128, sprite_rows_);
+    namco_galaga::blank_sprites(sprite_rows_, 128, sprite_blank_);
     board_init(b, audio_rate, kSpeedups, int(sizeof kSpeedups / sizeof kSpeedups[0]));
     reset();
 }
@@ -251,6 +282,19 @@ void Machine::vblank()
         if (x >= kScreenH || x + (16 << wide) <= 0) continue;
         vs.sprite[vs.sprite_count++] = {int16_t(x), int16_t(y), uint8_t(r1[0] & 0x7f), uint8_t(r1[1] & 0x3f), flags};
     }
+    namco_galaga::sprite_bands(vs.sprite, vs.sprite_count, 0, sprite_blank_, 128, vs.sprite_bands);
+
+    // The characters that draw anything (a blank one in a colour whose
+    // pixel value 0 is transparent draws nothing - most of the screen in
+    // play), so render_line skips the rest without looking at them.
+    for (int row = 0; row < kScreenH / 8; ++row) {
+        int off, step;
+        namco_galaga::tile_row(row, off, step);
+        uint32_t cols = 0;
+        for (int col = 0; col < 28; ++col, off += step)
+            if (!char_blank_[vs.vram[off] & 0x7f] || (char_opaque_[vs.cram[off] & 0x3f] & 1)) cols |= 1u << col;
+        vs.tile_cols[row] = cols;
+    }
 
     // Stars: the field's x runs down the display from line 16, its y from
     // the right edge to the left. Sorted by line (a counting sort).
@@ -276,8 +320,8 @@ void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
     for (int x = 0; x < kScreenW; ++x) out[x] = 0;
     for (int i = vs.star_first[y]; i < vs.star_first[y + 1]; ++i) out[vs.star[i].x] = star_pen_[vs.star[i].colour];
 
-    for (int s = 0; s < vs.sprite_count; ++s) {
-        const namco_galaga::Sprite& sp = vs.sprite[s];
+    for (uint64_t m = vs.sprite_bands[y >> 4]; m; m &= m - 1) {
+        const namco_galaga::Sprite& sp = vs.sprite[__builtin_ctzll(m)];
         namco_galaga::draw_sprite_line(sp, y, sprite_rows_, 128, sprite_pen_ + sp.colour * 4,
                                        sprite_opaque_[sp.colour], out);
     }
@@ -285,16 +329,14 @@ void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
     int off, step;
     namco_galaga::tile_row(y >> 3, off, step);
     const int ty = y & 7;
-    for (int col = 0; col < 28; ++col, off += step) {
-        const uint16_t bits = char_rows_[(vs.vram[off] & 0x7f) * 8 + ty];
-        const int colour = vs.cram[off] & 0x3f;
+    for (uint32_t cols = vs.tile_cols[y >> 3]; cols; cols &= cols - 1) {
+        const int col = __builtin_ctz(cols);
+        const int o = off + col * step;
+        const uint16_t bits = char_rows_[(vs.vram[o] & 0x7f) * 8 + ty];
+        const int colour = vs.cram[o] & 0x3f;
         const uint8_t opaque = char_opaque_[colour];
-        const uint16_t* pens = char_pen_ + colour * 4;
-        uint16_t* o = out + col * 8;
-        for (int x = 0; x < 8; ++x) {
-            const int p = (bits >> (2 * x)) & 3;
-            if (opaque & (1 << p)) o[x] = pens[p];
-        }
+        if (!bits && !(opaque & 1)) continue;
+        namco_galaga::draw_tile_row(bits, char_pen_ + colour * 4, opaque, out + col * 8);
     }
 }
 

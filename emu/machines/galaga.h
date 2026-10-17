@@ -73,6 +73,8 @@ struct VideoState {
     uint8_t cram[0x400];                        // character colours
     namco_galaga::Sprite sprite[kSprites];      // on-screen ones, in drawing order
     uint8_t sprite_count;
+    uint64_t sprite_bands[namco_galaga::kBands];    // sprites per 16 lines (namco_galaga::sprite_bands)
+    uint32_t tile_cols[kScreenH / 8];           // per tile row: bit c = column c may draw something
     struct Star {
         uint16_t line;                          // display line
         uint8_t  x;                             // display x
@@ -118,10 +120,12 @@ private:
     // Graphics decoded once into display orientation (2 bits a pixel).
     uint16_t char_rows_[128 * 8] = {};
     uint32_t sprite_rows_[128 * 16] = {};
+    uint8_t  sprite_blank_[128] = {};   // per sprite tile: no pixel set
     uint16_t char_pen_[64 * 4] = {};    // RGB565 per (colour, pixel value)
     uint16_t sprite_pen_[64 * 4] = {};
     uint16_t star_pen_[64] = {};
     uint8_t  char_opaque_[64] = {};     // per colour: bit p = pixel value p isn't transparent
+    uint8_t  char_blank_[128] = {};     // per character: all its pixels are value 0
     uint8_t  sprite_opaque_[64] = {};
 };
 

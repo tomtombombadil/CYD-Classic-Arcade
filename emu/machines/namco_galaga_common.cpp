@@ -221,9 +221,9 @@ const Speedup* Board::idle(int n, int end)
                 const Speedup& s = *speedups_[n][i];
                 if (pc >= s.pc_lo && pc <= s.pc_hi) hit = &s;
             }
-        if (!hit) {
+        if (!hit || hit->pass_cycles) {
             watch_[n].valid = false;            // left the loop: steady() starts over
-            return nullptr;
+            if (!hit) return nullptr;
         }
         if (!hit->check) {
             sleep_[n] = hit;
@@ -249,14 +249,30 @@ bool Board::steady(int n, const Range* ranges, int count, int cycles)
     Watch& w = watch_[n];
     bool same = w.valid && w.irqs == irqs_[n];
     int k = 0;
-    for (int r = 0; r < count; ++r)
-        for (uint32_t a = ranges[r].lo; a <= ranges[r].hi && k < int(sizeof w.bytes); ++a, ++k) {
-            const uint8_t v = peek(uint16_t(a));
+    for (int r = 0; r < count && k < int(sizeof w.bytes); ++r) {
+        const uint16_t lo = ranges[r].lo;
+        int len = ranges[r].hi - lo + 1;
+        if (len > int(sizeof w.bytes) - k) len = int(sizeof w.bytes) - k;
+        if (len <= 0) continue;
+        if (((lo ^ (lo + len - 1)) & 0xfc00) == 0) {
+            // Inside one 1 KB block: compare it as a whole (this runs at
+            // every slice start in Galaga's background loop)
+            const uint8_t* p = &ram_ref(lo);
+            if (std::memcmp(w.bytes + k, p, size_t(len)) != 0) {
+                std::memcpy(w.bytes + k, p, size_t(len));
+                same = false;
+            }
+            k += len;
+            continue;
+        }
+        for (int i = 0; i < len; ++i, ++k) {
+            const uint8_t v = peek(uint16_t(lo + i));
             if (w.bytes[k] != v) {
                 w.bytes[k] = v;
                 same = false;
             }
         }
+    }
     if (!same) {
         w.since = executed_[n];
         w.irqs = irqs_[n];
@@ -279,13 +295,25 @@ void Board::run_cpus(int end)
         if (!s && speedups_on_) s = idle(n, end);
         const int want = end - pos_[n];
         if (want <= 0) continue;
+        if (s && s->pass_cycles) {
+            // Whole passes but the last, as if run (see Speedup).
+            const int passes = want / s->pass_cycles - 1;
+            if (passes > 0) {
+                const int skip = passes * s->pass_cycles;
+                stats_[n].skipped += uint32_t(skip);
+                executed_[n] += uint64_t(skip);
+                pos_[n] += skip;
+                cpu_[n].r = uint8_t(cpu_[n].r + passes * s->pass_fetches);
+            }
+            s = nullptr;
+        }
         if (s) {
             stats_[n].skipped += uint32_t(want);
             pos_[n] = end;
             cpu_[n].r = uint8_t(cpu_[n].r + want / s->cycles_per_r);
             continue;
         }
-        const int done = cpu_[n].run(want);
+        const int done = cpu_[n].run(end - pos_[n]);
         nmi_sent_[n] = false;
         pos_[n] += done;
         stats_[n].run += uint32_t(done);
@@ -442,15 +470,60 @@ void draw_sprite_line(const Sprite& s, int line, const uint32_t* rows, int codes
         // Tile (tx, ty) of a 2 x 2 sprite is code + 0 / 1 / 2 / 3, mirrored
         // with the flips.
         const int tile = ((ty ^ (tall & int(flipy))) << 1) | (tx ^ (wide & int(flipx)));
-        const uint32_t bits = rows[((s.code + tile) & (codes - 1)) * 16 + row];
-        if (!bits) continue;
+        uint32_t bits = rows[((s.code + tile) & (codes - 1)) * 16 + row];
+        if (!bits) continue;                    // a blank row draws nothing
         // Hardware y grows to the left on the display.
         const int left = kScreenW - 16 - (s.y + 16 * ty);
-        for (int i = 0; i < 16; ++i) {
-            const int x = left + i;
-            if (x < 0 || x >= kScreenW) continue;
-            const int p = int(bits >> (2 * (flipy ? 15 - i : i))) & 3;
-            if (opaque & (1 << p)) out[x] = pens[p];
+        const int i0 = left < 0 ? -left : 0;
+        const int i1 = left > kScreenW - 16 ? kScreenW - left : 16;
+        if (i0 >= i1) continue;
+        uint16_t* o = out + left;
+        if (flipy) {
+            for (int i = i0; i < i1; ++i) {
+                const int p = int(bits >> (2 * (15 - i))) & 3;
+                if (opaque >> p & 1) o[i] = pens[p];
+            }
+        } else if (!(opaque & 1)) {             // pixel value 0 transparent: stop after the last set one
+            bits >>= 2 * i0;
+            for (int i = i0; bits && i < i1; bits >>= 2, ++i) {
+                const int p = int(bits & 3);
+                if (opaque >> p & 1) o[i] = pens[p];
+            }
+        } else {
+            for (int i = i0; i < i1; ++i) {
+                const int p = int(bits >> (2 * i)) & 3;
+                if (opaque >> p & 1) o[i] = pens[p];
+            }
+        }
+    }
+}
+
+void blank_sprites(const uint32_t* rows, int count, uint8_t* blank)
+{
+    for (int code = 0; code < count; ++code) {
+        uint32_t any = 0;
+        for (int r = 0; r < 16; ++r) any |= rows[code * 16 + r];
+        blank[code] = any == 0;
+    }
+}
+
+void sprite_bands(const Sprite* sprites, int count, int wrap, const uint8_t* blank, int codes, uint64_t* bands)
+{
+    for (int b = 0; b < kBands; ++b) bands[b] = 0;
+    for (int s = 0; s < count; ++s) {
+        const Sprite& sp = sprites[s];
+        const int wide = (sp.flags & kWide) ? 1 : 0, tall = (sp.flags & kTall) ? 1 : 0;
+        bool empty = true;
+        for (int ty = 0; ty <= tall; ++ty)
+            for (int tx = 0; tx <= wide; ++tx)
+                if (!blank[(sp.code + ty * 2 + tx) & (codes - 1)]) empty = false;
+        if (empty) continue;
+        const int h = 16 << wide;                               // display lines
+        for (int w = wrap ? -wrap : 0; w <= wrap; w += wrap ? wrap : 1) {
+            int lo = sp.x + w, hi = sp.x + w + h - 1;
+            if (lo < 0) lo = 0;
+            if (hi >= kScreenH) hi = kScreenH - 1;
+            for (int b = lo >> 4; lo <= hi && b <= hi >> 4; ++b) bands[b] |= uint64_t(1) << s;
         }
     }
 }

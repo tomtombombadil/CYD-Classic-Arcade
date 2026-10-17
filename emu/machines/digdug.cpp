@@ -137,8 +137,14 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap)
                 if ((roms.text[code * 8 + 7 - d] >> r) & 1) bits |= uint8_t(1 << d);
             text_rows_[code * 8 + r] = bits;
         }
+    for (int code = 0; code < 128; ++code) {
+        uint8_t any = 0;
+        for (int r = 0; r < 8; ++r) any |= text_rows_[code * 8 + r];
+        text_blank_[code] = any == 0;
+    }
     namco_galaga::decode_chars_2bpp(roms.tiles, 256, tile_rows_);
     namco_galaga::decode_sprites(roms.sprites, 256, sprite_rows_);
+    namco_galaga::blank_sprites(sprite_rows_, 256, sprite_blank_);
 
     std::memset(earom_, 0xff, sizeof earom_);
     chip53_.set_dips(dips_a_, dips_b_);
@@ -218,6 +224,17 @@ void Machine::vblank()
         y = (y & 0xff) - 32;
         vs.sprite[vs.sprite_count++] = {int16_t(x), int16_t(y), code, uint8_t(r1[1] & 0x3f), flags};
     }
+    namco_galaga::sprite_bands(vs.sprite, vs.sprite_count, 256, sprite_blank_, 256, vs.sprite_bands);
+
+    // The text characters that aren't blank (render_line skips the rest).
+    for (int row = 0; row < kScreenH / 8; ++row) {
+        int off, step;
+        namco_galaga::tile_row(row, off, step);
+        uint32_t cols = 0;
+        for (int col = 0; col < 28; ++col, off += step)
+            if (!text_blank_[vs.vram[off] & 0x7f]) cols |= 1u << col;
+        vs.text_cols[row] = cols;
+    }
 }
 
 void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
@@ -236,34 +253,35 @@ void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
         const uint8_t code = map[o];
         const int colour = (off ? 0x0f : code >> 4) | bank;
         const uint16_t bits = tile_rows_[code * 8 + ty];
-        const uint16_t* pens = tile_pen_ + colour * 4;
-        uint16_t* p = out + col * 8;
-        for (int x = 0; x < 8; ++x) p[x] = pens[(bits >> (2 * x)) & 3];
+        namco_galaga::draw_tile_row_opaque(bits, tile_pen_ + colour * 4, out + col * 8);
     }
 
     // The text layer: pixel 1 in the character's colour (from its code).
     const bool direct = vs.latch & 0x04;
-    o = off_v;
-    for (int col = 0; col < 28; ++col, o += step) {
-        const uint8_t code = vs.vram[o];
+    for (uint32_t cols = vs.text_cols[y >> 3]; cols; cols &= cols - 1) {
+        const int col = __builtin_ctz(cols);
+        const uint8_t code = vs.vram[off_v + col * step];
         const uint8_t bits = text_rows_[(code & 0x7f) * 8 + ty];
         if (!bits) continue;
         const int colour = direct ? code & 0x0f : ((code >> 4) & 0x0e) | ((code >> 3) & 2);
         const uint16_t pen = text_pen_[colour];
         uint16_t* p = out + col * 8;
-        for (int x = 0; x < 8; ++x)
-            if (bits & (1 << x)) p[x] = pen;
+        for (unsigned b = bits; b; b &= b - 1) p[__builtin_ctz(b)] = pen;
     }
 
     // Sprites on top; x wraps at 256, so a sprite near the edge shows on
     // both sides.
     if (y < kSpriteTop || y >= kSpriteBottom) return;
-    for (int s = 0; s < vs.sprite_count; ++s) {
-        const namco_galaga::Sprite& sp = vs.sprite[s];
+    for (uint64_t m = vs.sprite_bands[y >> 4]; m; m &= m - 1) {
+        const namco_galaga::Sprite& sp = vs.sprite[__builtin_ctzll(m)];
         const uint16_t* pens = sprite_pen_ + sp.colour * 4;
         const uint8_t opaque = sprite_opaque_[sp.colour];
-        for (int wrap = -256; wrap <= 256; wrap += 256)
-            namco_galaga::draw_sprite_line(sp, y - wrap, sprite_rows_, 256, pens, opaque, out);
+        // The one wrap that reaches this line (a sprite is at most 32 lines
+        // tall, so only one can).
+        const int h = (sp.flags & namco_galaga::kWide) ? 32 : 16;
+        const int d = y - sp.x;
+        const int wrap = d >= 256 ? 256 : d < 0 ? -256 : 0;
+        if (d - wrap < h) namco_galaga::draw_sprite_line(sp, y - wrap, sprite_rows_, 256, pens, opaque, out);
     }
 }
 

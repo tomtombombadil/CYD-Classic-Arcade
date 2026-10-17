@@ -47,6 +47,9 @@
 //                         -512..511 (down positive), e.g.
 //                         "1200+60:lx=-300+fire")
 //     --verbose           one timing line per frame
+//     --hash FILE         one line per frame: CRC-32 of its picture and of
+//                         its audio (to check that a change leaves the
+//                         emulation exactly as it was)
 //
 //   arcade_host --check-table
 //     checks the game table against the firmware's limits (ROM regions)
@@ -58,6 +61,7 @@
 // Prints per-second timing (emulation and line rendering, ms per frame) and
 // a summary, so the cost on the device can be estimated.
 #include "../../emu/games.h"
+#include "../../emu/rom/crc32.h"
 #include "../../emu/rom/romset.h"
 #include "../../emu/rom/zip.h"
 #include "../../emu/sound/samples.h"
@@ -343,7 +347,7 @@ int main(int argc, char** argv)
 
     int frames = 600, png_every = 0, dips = -1, verbose = 0;
     uint32_t rate = 24000;
-    std::string out_dir = ".", wav_path, script, samples_path;
+    std::string out_dir = ".", wav_path, script, samples_path, hash_path;
     std::vector<std::string> paths;
     for (int a = 2; a < argc; ++a) {
         const std::string arg = argv[a];
@@ -360,6 +364,7 @@ int main(int argc, char** argv)
         else if (arg == "--input") script = value("--input");
         else if (arg == "--samples") samples_path = value("--samples");
         else if (arg == "--verbose") verbose = 1;
+        else if (arg == "--hash") hash_path = value("--hash");
         else if (arg.rfind("--", 0) == 0) { std::fprintf(stderr, "unknown option %s\n", arg.c_str()); return 2; }
         else paths.push_back(arg);
     }
@@ -432,6 +437,12 @@ int main(int argc, char** argv)
         return 2;
     }
 
+    FILE* hash_file = nullptr;
+    if (!hash_path.empty() && !(hash_file = std::fopen(hash_path.c_str(), "w"))) {
+        std::fprintf(stderr, "can't write %s\n", hash_path.c_str());
+        return 2;
+    }
+
     std::vector<uint16_t> frame(size_t(gi.width) * gi.height);
     int16_t audio[2048];
     uint16_t held = 0;
@@ -483,6 +494,10 @@ int main(int argc, char** argv)
         for (int y = 0; y < gi.height; ++y) m->render_line(y, frame.data() + y * gi.width);
         const double ren = ms_since(t0);
 
+        if (hash_file)
+            std::fprintf(hash_file, "%d %08x %08x %d\n", f,
+                         unsigned(crc32::of(reinterpret_cast<const uint8_t*>(frame.data()), frame.size() * 2)),
+                         unsigned(crc32::of(reinterpret_cast<const uint8_t*>(audio), size_t(n) * 2)), n);
         emu_sum += emu; ren_sum += ren;
         emu_max = std::max(emu_max, emu); ren_max = std::max(ren_max, ren);
         sec_emu += emu; sec_ren += ren;
@@ -502,6 +517,7 @@ int main(int argc, char** argv)
         }
     }
     wav.close();
+    if (hash_file) std::fclose(hash_file);
     if (frames > 0)
         std::printf("summary: %d frames (%.1f s of game), emu avg %.3f ms (max %.3f), render avg %.3f ms "
                     "(max %.3f) per %.2f ms frame; watchdog resets %d\n",

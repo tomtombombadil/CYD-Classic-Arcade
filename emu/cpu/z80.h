@@ -15,6 +15,11 @@
 
 #include "hot.h"
 
+// The interpreter's small helpers (memory, fetch, stack, ALU) must be inlined
+// into the big decoder; left to itself GCC called fetch16 / wr16 / cp8 ...
+// out of line there (~20 % of Galaga's emulation time on the PC).
+#define Z80_INLINE inline __attribute__((always_inline))
+
 namespace z80 {
 
 using read_fn  = uint8_t (*)(void* ctx, uint16_t addr);
@@ -91,12 +96,12 @@ public:
     uint8_t r_value() const { return uint8_t((r & 0x7f) | r7); }
 
     // Memory helpers (also handy for test harnesses).
-    uint8_t rd(uint16_t a)
+    Z80_INLINE uint8_t rd(uint16_t a)
     {
         const uint8_t* p = read_page[a >> kPageShift];
         return p ? p[a & (kPageSize - 1)] : mem_read(ctx, a);
     }
-    void wr(uint16_t a, uint8_t v)
+    Z80_INLINE void wr(uint16_t a, uint8_t v)
     {
         uint8_t* p = write_page[a >> kPageShift];
         if (p) p[a & (kPageSize - 1)] = v;
@@ -110,24 +115,24 @@ private:
     bool    ei_delay_ = false;       // no interrupt right after EI
     int     done_ = 0, target_ = 0;
 
-    uint8_t  fetch() { return rd(pc.w++); }
-    uint16_t fetch16()
+    Z80_INLINE uint8_t fetch() { return rd(pc.w++); }
+    Z80_INLINE uint16_t fetch16()
     {
         const uint8_t lo = rd(pc.w++);
         return uint16_t(lo | (rd(pc.w++) << 8));
     }
-    uint16_t rd16(uint16_t a) { return uint16_t(rd(a) | (rd(uint16_t(a + 1)) << 8)); }
-    void wr16(uint16_t a, uint16_t v)
+    Z80_INLINE uint16_t rd16(uint16_t a) { return uint16_t(rd(a) | (rd(uint16_t(a + 1)) << 8)); }
+    Z80_INLINE void wr16(uint16_t a, uint16_t v)
     {
         wr(a, uint8_t(v));
         wr(uint16_t(a + 1), uint8_t(v >> 8));
     }
-    void push(uint16_t v)
+    Z80_INLINE void push(uint16_t v)
     {
         sp.w = uint16_t(sp.w - 2);
         wr16(sp.w, v);
     }
-    uint16_t pop()
+    Z80_INLINE uint16_t pop()
     {
         const uint16_t v = rd16(sp.w);
         sp.w = uint16_t(sp.w + 2);
@@ -156,13 +161,13 @@ private:
 
     uint8_t& reg8(int z);           // B C D E H L - A (z != 6)
     int  take_irq();
-    template <int IDX> int exec(uint8_t op);    // inlined into the three below
-    int  exec_hl(uint8_t op);                   // unprefixed
+    template <int IDX> int exec(uint8_t op);    // inlined into run() (unprefixed) and the two below
     int  exec_ix(uint8_t op);                   // after DD
     int  exec_iy(uint8_t op);                   // after FD
     int  exec_cb(uint8_t op);
     int  exec_index_cb(uint16_t base);
-    int  exec_ed(uint8_t op);
+    int  exec_ed(uint8_t op, int pre);         // pre: T-states of a DD / FD prefix
+    int  block_copy(uint8_t op, int spent);
 };
 
 } // namespace z80

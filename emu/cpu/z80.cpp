@@ -132,7 +132,7 @@ void Cpu::reset()
 
 // --- ALU -------------------------------------------------------------------
 
-inline void Cpu::add8(uint8_t v)
+Z80_INLINE void Cpu::add8(uint8_t v)
 {
     const unsigned res = unsigned(rA) + v;
     rF = uint8_t(SZ53(res) | ((res >> 8) & CF) | ((rA ^ res ^ v) & HF) |
@@ -140,7 +140,7 @@ inline void Cpu::add8(uint8_t v)
     rA = uint8_t(res);
 }
 
-inline void Cpu::adc8(uint8_t v)
+Z80_INLINE void Cpu::adc8(uint8_t v)
 {
     const unsigned res = unsigned(rA) + v + (rF & CF);
     rF = uint8_t(SZ53(res) | ((res >> 8) & CF) | ((rA ^ res ^ v) & HF) |
@@ -148,7 +148,7 @@ inline void Cpu::adc8(uint8_t v)
     rA = uint8_t(res);
 }
 
-inline void Cpu::sub8(uint8_t v)
+Z80_INLINE void Cpu::sub8(uint8_t v)
 {
     const unsigned res = unsigned(rA) - v;
     rF = uint8_t(SZ53(res) | NF | ((res >> 8) & CF) | ((rA ^ res ^ v) & HF) |
@@ -156,7 +156,7 @@ inline void Cpu::sub8(uint8_t v)
     rA = uint8_t(res);
 }
 
-inline void Cpu::sbc8(uint8_t v)
+Z80_INLINE void Cpu::sbc8(uint8_t v)
 {
     const unsigned res = unsigned(rA) - v - (rF & CF);
     rF = uint8_t(SZ53(res) | NF | ((res >> 8) & CF) | ((rA ^ res ^ v) & HF) |
@@ -165,25 +165,25 @@ inline void Cpu::sbc8(uint8_t v)
 }
 
 // CP: like SUB without storing, but X / Y come from the operand.
-inline void Cpu::cp8(uint8_t v)
+Z80_INLINE void Cpu::cp8(uint8_t v)
 {
     const unsigned res = unsigned(rA) - v;
     rF = uint8_t((SZ53(res) & (SF | ZF)) | (v & (XF | YF)) | NF | ((res >> 8) & CF) |
                  ((rA ^ res ^ v) & HF) | ((((v ^ rA) & (rA ^ res)) >> 5) & PF));
 }
 
-inline void Cpu::and8(uint8_t v) { rA &= v; rF = uint8_t(SZP53(rA) | HF); }
-inline void Cpu::xor8(uint8_t v) { rA ^= v; rF = SZP53(rA); }
-inline void Cpu::or8(uint8_t v)  { rA |= v; rF = SZP53(rA); }
+Z80_INLINE void Cpu::and8(uint8_t v) { rA &= v; rF = uint8_t(SZP53(rA) | HF); }
+Z80_INLINE void Cpu::xor8(uint8_t v) { rA ^= v; rF = SZP53(rA); }
+Z80_INLINE void Cpu::or8(uint8_t v)  { rA |= v; rF = SZP53(rA); }
 
-inline uint8_t Cpu::inc8(uint8_t v)
+Z80_INLINE uint8_t Cpu::inc8(uint8_t v)
 {
     const uint8_t res = uint8_t(v + 1);
     rF = uint8_t((rF & CF) | SZ53(res) | (res == 0x80 ? PF : 0) | ((res & 0x0f) ? 0 : HF));
     return res;
 }
 
-inline uint8_t Cpu::dec8(uint8_t v)
+Z80_INLINE uint8_t Cpu::dec8(uint8_t v)
 {
     const uint8_t res = uint8_t(v - 1);
     rF = uint8_t((rF & CF) | NF | SZ53(res) | (res == 0x7f ? PF : 0) | ((v & 0x0f) ? 0 : HF));
@@ -192,7 +192,7 @@ inline uint8_t Cpu::dec8(uint8_t v)
 
 // ADD HL/IX/IY,rr: S Z P kept; H from bit 11, C from bit 15, X Y from the
 // high byte of the result.
-inline void Cpu::add16(Pair& d, uint16_t v)
+Z80_INLINE void Cpu::add16(Pair& d, uint16_t v)
 {
     const uint32_t res = uint32_t(d.w) + v;
     rF = uint8_t((rF & (SF | ZF | PF)) | (((d.w ^ res ^ v) >> 8) & HF) |
@@ -200,7 +200,7 @@ inline void Cpu::add16(Pair& d, uint16_t v)
     d.w = uint16_t(res);
 }
 
-inline void Cpu::adc16(uint16_t v)
+Z80_INLINE void Cpu::adc16(uint16_t v)
 {
     const uint32_t res = uint32_t(hl.w) + v + (rF & CF);
     rF = uint8_t(((res >> 8) & (SF | XF | YF)) | ((res & 0xffff) ? 0 : ZF) |
@@ -209,7 +209,7 @@ inline void Cpu::adc16(uint16_t v)
     hl.w = uint16_t(res);
 }
 
-inline void Cpu::sbc16(uint16_t v)
+Z80_INLINE void Cpu::sbc16(uint16_t v)
 {
     const uint32_t res = uint32_t(hl.w) - v - (rF & CF);
     rF = uint8_t(((res >> 8) & (SF | XF | YF)) | ((res & 0xffff) ? 0 : ZF) | NF |
@@ -219,7 +219,7 @@ inline void Cpu::sbc16(uint16_t v)
 }
 
 // CB rotates / shifts: RLC RRC RL RR SLA SRA SLL SRL.
-inline uint8_t Cpu::shift_op(int kind, uint8_t v)
+Z80_INLINE uint8_t Cpu::shift_op(int kind, uint8_t v)
 {
     uint8_t res, c;
     switch (kind) {
@@ -238,7 +238,7 @@ inline uint8_t Cpu::shift_op(int kind, uint8_t v)
 
 // BIT n: Z and P/V = bit clear, S only for bit 7 set, H set, C kept;
 // X / Y from `xy_src` (the register, or the address high byte for (IX+d)).
-inline void Cpu::bit_op(int n, uint8_t v, uint8_t xy_src)
+Z80_INLINE void Cpu::bit_op(int n, uint8_t v, uint8_t xy_src)
 {
     const uint8_t b = uint8_t(v & (1 << n));
     rF = uint8_t((rF & CF) | HF | (b ? (b & SF) : (ZF | PF)) | (xy_src & (XF | YF)));
@@ -261,7 +261,7 @@ inline void Cpu::daa()
     rF = uint8_t(SZP53(rA) | (rF & NF) | c | h);
 }
 
-inline uint8_t& Cpu::reg8(int z)
+Z80_INLINE uint8_t& Cpu::reg8(int z)
 {
     switch (z) {
     case 0:  return rB;
@@ -295,39 +295,6 @@ int Cpu::take_irq()
         pc.w = (irq_vector_ & 0xc7) == 0xc7 ? uint16_t(irq_vector_ & 0x38) : 0x38;
         return 13;
     }
-}
-
-EMU_HOT int Cpu::run(int cycles)
-{
-    done_ = 0;
-    target_ = cycles;
-    while (done_ < target_) {
-        if (nmi_pending_) {
-            nmi_pending_ = false;
-            halted = false;
-            iff1 = 0;
-            ++r;
-            push(pc.w);
-            pc.w = 0x66;
-            done_ += 11;
-            continue;
-        }
-        if (irq_line_ && iff1 && !ei_delay_) {
-            done_ += take_irq();
-            continue;
-        }
-        ei_delay_ = false;
-        if (halted) {
-            // Executes NOPs until an interrupt: burn the rest of the slice.
-            const int n = (target_ - done_ + 3) >> 2;
-            r = uint8_t(r + n);
-            done_ += n * 4;
-            break;
-        }
-        ++r;
-        done_ += exec_hl(fetch());
-    }
-    return done_;
 }
 
 // --- unprefixed / DD / FD --------------------------------------------------
@@ -559,7 +526,7 @@ inline __attribute__((always_inline)) int Cpu::exec(uint8_t op)
     case 0xec: CALL_IF(rF & PF)
     case 0xed:
         ++r;
-        return (IDX ? 4 : 0) + exec_ed(fetch());
+        return (IDX ? 4 : 0) + exec_ed(fetch(), IDX ? 4 : 0);
     case 0xee: xor8(fetch()); return t;
     case 0xef: RST(0x28)
 
@@ -586,9 +553,41 @@ inline __attribute__((always_inline)) int Cpu::exec(uint8_t op)
 }
 
 // Plain functions (not template instances) so EMU_HOT can place them.
-EMU_HOT int Cpu::exec_hl(uint8_t op) { return exec<0>(op); }
 EMU_HOT int Cpu::exec_ix(uint8_t op) { return exec<1>(op); }
 EMU_HOT int Cpu::exec_iy(uint8_t op) { return exec<2>(op); }
+
+EMU_HOT int Cpu::run(int cycles)
+{
+    done_ = 0;
+    target_ = cycles;
+    while (done_ < target_) {
+        if (nmi_pending_) {
+            nmi_pending_ = false;
+            halted = false;
+            iff1 = 0;
+            ++r;
+            push(pc.w);
+            pc.w = 0x66;
+            done_ += 11;
+            continue;
+        }
+        if (irq_line_ && iff1 && !ei_delay_) {
+            done_ += take_irq();
+            continue;
+        }
+        ei_delay_ = false;
+        if (halted) {
+            // Executes NOPs until an interrupt: burn the rest of the slice.
+            const int n = (target_ - done_ + 3) >> 2;
+            r = uint8_t(r + n);
+            done_ += n * 4;
+            break;
+        }
+        ++r;
+        done_ += exec<0>(fetch());   // inlined: no call per instruction
+    }
+    return done_;
+}
 
 // --- CB --------------------------------------------------------------------
 
@@ -632,7 +631,42 @@ EMU_HOT int Cpu::exec_index_cb(uint16_t base)
 
 // --- ED --------------------------------------------------------------------
 
-EMU_HOT int Cpu::exec_ed(uint8_t op)
+// LDIR / LDDR repeating: runs the further iterations here, exactly as run()
+// would one instruction at a time (2 R increments and 21 T-states each, 16
+// for the last), while run() would go on: the slice has time left and no
+// interrupt is waiting. Only between directly mapped pages (no callback
+// can see the time or stop the run) and never onto the instruction's own
+// two bytes; otherwise run() takes the next iteration itself. `spent` =
+// the T-states the instruction has taken so far (its prefixes included).
+// Returns the T-states added. Galaga's CPUs copy their sprite tables with
+// LDIR every frame; one iteration at a time cost ~150 host instructions.
+EMU_HOT int Cpu::block_copy(uint8_t op, int spent)
+{
+    int added = 0;
+    const int step = (op & 0x08) ? -1 : 1;
+    while (done_ + spent + added < target_ && !nmi_pending_ && !(irq_line_ && iff1)) {
+        const uint16_t s = hl.w, d = de.w;
+        const uint8_t* rp = read_page[s >> kPageShift];
+        uint8_t* wp = write_page[d >> kPageShift];
+        if (!rp || !wp || uint16_t(d - pc.w) < 2) break;
+        r = uint8_t(r + 2);
+        const uint8_t v = rp[s & (kPageSize - 1)];
+        wp[d & (kPageSize - 1)] = v;
+        hl.w = uint16_t(s + step);
+        de.w = uint16_t(d + step);
+        --bc.w;
+        const uint8_t n = uint8_t(v + rA);
+        rF = uint8_t((rF & (SF | ZF | CF)) | (bc.w ? PF : 0) | (n & XF) | ((n << 4) & YF));
+        if (!bc.w) {
+            pc.w = uint16_t(pc.w + 2);
+            return added + 16;
+        }
+        added += 21;
+    }
+    return added;
+}
+
+EMU_HOT int Cpu::exec_ed(uint8_t op, int pre)
 {
     int t = kCycEd.t[op];
     if (op >= 0x40 && op < 0x80) {
@@ -698,7 +732,11 @@ EMU_HOT int Cpu::exec_ed(uint8_t op)
         --bc.w;
         const uint8_t n = uint8_t(v + rA);
         rF = uint8_t((rF & (SF | ZF | CF)) | (bc.w ? PF : 0) | (n & XF) | ((n << 4) & YF));
-        if ((op & 0x10) && bc.w) { pc.w = uint16_t(pc.w - 2); t += 5; }
+        if ((op & 0x10) && bc.w) {
+            pc.w = uint16_t(pc.w - 2);
+            t += 5;
+            t += block_copy(op, pre + t);
+        }
         return t;
     }
     case 0xa1: case 0xa9: case 0xb1: case 0xb9: { // CPI CPD CPIR CPDR

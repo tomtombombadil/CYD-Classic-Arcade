@@ -634,12 +634,50 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   sleeps to its next interrupt. No Z80 core change. Checked against runs
   without it: the same picture and WSG state frame for frame (in Galaga's
   play a score digit can show a frame late now and then; R differs).
+  Exact passes (`Speedup::pass_cycles` / `pass_fetches`, 2026-10-17): for
+  a fixed loop the CPU skips whole passes but the last (time and R
+  counted as if run) and runs the rest itself, so it ends the slice where
+  running would have - bit-exact, unlike the whole-slice skips above.
+- Galaga / Dig Dug speed (2026-10-17; Tom, v0.14.0: Galaga dropped many
+  frames when a wave swoops in). Measured with a bot-played 20,000-frame
+  run (coins, stages 1-2, deaths) on the PC: the busy play frames are real
+  work - main ~25K, sub ~27K, sound ~12K Z80 cycles a frame, little left to
+  idle-skip - and rendering cost twice the emulation. Changes, all checked
+  bit-exact (`arcade_host --hash`: every frame's picture and audio CRC the
+  same as before over 20,000 frames of Galaga and Dig Dug, 6,000 of
+  Pac-Man, Ms. Pac-Man, Rally-X, Donkey Kong, Mr. Do!): rendering - a
+  per-frame list of which sprites touch each 16-line band
+  (`sprite_bands`, sprites with only blank tiles left out) instead of 64
+  tries a line, per tile row a mask of the characters that draw anything
+  (blank ones skipped unseen), unrolled opaque tile rows, Dig Dug's
+  sprite wrap found once; Z80 core - LDIR / LDDR between direct pages
+  run in one go (`block_copy`: exact - R, T-states, flags, stops where
+  run() would: slice end, an interrupt, I/O, its own bytes; the boards
+  copy their sprite tables with LDIR every frame, ~15 % of the cycles),
+  the unprefixed decoder inlined into run(), small helpers forced inline
+  (GCC had left fetch16 / wr16 / cp8 out of line); `steady()` compares
+  its inputs with memcmp; Galaga main-CPU waits 0540, 01BF, 03D8 as exact
+  passes. Host instructions a frame (callgrind, first 8,000 frames):
+  Galaga emulation 601K -> 442K, rendering 1,272K -> 217K; Dig Dug
+  emulation 522K -> 414K, rendering 3,272K -> 745K. PC wall time in play
+  (best of 5, us a frame): Galaga emu 68 -> 59 (p99 104 -> 95), render
+  107 -> 22 (p99 131 -> 34), emu + render p99 230 -> 126, worst 273 ->
+  150; Dig Dug emu 56 -> 52, render 204 -> 47, p99 303 -> 137. The busy
+  frames' emulation is now most of the cost and only ~10 % cheaper: the
+  Z80 interpreter itself (~45 host instructions a Z80 instruction on the
+  PC) is what's left. Next step on the board (not
+  done): Galaga's stars change ~140 of 288 lines every frame, but only ~9 %
+  of the pixels - sending changed parts of lines (e.g. 8 hashes a line)
+  instead of whole lines would cut its SPI time ~5x.
 - Galaga: emulated CPUs, WSG, tiles / sprites / 05XX stars (the 256 stars
   of the LFSR period found once, placed per frame); 54XX explosions are our
   own noise + band-pass model (`emu/sound/namco54.*`). Speedups: sub / sound
   main loops, seven RAM-poll loops, and the main CPU's background loop
-  (skipped once its inputs stay unchanged 6000 cycles). Cycles a frame
-  152K -> ~31K attract, ~55K play.
+  (skipped once its inputs stay unchanged 6000 cycles - its steady count
+  restarts at every VBLANK IRQ, so ~6K cycles of it run each frame in
+  play; skipping it sooner would change R and so the game), plus three
+  exact-pass waits (0540, 01BF, 03D8). Cycles a frame 152K -> ~31K
+  attract, ~55K play (busy wave entries ~64K).
 - Dig Dug: same board; playfield from the map ROM, text layer, sprites
   (x wraps at 256, kept off the score lines), EAROM high scores (not kept
   over power-off). Speedups: the three main loops. ~22K attract, ~52K play.
@@ -689,7 +727,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Galaga-family parts, `atari_tests` for the 6502 boards)
   and `tools/host/` (`arcade_host`: runs a game headless with scripted
   inputs, writes PNG frames and a WAV; a game table in it, `--samples` for
-  a MAME sample zip). Run them after any
+  a MAME sample zip, `--hash FILE` = each frame's picture and audio CRC,
+  to show a speed-up changed nothing: compare the files of the old and the
+  new build). Run them after any
   emulator change. Test programs that aren't ours (ZEX, the 8080 tests) are
   downloaded into `build/` with pinned SHA-256s, never committed.
 - 6809 core (`emu/cpu/m6809.*`): no public 6809 test program was found,

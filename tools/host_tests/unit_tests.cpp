@@ -420,6 +420,65 @@ void test_z80_misc()
     }
 }
 
+// LDIR / LDDR run their repeats in one go (Cpu::block_copy): the result of
+// run(n) must be what stepping one instruction at a time gives - the same
+// registers, R, memory and T-states - whatever the budget, with an
+// interrupt due, an unmapped (callback) page in the way, the copy running
+// over its own bytes, or a DD prefix.
+void test_z80_block_copy()
+{
+    struct Case {
+        std::initializer_list<uint8_t> code;  // at 0x100
+        uint16_t hl, de, bc;
+        bool     irq;                         // IRQ line up (IM 1, after EI)
+        bool     hole;                        // 0x8400-0x87FF goes through callbacks
+    };
+    const Case cases[] = {
+        {{0xed, 0xb0, 0x76}, 0x4000, 0x8000, 40, false, false},             // LDIR
+        {{0xed, 0xb8, 0x76}, 0x4027, 0x8027, 40, false, false},             // LDDR
+        {{0xfb, 0xed, 0xb0, 0x76}, 0x4000, 0x8000, 40, true, false},        // EI; LDIR, IRQ due
+        {{0xed, 0xb0, 0x76}, 0x43f0, 0x83f0, 40, false, true},              // into a callback page
+        {{0xed, 0xb0, 0x76}, 0x40f0, 0x00f8, 40, false, false},             // over its own bytes
+        {{0xdd, 0xed, 0xb0, 0x76}, 0x4000, 0x8000, 40, false, false},       // DD prefix
+        {{0xed, 0xb0, 0x76}, 0x4000, 0x8000, 0, false, false},              // BC = 0: 64 KB
+    };
+    for (const Case& k : cases)
+        for (int budget = 1; budget <= 1500; budget += (budget < 120 ? 1 : 37)) {
+            Bench a, b;
+            for (Bench* x : {&a, &b}) {
+                for (int i = 0; i < 0x10000; ++i) x->mem[i] = uint8_t(i * 7 + (i >> 8));
+                x->load(0x100, k.code);
+                x->load(0x38, {0xc9});                // RET
+                x->cpu.pc.w = 0x100;
+                x->cpu.hl.w = k.hl;
+                x->cpu.de.w = k.de;
+                x->cpu.bc.w = k.bc;
+                x->cpu.af.w = 0x12c5;
+                x->cpu.im = 1;
+                x->cpu.r = 0x75;
+                if (k.irq) x->cpu.irq(true);
+                if (k.hole) {
+                    x->cpu.map_ram(0x8400, 0x400, nullptr);
+                    x->cpu.mem_read = [](void* c, uint16_t p) { return static_cast<Bench*>(c)->mem[p]; };
+                    x->cpu.mem_write = [](void* c, uint16_t p, uint8_t v) { static_cast<Bench*>(c)->mem[p] = v; };
+                }
+            }
+            const int ran = a.cpu.run(budget);
+            int stepped = 0;
+            while (stepped < budget) stepped += b.step();
+            CHECK_EQ(ran, stepped);
+            CHECK_EQ(a.cpu.pc.w, b.cpu.pc.w);
+            CHECK_EQ(a.cpu.hl.w, b.cpu.hl.w);
+            CHECK_EQ(a.cpu.de.w, b.cpu.de.w);
+            CHECK_EQ(a.cpu.bc.w, b.cpu.bc.w);
+            CHECK_EQ(a.cpu.af.w, b.cpu.af.w);
+            CHECK_EQ(a.cpu.sp.w, b.cpu.sp.w);
+            CHECK_EQ(a.cpu.r_value(), b.cpu.r_value());
+            CHECK_EQ(int(a.cpu.iff1), int(b.cpu.iff1));
+            CHECK(std::memcmp(a.mem, b.mem, sizeof a.mem) == 0);
+        }
+}
+
 void test_z80_interrupts()
 {
     {
@@ -1955,6 +2014,7 @@ int main(int argc, char** argv)
     test_z80_timing();
     test_z80_misc();
     test_z80_interrupts();
+    test_z80_block_copy();
     test_pacman();
     test_i8080_timing();
     test_i8080_flags();

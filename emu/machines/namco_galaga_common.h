@@ -77,11 +77,23 @@ enum class Idle : uint8_t {
     kYes,       // it would spin through the whole slice: skip it
     kStep,      // not at a check point: run one instruction and ask again
 };
+//
+// Exact passes (`pass_cycles` set): for a loop whose every pass is the same
+// instructions (pass_cycles T-states, pass_fetches opcode fetches) and
+// leaves the CPU as it found it but for registers the next pass sets again,
+// checked at its top (kStep elsewhere: stepping is running). Found spinning
+// at a slice start, the CPU skips whole passes - their time and R counted
+// as if run - and runs the last pass and the slice's remainder itself, so
+// it ends the slice exactly where running every pass would have left it:
+// nothing changes, not even the timing (unlike the loops above, which skip
+// the whole slice and leave the CPU at the loop's top).
 struct Speedup {
     uint8_t  cpu;
     uint16_t pc_lo, pc_hi;
     Idle   (*check)(Board& b, uint16_t pc);
     uint8_t  cycles_per_r;
+    uint8_t  pass_cycles = 0;
+    uint8_t  pass_fetches = 0;
 };
 
 // What one frame cost, per CPU: cycles the interpreter ran and cycles
@@ -110,10 +122,7 @@ public:
     const namco_wsg::Wsg&   wsg() const { return wsg_; }
     uint8_t latch() const { return latch_; }
     // RAM as the CPUs see it at 8000-87FF / 8800-8BFF / 9000-93FF / 9800-9BFF.
-    uint8_t peek(uint16_t addr) const
-    {
-        return addr < 0x8800 ? vram_[addr & 0x7ff] : ram_[((addr >> 11) & 3) - 1][addr & 0x3ff];
-    }
+    uint8_t peek(uint16_t addr) const { return ram_ref(addr); }
 
     // For loops that do work when there is some (a speedup's check): true
     // once nothing in the loop's inputs (RAM ranges [lo, hi]) has changed
@@ -169,6 +178,11 @@ protected:
     uint8_t latch_ = 0;                 // 6820-6827
 
 private:
+    const uint8_t& ram_ref(uint16_t addr) const
+    {
+        return addr < 0x8800 ? vram_[addr & 0x7ff] : ram_[((addr >> 11) & 3) - 1][addr & 0x3ff];
+    }
+
     struct Port {
         Board* board;
         int    n;
@@ -257,5 +271,49 @@ enum SpriteFlag : uint8_t { kFlipX = 1, kFlipY = 2, kWide = 4, kTall = 8 };
 // power of two), pens[pixel value], drawn where bit p of `opaque` is set.
 void draw_sprite_line(const Sprite& s, int line, const uint32_t* rows, int codes, const uint16_t* pens,
                       uint8_t opaque, uint16_t* out);
+
+// Which sprites touch which display lines, made once a frame at the VBLANK
+// snapshot: bands[b] bit s = sprite s reaches a line of band b (lines 16b
+// .. 16b + 15). render_line then visits only those sprites, in drawing
+// order (lowest bit first), instead of trying all 64 on every line - that
+// was a third of Galaga's rendering. `wrap` = 256 for a board whose sprite
+// x wraps at 256 (Dig Dug: the sprite also shows 256 lines up and down).
+// A sprite whose tiles are all blank (blank[tile code], tile codes wrapping
+// at `codes`) draws nothing and is left out.
+constexpr int kBands = (kScreenH + 15) / 16;
+void sprite_bands(const Sprite* sprites, int count, int wrap, const uint8_t* blank, int codes, uint64_t* bands);
+// blank[code] = 1 for the sprite tiles (decode_sprites rows) with no pixel set.
+void blank_sprites(const uint32_t* rows, int count, uint8_t* blank);
+
+// The 8 pixels of a 2-bit tile row with every pixel value drawn: pixel x =
+// bits 2x+1..2x, pens[pixel value]. Unrolled, constant shifts (the loop
+// took ~10 host instructions a pixel - Dig Dug's playfield).
+inline void draw_tile_row_opaque(uint32_t bits, const uint16_t* pens, uint16_t* o)
+{
+    const uint16_t p0 = pens[bits & 3], p1 = pens[(bits >> 2) & 3], p2 = pens[(bits >> 4) & 3],
+                   p3 = pens[(bits >> 6) & 3], p4 = pens[(bits >> 8) & 3], p5 = pens[(bits >> 10) & 3],
+                   p6 = pens[(bits >> 12) & 3], p7 = pens[(bits >> 14) & 3];
+    o[0] = p0; o[1] = p1; o[2] = p2; o[3] = p3; o[4] = p4; o[5] = p5; o[6] = p6; o[7] = p7;
+}
+
+// The same, drawn only where bit p of `opaque` is set for pixel value p.
+inline void draw_tile_row(uint16_t bits, const uint16_t* pens, uint8_t opaque, uint16_t* o)
+{
+    if (opaque == 0x0f) {
+        draw_tile_row_opaque(bits, pens, o);
+        return;
+    }
+    if (!(opaque & 1)) {                        // pixel value 0 transparent: only the set pixels
+        for (; bits; bits = uint16_t(bits >> 2), ++o) {
+            const int p = bits & 3;
+            if (p && (opaque >> p & 1)) *o = pens[p];
+        }
+        return;
+    }
+    for (int x = 0; x < 8; ++x) {
+        const int p = (bits >> (2 * x)) & 3;
+        if (opaque >> p & 1) o[x] = pens[p];
+    }
+}
 
 } // namespace namco_galaga

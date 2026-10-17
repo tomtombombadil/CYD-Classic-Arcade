@@ -70,6 +70,8 @@ struct VideoState {
     uint8_t vram[0x400];                        // text layer codes
     namco_galaga::Sprite sprite[kSprites];      // on-screen ones, in drawing order
     uint8_t sprite_count;
+    uint64_t sprite_bands[namco_galaga::kBands];    // sprites per 16 lines (namco_galaga::sprite_bands)
+    uint32_t text_cols[kScreenH / 8];           // per tile row: bit c = column c's character isn't blank
     uint8_t latch;                              // the video latch (playfield picture, colours)
 };
 
@@ -112,8 +114,10 @@ private:
     VideoState video_{};
     // Graphics decoded once into display orientation.
     uint8_t  text_rows_[128 * 8] = {};      // 1 bit a pixel
+    uint8_t  text_blank_[128] = {};         // per character: no pixel set
     uint16_t tile_rows_[256 * 8] = {};      // 2 bits a pixel
     uint32_t sprite_rows_[256 * 16] = {};
+    uint8_t  sprite_blank_[256] = {};       // per sprite tile: no pixel set
     uint16_t text_pen_[16] = {};            // RGB565 per colour (pixel value 1)
     uint16_t tile_pen_[64 * 4] = {};        // per (colour, pixel value)
     uint16_t sprite_pen_[64 * 4] = {};
