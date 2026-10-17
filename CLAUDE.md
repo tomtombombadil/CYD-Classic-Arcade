@@ -291,9 +291,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   render_line(vs, ...) read only the copy and tables made at init
   (checked: every member they read is written only in init). Touch shares
   the display's bus on the ESP32-32E boards, so the game loop reads the
-  held-touch exit only when the bus mutex is free. Others (vector games,
-  Williams 38 KB and Qix 64 KB video RAM, Mr. Do!, Burger Time,
-  Invaders) still draw between frames on core 1. `arcade_host --panel`
+  held-touch exit only when the bus mutex is free. Asteroids and Tempest
+  too, from a copy of the segment list (2026-10-17, see Vector games).
+  Others (Star Wars - its copy is too big for now -, Williams 38 KB and
+  Qix 64 KB video RAM, Mr. Do!, Burger Time, Invaders) still draw between
+  frames on core 1. `arcade_host --panel`
   draws the tile games from a snapshot one or two frames old (as the other
   core would) and checks it against that frame's full picture: 0 wrong.
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
@@ -441,12 +443,21 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   clock mapping, the 8088 timing (no prefetch queue).
 - Vector games: `emu/machines/vector_display.*` keeps each picture as a
   list of clipped segments in output pixels (1/16 px fixed point; 14-byte
-  segments + 2 bytes in the sort list + the active list; capacity and
-  active-list size are template parameters - Asteroids / Tempest 1024,
-  ~18 KB), sorted by first row, and
+  segments + 2 bytes in the sort list + 4 bytes an active-list entry
+  (number << 16 | last row); capacity and active-list size are template
+  parameters - Asteroids / Tempest 1024, 20 KB), sorted by first row, and
   draws one output line at a time (1-pixel lines, dots 2 x 2, later lines
   on top) - no frame buffer. The machine builds a whole picture inside one
-  run_frame (begin / add / finish).
+  run_frame (begin / add / finish). Drawing (2026-10-17, exact): a row's
+  new segments merge into the active list from the back in one pass (it
+  was an insertion each), ended ones go by their stored last row, x by a
+  32-bit multiply (slope x t <= |dx| x 65536 fits), shifts for / 16 (the
+  clipper clamps to the screen, so nothing is negative). `Copy` = a heap
+  copy of the last picture (20 bytes a segment of the biggest picture so
+  far, in steps of 64, nothrow - take() false if it can't be had), drawn
+  the same way: Asteroids and Tempest draw on core 0 from it
+  (`snapshot()`; max seen 498 / 696 segments = ~10 / ~14 KB, 20 KB if a
+  picture ever fills the display), `--panel` 0 wrong.
 - Asteroids (`emu/machines/asteroids.*`, set `asteroid` (rev 4) or
   `asteroid2` (rev 2, Tom's; older MAME's `asteroid`) as romset variants,
   no DVG PROM): emulated = 6502 at 1.512 MHz, NMI every 6144 cycles (off
@@ -631,8 +642,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   (the game waits for VG_HALT, so its drawing time is kept exact); the
   250 x 280 window stretched over 320 x 240 as the 4:3 tube does. The
   matrix processor (`starwars_mathbox.*`) runs its microcode from the
-  user's PROMs as it goes (no decoded copy), with its timing (5 clocks a
-  step, +33 a multiply) on MATH_RUN; the divider; the 23-bit LFSR (3 MHz,
+  user's PROMs (the four nibbles put together once at init: 2 KB), with its
+  timing (5 clocks a step, +33 a multiply) on MATH_RUN; the divider; the 23-bit LFSR (3 MHz,
   jumped ahead in closed form at each read). X2212 NOVRAM in RAM only
   (store / recall). Sound board: 6809E, 6532 RIOT (`riot6532.*`: timer IRQ,
   PA7 edge IRQ on a command), latches both ways, 4 POKEYs, and our own
@@ -654,11 +665,59 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   sound CPU's timer wait (7D4C); about half the cycles. The attract mode
   sends no sound command (silent, whatever the Demo Sounds switch). Display
   cap 1700 segments (the flight instructions page needs ~1660, high scores
-  ~1070, play up to ~900), at most 256 crossing a row (166 seen). Memory:
-  machine object ~51 KB (20 KB RAM, 27.8 KB display) + 72 KB of ROM
-  regions (9). PC: ~1.0M host instructions a frame emulated (callgrind,
-  attract + play; Pac-Man 483K), ~0.3M rendered. Unsure: the speech
-  filter, attract silence, the TMS5220's start delay (no "fast start").
+  ~1070, play up to ~900 - 1,084 the most in a 12,000-frame played run),
+  at most 256 crossing a row (173 seen). Memory: machine object ~54 KB
+  (20 KB RAM, 28.3 KB display, 2 KB microprogram) + 72 KB of ROM regions
+  (9). Unsure: the speech filter, attract silence, the TMS5220's start
+  delay (no "fast start").
+- Star Wars speed (2026-10-17; Tom, v0.14.x: 47.4 frames and 32 pictures a
+  second on the 3.2", "completely unplayable", the S3 too). Measured with a
+  played run (`--input`: coin, start, yoke moves, fire; 9,000-12,000
+  frames). Before: 1.04M host instructions a frame emulated (callgrind,
+  6,000 frames attract + play; Pac-Man 483K) - the two 6809s ~505K (main
+  ~3,600 instructions a frame of real work spread over many routines, sound
+  ~1,700, half of it its timer wait), the AVG + picture build ~185K a frame
+  (~280K a picture, 0.66 pictures a frame), POKEYs ~107K, matrix processor
+  ~100K, TMS5220 ~37K, speech / DC filters ~32K, sound glue ~55K - and 0.32M
+  rendered. Changes, all exact (`arcade_host --hash`: every frame's picture
+  and audio CRC as before over 12,000 played frames and 10,000 of attract;
+  Robotron, Defender, Qix (6809 / 6800 core), Asteroids, Tempest (display,
+  AVG, POKEY) 5,000-6,000 frames each, the same): the sound board is no
+  longer run after every main CPU slice, only where the boards meet (4400 /
+  4401 / 46E0) and at the frame's end (same instructions, the same first
+  boundary past each target - see run_frame); the sound CPU's wait at 7D4C
+  is done by `sound_idle` instruction by instruction without the CPU
+  (anywhere in the loop, partial turns too, stopping before a branch that
+  leaves it) and its LDA <$00 ends the CPU's run, so the wait never runs
+  to a slice's end (sound CPU 1,714 -> 885 instructions a frame;
+  `starwars_tests` checks the loop against the CPU, with and without a
+  timeout); 6809: the A / B / D / X / U groups (0x80-0xFF) as one template
+  per opcode (`group<op>`, mode and operation known at compile time) and
+  one test of the interrupt / wait state per instruction - ~13 % (x86 -O2
+  object 35 -> 61 KB; force-inlining ea_indexed / fetch16 / the ALU helpers
+  or a one-lookup rd16 gained nothing and were dropped); AVG
+  (`run_lines<Variant, Sink>`): the machine's line code inlined into the
+  loop, its state in locals, a STAT's 8 brightnesses worked out once (not a
+  division a vector), the normalisation by count-redundant-sign-bits (NSA
+  on the ESP32; equal for all 8192 values); the display's on-screen check
+  and store inline; matrix processor: the decoded table, the strobe
+  combinations the microprogram uses as straight code, registers in
+  locals, the multiply in 32 bits (its low 32 bits are all that's kept);
+  POKEY: its level and next underflow kept (`refresh()` after writes), so a
+  sample without an underflow is no search (also Tempest's); TMS5220: the
+  20 noise LFSR steps a sample as two table lookups (linear over GF(2),
+  576 bytes of flash); the speech low-pass and the DC blocker skipped while
+  silent and settled. After: ~0.73M emulated a frame (6809s ~375K, AVG +
+  build ~130K, matrix processor ~60K, POKEYs ~55K, TMS5220 ~27K), 0.22M
+  rendered. PC wall time in play, best of 3 runs per frame (ms): emu avg
+  0.127 -> 0.086, p99 0.225 -> 0.162, worst 0.290 -> 0.212; render avg
+  0.043 -> 0.031, p99 0.093 -> 0.065, worst 0.121 -> 0.089. Left: the main
+  6809's real work (~85 host instructions a 6809 instruction), the picture
+  build when the AVG runs, and drawing on core 1 between frames. Drawing on
+  core 0 (`snapshot()`, `vector_display::Copy`) works (`--panel 320x480`:
+  4,331 pictures, 0 wrong) but is off (`kDrawFromSnapshot`): the copy is 20
+  bytes a segment on the heap - ~18 KB for play's ~1,100 segments, 28 KB
+  for the full 1,700.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

@@ -36,7 +36,15 @@ public:
     // Adds a line from (x0, y0) to (x1, y1) in 1/16 pixels, clipped to the
     // screen; `color` is the pixel value written (RGB565 as the machine
     // wants it).
-    void add(int x0, int y0, int x1, int y1, uint16_t color);
+    void add(int x0, int y0, int x1, int y1, uint16_t color)
+    {
+        // Wholly on the screen (most lines): kept as they are.
+        if (unsigned(x0) <= unsigned(xlim_) && unsigned(x1) <= unsigned(xlim_) && unsigned(y0) <= unsigned(ylim_) &&
+            unsigned(y1) <= unsigned(ylim_))
+            store(x0, y0, x1, y1, color);
+        else
+            add_clipped(x0, y0, x1, y1, color);
+    }
     // Ends the picture: sorts it for render_line().
     void finish();
 
@@ -59,27 +67,52 @@ public:
     };
 
 protected:
-    Base(Seg* seg, uint16_t* order, uint16_t* active, int cap, int active_cap)
+    Base(Seg* seg, uint16_t* order, uint32_t* active, int cap, int active_cap)
         : seg_(seg), order_(order), active_(active), cap_(cap), active_cap_(active_cap) {}
 
+    friend class Copy;
+
 private:
-    void store(int ax, int ay, int bx, int by, uint16_t color);
-    void draw(const Seg& s, int y, uint16_t* out) const;
+    void add_clipped(int x0, int y0, int x1, int y1, uint16_t color);
+    void store(int ax, int ay, int bx, int by, uint16_t color)
+    {
+        if (count_ >= cap_) {
+            ++dropped_;
+            return;
+        }
+        if (ay > by) {
+            const int tx = ax, ty = ay;
+            ax = bx; ay = by; bx = tx; by = ty;
+        }
+        Seg& s = seg_[count_++];
+        s.ax = int16_t(ax);
+        s.ay = int16_t(ay);
+        s.bx = int16_t(bx);
+        s.by = int16_t(by);
+        // dx << 16 fits 32 bits: |dx| < 512 x 16.
+        const int32_t slope = by > ay ? int32_t(((bx - ax) * 65536) / (by - ay)) : 0;
+        s.slope_lo = uint16_t(uint32_t(slope));
+        s.slope_hi = int16_t(uint32_t(slope) >> 16);
+        s.color = color;
+    }
+    inline void draw(const Seg& s, int y, uint16_t* out) const;
     // The last row a segment touches (a dot covers the next one too).
     int  last_row(const Seg& s) const
     {
-        const int r = s.by / kSub;
+        const int r = s.by >> 4;            // never negative: clipped
         return (s.ax == s.bx && s.ay == s.by && r + 1 < height_) ? r + 1 : r;
     }
 
     Seg*      seg_;
     // Segment numbers sorted by first row.
     uint16_t* order_;
-    // Rendering state: the segments crossing the row last drawn.
-    uint16_t* active_;
+    // Rendering state: the segments crossing the row last drawn, each as
+    // its number << 16 | its last row (so they sort by number), in order.
+    uint32_t* active_;
     int       cap_;
     int       active_cap_;          // most segments crossing one row (more aren't drawn there)
     int       width_ = 0, height_ = 0;
+    int       xlim_ = -1, ylim_ = -1;   // the last 1/16 pixel on the screen
     int       count_ = 0;
     int       dropped_ = 0;
     int       active_n_ = 0;
@@ -90,7 +123,7 @@ private:
 static_assert(sizeof(Base::Seg) == 14, "segments pack into 14 bytes");
 
 // A display holding up to N segments (N x 16 bytes), at most A of them
-// crossing one row (A x 2 bytes; A = N can never run short).
+// crossing one row (A x 4 bytes; A = N can never run short).
 template <int N, int A = N>
 class Sized : public Base {
 public:
@@ -100,10 +133,30 @@ public:
 private:
     Seg      seg_store_[N];
     uint16_t order_store_[N];
-    uint16_t active_store_[A];
+    uint32_t active_store_[A];
 };
 
-// Asteroids' and Tempest's: 1024 segments, ~18 KB.
+// Asteroids' and Tempest's: 1024 segments, 20 KB.
 using Display = Sized<1024>;
+
+// A copy of a display's last picture, drawn the same way (render_line) -
+// for drawing on another core while the machine goes on (Machine::
+// snapshot()). Its storage is on the heap, 20 bytes a segment (the segment,
+// its place in the sort list and an active list entry), as big as the
+// biggest picture taken so far (in steps of 64 segments); allocated
+// without exceptions: take() returns false when it can't be had. Its
+// active list holds as many as the display's (or every segment, if fewer):
+// the copy draws exactly what the display draws.
+class Copy : public Base {
+public:
+    Copy() : Base(nullptr, nullptr, nullptr, 0, 0) {}
+    ~Copy() { delete[] buf_; }
+    bool take(const Base& src);
+    int  bytes() const { return bytes_; }       // heap held
+
+private:
+    uint32_t* buf_ = nullptr;       // 4-byte aligned: active list, segments, sort list
+    int       bytes_ = 0;
+};
 
 } // namespace vector_display

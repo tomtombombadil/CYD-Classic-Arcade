@@ -1,11 +1,15 @@
 // Star Wars matrix processor, divider, LFSR - see starwars_mathbox.h.
 #include "starwars_mathbox.h"
 
+#include <type_traits>
+
 namespace starwars_math {
 
 void MatrixProcessor::init(const uint8_t* proms, uint8_t* ram)
 {
-    proms_ = proms;
+    for (int a = 0; a < 1024; ++a)
+        micro_[a] = uint16_t((proms[a] & 15) << 12 | (proms[0x400 + a] & 15) << 8 | (proms[0x800 + a] & 15) << 4 |
+                             (proms[0xc00 + a] & 15));
     ram_ = ram;
     reset();
 }
@@ -17,41 +21,86 @@ void MatrixProcessor::reset()
     bic_ = 0;
 }
 
+namespace {
+
+// One microinstruction's strobes, in the order the hardware's results come
+// out (the RAM word is read first, then: clear, load, store, BIC + 1, the
+// multiply, LDB, LDA). S is a compile-time constant for the strobe
+// combinations the microprogram uses, so each is straight code.
+struct Regs {
+    int16_t  a, b, c;
+    int32_t  acc;
+    uint16_t bic;
+};
+
+template <class S> inline bool step(S strobe, uint16_t w, Regs& r, uint8_t* ram, int& clocks)
+{
+    const int ma = (w & 0x80) ? (w & 0x7f) : ((w & 3) | ((r.bic & 0x1ff) << 2));
+    uint8_t* p = ram + (ma << 1);
+    const int16_t word = int16_t((p[0] << 8) | p[1]);
+    if (strobe & kClearAcc) r.acc = 0;
+    if (strobe & kLoadAcc) r.acc = int32_t(uint32_t(uint16_t(word)) << 16);
+    if (strobe & kStoreAcc) {
+        p[0] = uint8_t(uint32_t(r.acc) >> 24);
+        p[1] = uint8_t(uint32_t(r.acc) >> 16);
+    }
+    if (strobe & kIncBic) r.bic = (r.bic + 1) & 0x1ff;
+    if (strobe & kLdc) {
+        r.c = word;
+        // ACC += (A - B) x C x 4, in 32 bits as the serial adder wraps (the
+        // low 32 bits of the product: unsigned arithmetic gives them).
+        const uint32_t prod = uint32_t(int32_t(r.a) - r.b) * uint32_t(int32_t(r.c)) * 4u;
+        r.acc = int32_t(uint32_t(r.acc) + prod);
+        r.a = r.a < 0 ? -1 : 0;
+        r.b = r.b < 0 ? -1 : 0;
+        clocks += 33;
+    }
+    if (strobe & kLdb) r.b = word;
+    if (strobe & kLda) r.a = word;
+    return (strobe & kHalt) != 0;
+}
+
+template <uint8_t V> using Strobe = std::integral_constant<uint8_t, V>;
+
+} // namespace
+
 int MatrixProcessor::run(uint8_t start)
 {
+    Regs r{a_, b_, c_, acc_, bic_};
     int mpa = start << 2;
     int clocks = 0;
+    int n = 0;
     // A program that never halts would hang the board; stop after a page's
     // worth of loops (the counter wraps inside its page).
-    for (int n = 0; n < 4096; ++n) {
-        const uint16_t w = word(mpa);
-        const uint8_t strobe = uint8_t(w >> 8);
-        const int ma = (w & 0x80) ? (w & 0x7f) : ((w & 3) | ((bic_ & 0x1ff) << 2));
-        uint8_t* p = ram_ + (ma << 1);
-        const int16_t word = int16_t((p[0] << 8) | p[1]);
+    while (n < 4096) {
+        const uint16_t w = micro_[mpa];
         clocks += 5;
-        ++steps_;
-        if (strobe & kClearAcc) acc_ = 0;
-        if (strobe & kLoadAcc) acc_ = int32_t(uint32_t(uint16_t(word)) << 16);
-        if (strobe & kStoreAcc) {
-            p[0] = uint8_t(uint32_t(acc_) >> 24);
-            p[1] = uint8_t(uint32_t(acc_) >> 16);
+        ++n;
+        bool halt;
+        // The strobe combinations Star Wars' microprogram has (the rest
+        // the same way, decided as they run).
+        switch (uint8_t(w >> 8)) {
+        case 0x00: halt = false; break;     // nothing: only the time passes
+        case 0x20: halt = step(Strobe<0x20>(), w, r, ram_, clocks); break;
+        case 0x80: halt = step(Strobe<0x80>(), w, r, ram_, clocks); break;
+        case 0x02: halt = step(Strobe<0x02>(), w, r, ram_, clocks); break;
+        case 0x40: halt = step(Strobe<0x40>(), w, r, ram_, clocks); break;
+        case 0x90: halt = step(Strobe<0x90>(), w, r, ram_, clocks); break;
+        case 0x01: halt = step(Strobe<0x01>(), w, r, ram_, clocks); break;
+        case 0x06: halt = step(Strobe<0x06>(), w, r, ram_, clocks); break;
+        case 0x50: halt = step(Strobe<0x50>(), w, r, ram_, clocks); break;
+        case 0x0a: halt = step(Strobe<0x0a>(), w, r, ram_, clocks); break;
+        default:   halt = step(uint8_t(w >> 8), w, r, ram_, clocks); break;
         }
-        if (strobe & kIncBic) bic_ = (bic_ + 1) & 0x1ff;
-        if (strobe & kLdc) {
-            c_ = word;
-            // ACC += (A - B) x C x 4, in 32 bits as the serial adder wraps.
-            const int64_t prod = int64_t(int32_t(a_) - b_) * c_ * 4;
-            acc_ = int32_t(uint32_t(acc_) + uint32_t(uint64_t(prod)));
-            a_ = a_ < 0 ? -1 : 0;
-            b_ = b_ < 0 ? -1 : 0;
-            clocks += 33;
-        }
-        if (strobe & kLdb) b_ = word;
-        if (strobe & kLda) a_ = word;
-        if (strobe & kHalt) break;
+        if (halt) break;
         mpa = (mpa & 0x300) | ((mpa + 1) & 0xff);
     }
+    a_ = r.a;
+    b_ = r.b;
+    c_ = r.c;
+    acc_ = r.acc;
+    bic_ = r.bic;
+    steps_ += uint32_t(n);
     return clocks;
 }
 

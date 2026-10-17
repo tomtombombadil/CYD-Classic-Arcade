@@ -103,6 +103,13 @@ void Pokey::reset()
     t_poly_ = t_;
     update_periods();
     active_ = 0;
+    refresh();
+}
+
+void Pokey::refresh()
+{
+    lv_ = level();
+    next_at_ = t_ + soonest();
 }
 
 void Pokey::update_periods()
@@ -186,6 +193,7 @@ void Pokey::write(uint8_t reg, uint8_t v, uint32_t clock)
     default:
         break;
     }
+    refresh();
 }
 
 uint8_t Pokey::read(uint8_t reg, uint32_t clock)
@@ -253,7 +261,7 @@ void Pokey::render(int16_t* out, int n, bool add)
     if (!active_ || in_reset_) {
         // No underflow matters: the level is the same all along (what the
         // loop below would give, without looking for events).
-        const int lv = level();
+        const int lv = lv_;
         for (int i = 0; i < n; ++i) {
             frac_ += step_;
             t_ += frac_ >> 16;
@@ -262,36 +270,54 @@ void Pokey::render(int16_t* out, int n, bool add)
         }
         return;
     }
+    // The level only changes at an underflow (or a write, between calls):
+    // lv_. next_at_ = the next underflow of a channel that matters, so a
+    // sample without one is just the level (acc = lv x clocks, divided by
+    // clocks again) - no search. Both are kept up to date by write() and
+    // here (refresh()).
+    int lv = lv_;
     for (int i = 0; i < n; ++i) {
         frac_ += step_;
         const uint32_t clocks = frac_ >> 16;
         frac_ &= 0xffff;
+        if (next_at_ - t_ >= clocks) {
+            t_ += clocks;
+            out[i] = int16_t(add ? out[i] + lv : lv);
+            continue;
+        }
         const uint32_t end = t_ + clocks;
         int32_t acc = 0;
-        int lv = level();
-        if (in_reset_) {
-            acc = lv * int32_t(clocks);
-            t_ = end;
-        } else {
-            for (;;) {
-                // The next underflow before the end of this sample.
-                int next_c = -1;
-                uint32_t best = end - t_;
-                for (int c = 0; c < 4; ++c) {
-                    if (!(active_ >> c & 1)) continue;
-                    const uint32_t d = ch_[c].next - t_;
-                    if (d < best) { best = d; next_c = c; }
-                }
-                acc += lv * int32_t(best);
-                t_ += best;
-                if (next_c < 0) break;
-                step_channel(next_c, t_);
-                lv = level();
+        for (;;) {
+            // The next underflow before the end of this sample.
+            int next_c = -1;
+            uint32_t best = end - t_;
+            for (int c = 0; c < 4; ++c) {
+                if (!(active_ >> c & 1)) continue;
+                const uint32_t d = ch_[c].next - t_;
+                if (d < best) { best = d; next_c = c; }
             }
+            acc += lv * int32_t(best);
+            t_ += best;
+            if (next_c < 0) break;
+            step_channel(next_c, t_);
+            lv = level();
         }
         const int v = clocks ? int(acc / int32_t(clocks)) : lv;
         out[i] = int16_t(add ? out[i] + v : v);
+        lv_ = lv;
+        next_at_ = t_ + soonest();
     }
+}
+
+uint32_t Pokey::soonest() const
+{
+    uint32_t best = 0xffffffffu;
+    for (int c = 0; c < 4; ++c) {
+        if (!(active_ >> c & 1)) continue;
+        const uint32_t d = ch_[c].next - t_;
+        if (d < best) best = d;
+    }
+    return best;
 }
 
 } // namespace pokey

@@ -204,7 +204,12 @@ uint8_t Machine::vec_read(void* ctx, uint16_t addr)
 
 void Machine::vec_line(void* ctx, int32_t x0, int32_t y0, int32_t x1, int32_t y1, int color, int level)
 {
-    Machine& m = *static_cast<Machine*>(ctx);
+    static_cast<Machine*>(ctx)->line(x0, y0, x1, y1, color, level);
+}
+
+inline void Machine::line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int color, int level)
+{
+    Machine& m = *this;
     const int key = (color & 7) << 8 | level;
     if (key != m.pen_key_) {
         // Colour bits 2 / 1 / 0 = red / green / blue, the intensity scaling
@@ -229,7 +234,16 @@ void Machine::vec_line(void* ctx, int32_t x0, int32_t y0, int32_t x1, int32_t y1
 void Machine::vg_draw()
 {
     display_.begin();
-    const int clocks = avg_.run(16384);
+    // The lines go to line() inlined into the AVG's loop (avg_.run() would
+    // call vec_line for each).
+    struct Sink {
+        Machine& m;
+        void operator()(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int color, int level)
+        {
+            m.line(x0, y0, x1, y1, color, level);
+        }
+    } sink{*this};
+    const int clocks = avg_.run_lines<atari_avg::Variant::StarWars>(sink, 16384);
     display_.finish();
     vg_busy_until_ = now() + clocks;
     ++vg_runs_;
@@ -401,7 +415,13 @@ uint8_t Machine::snd_read(void* ctx, uint16_t addr)
         m.riot_pa_inputs();
         return m.sound_latch_;
     }
-    if (addr >= 0x1000 && addr < 0x1080) return m.riot_.ram[addr & 0x7f];
+    if (addr >= 0x1000 && addr < 0x1080) {
+        // The wait loop's LDA <$00 (sound_idle): the run ends after it, so
+        // the wait is done by sound_idle from its next instruction on
+        // rather than run to the end of the slice.
+        if (addr == 0x1000 && m.snd_.pc == kSoundWaitPc + 2 && m.idle_skip_) m.snd_.stop();
+        return m.riot_.ram[addr & 0x7f];
+    }
     if (addr >= 0x1080 && addr < 0x10a0) {
         const int reg = addr & 0x1f;
         if (!(reg & 4) && (reg & 1) == 0) {
@@ -537,29 +557,82 @@ int Machine::main_idle(int budget)
 
 bool Machine::sound_idle(int budget)
 {
+    // The sound CPU's wait at 7D4C (kSoundWait), done here instruction by
+    // instruction - exactly as the CPU would, with no fetching or decoding
+    // - and whole turns at a time where nothing in it changes; up to
+    // `budget` cycles as run(budget) would (the last instruction may go
+    // past it). Its reads and writes are the RIOT's RAM only (no I/O, no
+    // interrupt line changes on the way). It stops before a branch that
+    // would leave the loop: the CPU takes that one itself.
     const uint16_t pc = snd_.pc;
-    if (pc < kSoundWaitPc || pc >= kSoundWaitEnd || !sound_wait_ok_ || irq_due(snd_)) return false;
-    if (riot_.ram[0] != 0x3f || riot_.ram[0x0b] != 0 || snd_.dp != 0x10) return false;
-    if (pc != kSoundWaitPc) {
-        // Step to the loop's start (its last instructions read nothing new).
-        int stepped = 0;
-        while (snd_.pc > kSoundWaitPc && snd_.pc < kSoundWaitEnd && stepped < budget) {
-            const int r = run_sound(1);
-            stepped += r;
-            snd_done_ += r;         // counted as they run (I/O sees the time)
+    if (pc < kSoundWaitPc || pc >= kSoundWaitEnd || ((pc - kSoundWaitPc) & 1) || !sound_wait_ok_ ||
+        irq_due(snd_) || snd_.dp != 0x10 || snd_.in_cwai() || snd_.in_sync() || snd_.halted())
+        return false;
+    using namespace m6809;
+    static constexpr uint8_t kCycles[10] = {4, 2, 3, 6, 2, 3, 5, 3, 6, 3};
+    int i = (pc - kSoundWaitPc) >> 1;
+    int used = 0;
+    uint8_t cc = snd_.cc, a = snd_.r.a;
+    uint16_t x = snd_.x;
+    auto cmp = [&](uint8_t v) {             // CMPA #v (as the core's op_sub)
+        const unsigned res = unsigned(a) - v;
+        const uint8_t r8 = uint8_t(res);
+        cc = uint8_t((cc & ~(CC_N | CC_Z | CC_V | CC_C)) | (r8 & 0x80 ? CC_N : 0) | (r8 ? 0 : CC_Z) |
+                     (((a ^ v) & (a ^ r8) & 0x80) ? CC_V : 0) | (res & 0x100 ? CC_C : 0));
+    };
+    while (used < budget) {
+        if (i == 0 && riot_.ram[0] == 0x3f && riot_.ram[0x0b] == 0) {
+            // Whole turns: A = 10, X one less a turn (kept above 1, so the
+            // BEQ stays), flags from the LSR of 0 (V cleared by the LDA).
+            int turns = (budget - used) / 37;
+            if (turns > int(x) - 2) turns = int(x) - 2;
+            if (turns > 0) {
+                x = uint16_t(x - turns);
+                a = 0x10;
+                cc = uint8_t((cc & ~(CC_N | CC_V | CC_C)) | CC_Z);
+                used += turns * 37;
+                continue;
+            }
         }
-        snd_run_ += stepped;
-        return true;
+        switch (i) {
+        case 0:                             // LDA <$00
+            a = riot_.ram[0];
+            cc = uint8_t((cc & ~(CC_N | CC_Z | CC_V)) | (a & 0x80 ? CC_N : 0) | (a ? 0 : CC_Z));
+            break;
+        case 1: cmp(0x3f); break;           // CMPA #$3F
+        case 2: case 5:                     // BNE (out of the loop)
+            if (!(cc & CC_Z)) goto out;
+            break;
+        case 3: a = snd_.dp; break;         // TFR DP,A
+        case 4: cmp(0x10); break;           // CMPA #$10
+        case 6:                             // LEAX -1,X
+            x = uint16_t(x - 1);
+            cc = uint8_t((cc & ~CC_Z) | (x ? 0 : CC_Z));
+            break;
+        case 7:                             // BEQ (out of the loop)
+            if (cc & CC_Z) goto out;
+            break;
+        case 8: {                           // LSR <$0B
+            const uint8_t v = riot_.ram[0x0b], res = uint8_t(v >> 1);
+            riot_.ram[0x0b] = res;
+            ++snd_.writes;
+            cc = uint8_t((cc & ~(CC_N | CC_Z | CC_C)) | (res ? 0 : CC_Z) | (v & 1 ? CC_C : 0));
+            break;
+        }
+        default:                            // BCC (back to the start, or out)
+            if (cc & CC_C) goto out;
+            break;
+        }
+        used += kCycles[i];
+        i = i == 9 ? 0 : i + 1;
     }
-    // X counts down once a turn and leaves the loop at 0: keep it above.
-    int turns = budget / 37;
-    if (turns > int(snd_.x) - 2) turns = int(snd_.x) - 2;
-    if (turns <= 0) return false;
-    snd_.x = uint16_t(snd_.x - turns);
-    snd_.r.a = 0x10;
-    snd_.cc = uint8_t((snd_.cc & ~(m6809::CC_N | m6809::CC_V | m6809::CC_C)) | m6809::CC_Z);
-    snd_done_ += turns * 37;
-    return true;
+out:
+    snd_.cc = cc;
+    snd_.r.a = a;
+    snd_.x = x;
+    snd_.pc = uint16_t(kSoundWaitPc + 2 * i);
+    snd_done_ += used;
+    return used > 0;
 }
 
 // --- sound output ------------------------------------------------------------------
@@ -579,6 +652,10 @@ void Machine::render_to(int cycle)
         for (int c = 1; c < 4; ++c) pokey_[c].render(out, n, true);
         for (int i = 0; i < n; ++i) {
             const float x = float(out[i]) * 0.85f;
+            if (x == dc_x_ && dc_y_ == 0) {     // settled and steady: what the filter gives
+                out[i] = 0;
+                continue;
+            }
             dc_y_ = x - dc_x_ + dc_r_ * dc_y_;
             dc_x_ = x;
             if (dc_y_ > -1e-3f && dc_y_ < 1e-3f) dc_y_ = 0;
@@ -592,7 +669,12 @@ void Machine::render_to(int cycle)
     while (n > 0) {
         const int k = n < 64 ? n : 64;
         tms_.render(sp, k, false, 112);
-        if (out) {
+        // Silence into a settled filter leaves it there and adds nothing.
+        bool quiet = out && lp_z1_ == 0 && lp_z2_ == 0;
+        for (int i = 0; quiet && i < k; ++i) quiet = sp[i] == 0;
+        if (quiet) {
+            out += k;
+        } else if (out) {
             for (int i = 0; i < k; ++i) {
                 const float x = float(sp[i]);
                 const float y = lp_b0_ * x + lp_z1_;
@@ -640,6 +722,12 @@ int Machine::run_frame(int16_t* audio, int cap)
     sight_x_ = clamp(sight_x_, -128, 127);
     sight_y_ = clamp(sight_y_, -128, 127);
 
+    // The sound board is brought up to the main CPU only where they meet
+    // (4400 / 4401 / 46E0) and at the frame's end, not after every slice:
+    // it runs the same instructions either way (its interrupt line changes
+    // only at RIOT events, which end its runs, or by its own I/O), and a
+    // run ends at the first instruction boundary past its target wherever
+    // the earlier runs ended - so it's exact, in fewer, longer runs.
     for (int k = 1; k <= 4; ++k) {
         const int target = k * kIrqCycles;
         while (fc_ < target) {
@@ -648,7 +736,6 @@ int Machine::run_frame(int16_t* audio, int cap)
             fc_ += ran;
             main_run_ += ran;
             if (idle_skip_) fc_ += main_idle(target - fc_);
-            sound_to(fc_ < kCyclesPerFrame ? fc_ : kCyclesPerFrame);
         }
         cpu_.irq(true);
     }

@@ -43,6 +43,9 @@ constexpr int      kAvgW = 250, kAvgH = 280;
 // At most kMaxActive cross one row (166 seen in 9000 frames).
 constexpr int      kMaxSegments = 1700;
 constexpr int      kMaxActive = 256;
+// Drawing on the other core from a copy of the picture (snapshot()): off
+// until there's RAM for the copy on the boards (up to 28 KB of heap).
+constexpr bool     kDrawFromSnapshot = false;
 
 // Buttons for set_inputs() (pressed = bit set). The yoke: set_yoke() / the
 // four sight buttons (a steady speed).
@@ -113,6 +116,12 @@ public:
 
     // Display line y (0-239) of the last picture: 320 RGB565 pixels.
     void render_line(int y, uint16_t* out) { display_.render_line(y, out); }
+    // A copy of the last picture for drawing on another core (heap, 20
+    // bytes a segment of the biggest picture so far: ~18 KB for the play
+    // pictures' ~1,100 segments, 28 KB for the full 1,700 - see
+    // kDrawFromSnapshot), and its lines.
+    bool snapshot() { return kDrawFromSnapshot && shot_.take(display_); }
+    void render_snapshot_line(int y, uint16_t* out) { shot_.render_line(y, out); }
 
     m6809::Cpu& cpu() { return cpu_; }
     m6809::Cpu& sound_cpu() { return snd_; }
@@ -147,6 +156,7 @@ private:
     static void    snd_write(void* ctx, uint16_t addr, uint8_t v);
     static uint8_t vec_read(void* ctx, uint16_t addr);
     static void    vec_line(void* ctx, int32_t x0, int32_t y0, int32_t x1, int32_t y1, int color, int level);
+    void line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int color, int level);
 
     // Main CPU cycles of all time / into this frame; sound CPU cycles of
     // all time / into this frame (a CPU's elapsed() counts only inside its
@@ -197,6 +207,7 @@ private:
     tms5220::Chip  tms_;
     pokey::Pokey   pokey_[4];
     vector_display::Sized<kMaxSegments, kMaxActive> display_;
+    vector_display::Copy    shot_;
 
     uint8_t  ram_[0x3000] = {};     // 0000-2FFF (vector RAM and work RAM)
     uint8_t  ram2_[0x800] = {};     // 4800-4FFF
