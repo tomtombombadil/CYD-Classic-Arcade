@@ -34,7 +34,7 @@ enum Setting : int {
 struct SettingsState {
     int  volume = 50;
     bool swap_ab = false;
-    bool demo_sounds = false;
+    bool demo_sounds = true;
     bool rotate180 = false;
     bool sound_pwm = false;
     bool has_sound_choice = true;

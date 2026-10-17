@@ -180,7 +180,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Test, Forget Controllers, Calibrate Touch (resistive), How to Add Games,
   Last Game Speed, Log, About (version, board, games ready, ROM storage,
   game area, RAM / PSRAM); v0.15.0 added Demo Sounds (a switch, NVS
-  demo_snd, default off; Tom, 2026-10-17: leave a game in its attract mode
+  demo_snd, default on - the cabinets' factory setting; Tom, 2026-10-17: leave a game in its attract mode
   "and get all those classic arcade sounds" - the cabinet's demo sounds
   switch where it has one, `games::Machine::set_demo_sounds()`) and Log.
   The game list is A to Z by title, playable games first (Tom,
