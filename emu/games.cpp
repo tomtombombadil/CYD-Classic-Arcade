@@ -594,7 +594,7 @@ const Info kGames[] = {
      Orientation::Landscape, asteroids::kCpuClock, asteroids::kCyclesPerFrame, kAsteroidsControls,
      COUNT(kAsteroidsControls), kAsteroidsButtons, COUNT(kAsteroidsButtons), nullptr, 0, make<Asteroids>,
      false, false, "Atari", 1979},
-    {"tempest", "Tempest", &tempest::kRomSet, tempest::kScreenW, tempest::kScreenH, Orientation::Portrait,
+    {"tempest", "Tempest", &tempest::kRomSet, tempest::kScreenW, tempest::kScreenH, Orientation::Landscape,
      tempest::kCpuClock, tempest::kCyclesPerFrame, kTempestControls, COUNT(kTempestControls),
      kTempestButtons, COUNT(kTempestButtons), nullptr, 0, make<Tempest>, false, false, "Atari", 1981},
     {"robotron", "Robotron: 2084", &williams::robotron::kRomSet, williams::kScreenW, williams::kScreenH,
