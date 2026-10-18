@@ -159,9 +159,10 @@ public:
     // Idle skipping (on by default; tests compare runs without it).
     void set_idle_skip(bool on) { idle_skip_ = on; }
 
-    // The sight buttons' steady speed: ADC counts a frame (full travel,
-    // 128 counts from the centre, in ~0.9 s).
-    static constexpr int kSightSpeed = 2;
+    // The sight buttons' steady speed: ADC counts a frame (128 counts from
+    // the centre to an edge, in ~0.5 s; Tom, v0.15.2 on the S3: 2 a frame
+    // was "too hard / slow to move the crosshairs").
+    static constexpr int kSightSpeed = 4;
 
 private:
     static uint8_t mem_read(void* ctx, uint16_t addr);

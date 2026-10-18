@@ -733,7 +733,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   POKEYs x 0.85 AC-coupled, speech x 0.44 through a 4 kHz low-pass (our
   addition against the 8.4 kHz images); peaks ~21,000. Controls: the yoke
   = left stick (yaw / pitch, up = sights up) plus where the d-pad has
-  moved the sights (2 ADC counts a frame, stays put); A / B / X / Y fire
+  moved the sights (4 ADC counts a frame - v0.15.4, Tom: 2 was too slow; stays put); A / B / X / Y fire
   (the four yoke buttons), Select = coin, Start = fire (the game has no
   start button: a trigger starts it). The game calibrates its yoke itself
   (minimum + gain per axis, learnt in play, kept in the NOVRAM); a new
