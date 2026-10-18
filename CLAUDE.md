@@ -966,6 +966,15 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   2.8" ST7789's speaker (Tom; silent while flashing - backlight off). Machines fill signed 16-bit mono.
 - Flash: 4 MB = app 2.25 MB + `roms` data partition 1.7 MB (ROMs read in
   place, memory-mapped). No OTA - the web flasher is the update path.
+  Flash is read QIO at 80 MHz on every board (v0.15.2; until then the
+  ESP32 boards ran DIO at 40 MHz - esp32dev's default, and CI's merge forced
+  40m into the bootloader). Code that misses the cache and ROM regions kept
+  in flash come through it, so it sets every game's speed. Set in
+  sdkconfig.defaults (bootloader, QIO switch) AND platformio.ini
+  `board_build.flash_mode` / `f_flash` (the app image header: the ESP32
+  takes its flash clock from there at start-up); CI merges with `keep` and
+  prints both headers. The log's "Flash: QIO, 80 MHz" line at each start
+  shows what a board got.
 - `version_gen.h` is written by `tools/version.py` (ESP-IDF components
   don't share -D flags).
 

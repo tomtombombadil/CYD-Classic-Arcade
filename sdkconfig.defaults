@@ -3,7 +3,12 @@
 
 # ---- Chip, flash, partitions ----
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+# Flash read with four data lines at 80 MHz (v0.15.2; was two lines at
+# 40 MHz on the ESP32 boards): code that isn't in the cache, and ROM regions
+# kept in flash, come in 4x faster. The bootloader switches to QIO itself
+# (its own header stays DIO).
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y

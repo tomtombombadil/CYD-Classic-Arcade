@@ -3,12 +3,15 @@
 // loader. Core 1: screen, sound and the emulators (the menu task).
 #include <cstdio>
 
+#include <esp_app_format.h>
 #include <esp_heap_caps.h>
+#include <esp_partition.h>
 #include <esp_log.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <nvs_flash.h>
+#include <sdkconfig.h>
 
 #include "audio_out.h"
 #include "audio_ring.h"
@@ -86,6 +89,25 @@ void ui_task(void*)
     menu::run(s_ring);
 }
 
+// The flash clock the app's image header asks for (the ESP32 sets it from
+// there at start-up) and the mode built in: shows a build's flash settings
+// reached the board.
+void log_flash_setup()
+{
+    const esp_partition_t* app = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, nullptr);
+    esp_image_header_t h = {};
+    if (!app || esp_partition_read(app, 0, &h, sizeof h) != ESP_OK || h.magic != ESP_IMAGE_HEADER_MAGIC) return;
+    const char* clock = h.spi_speed == ESP_IMAGE_SPI_SPEED_DIV_1   ? "80 MHz"
+                        : h.spi_speed == ESP_IMAGE_SPI_SPEED_DIV_2 ? "40 MHz"
+                                                                   : "under 40 MHz";
+#if CONFIG_ESPTOOLPY_FLASHMODE_QIO
+    const char* mode = "QIO";
+#else
+    const char* mode = "DIO";
+#endif
+    devlog::add("Flash: %s, %s", mode, clock);
+}
+
 }  // namespace
 
 extern "C" void app_main(void)
@@ -98,6 +120,7 @@ extern "C" void app_main(void)
                           : r == ESP_RST_BROWNOUT ? "brownout" : "other";
         devlog::add("Start %s (%s) on %s; reset: %s", CYD_ARCADE_VERSION, CYD_ARCADE_BUILD, BOARD_NAME, why);
         crash_note::at_start();   // a crash's details into the log
+        log_flash_setup();
     }
     // BTstack keeps controller pairings in NVS; our settings live there too
     esp_err_t err = nvs_flash_init();

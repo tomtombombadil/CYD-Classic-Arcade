@@ -1,6 +1,6 @@
 file(GLOB MAIN_SRCS ${CMAKE_CURRENT_LIST_DIR}/*.cpp ${CMAKE_CURRENT_LIST_DIR}/*.c)
 set(MAIN_REQUIRES arcade_core bluepad32 btstack LovyanGFX esp_driver_gpio esp_driver_gptimer esp_driver_ledc
-                  esp_driver_spi esp_driver_uart esp_driver_sdspi esp_partition esp_timer fatfs nvs_flash sdmmc)
+                  esp_driver_spi esp_driver_uart esp_driver_sdspi esp_app_format esp_partition esp_timer fatfs nvs_flash sdmmc)
 if(IDF_TARGET STREQUAL "esp32")
     # The built-in DAC (CYD boards)
     list(APPEND MAIN_REQUIRES esp_driver_dac)

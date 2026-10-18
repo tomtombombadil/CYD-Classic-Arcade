@@ -97,11 +97,14 @@ jobs:
         run: |
           B=.pio/build/${{ matrix.env }}
           mkdir -p out
-          # The ESP32's bootloader goes at 0x1000, the ESP32-S3's at 0x0
-          BOOT=0x1000; FREQ=40m
-          if [ "${{ matrix.chip }}" = "esp32s3" ]; then BOOT=0x0; FREQ=keep; fi
+          # The ESP32's bootloader goes at 0x1000, the ESP32-S3's at 0x0.
+          # Flash mode and clock as built (sdkconfig / platformio.ini).
+          BOOT=0x1000
+          if [ "${{ matrix.chip }}" = "esp32s3" ]; then BOOT=0x0; fi
+          esptool.py --chip ${{ matrix.chip }} image_info $B/bootloader.bin | grep -i "flash" || true
+          esptool.py --chip ${{ matrix.chip }} image_info $B/firmware.bin | grep -i "flash" || true
           esptool.py --chip ${{ matrix.chip }} merge_bin -o "out/${{ matrix.name }}.bin" \
-            --flash_mode dio --flash_freq $FREQ --flash_size 4MB \
+            --flash_mode keep --flash_freq keep --flash_size 4MB \
             $BOOT $B/bootloader.bin 0x8000 $B/partitions.bin 0x10000 $B/firmware.bin
 
       - uses: actions/upload-artifact@v4
