@@ -101,8 +101,8 @@ jobs:
           # Flash mode and clock as built (sdkconfig / platformio.ini).
           BOOT=0x1000
           if [ "${{ matrix.chip }}" = "esp32s3" ]; then BOOT=0x0; fi
-          esptool.py --chip ${{ matrix.chip }} image_info $B/bootloader.bin | grep -i "flash" || true
-          esptool.py --chip ${{ matrix.chip }} image_info $B/firmware.bin | grep -i "flash" || true
+          esptool.py --chip ${{ matrix.chip }} image_info --version 2 $B/bootloader.bin | grep -i "flash" || true
+          esptool.py --chip ${{ matrix.chip }} image_info --version 2 $B/firmware.bin | grep -i "flash" || true
           esptool.py --chip ${{ matrix.chip }} merge_bin -o "out/${{ matrix.name }}.bin" \
             --flash_mode keep --flash_freq keep --flash_size 4MB \
             $BOOT $B/bootloader.bin 0x8000 $B/partitions.bin 0x10000 $B/firmware.bin

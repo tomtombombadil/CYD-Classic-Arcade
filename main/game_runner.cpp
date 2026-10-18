@@ -140,6 +140,17 @@ void message(const char* a, const char* b)
 
 void emu_free(void* p) { arena::free(p); }
 
+// "70 KB (48 + 14 + 8)": the area and its blocks, for the log and messages
+const char* area_text()
+{
+    static char text[48];
+    int n = std::snprintf(text, sizeof text, "%u KB", unsigned(arena::size() / 1024));
+    for (int i = 0; i < arena::chunks() && n < int(sizeof text); ++i)
+        n += std::snprintf(text + n, sizeof text - size_t(n), "%s%u%s", i ? " + " : " (",
+                           unsigned(arena::chunk_size(i) / 1024), i + 1 == arena::chunks() ? ")" : "");
+    return text;
+}
+
 }  // namespace
 
 bool init()
@@ -149,8 +160,7 @@ bool init()
     s_bus = xSemaphoreCreateMutex();
     if (s_bus) xTaskCreatePinnedToCore(draw_task, "draw", 5120, nullptr, 1, &s_draw, 0);
     const bool ok = arena::reserve(kSystemReserve);
-    devlog::add("Game area %u KB%s; RAM left %u KB, block %u KB; draw task %s", unsigned(arena::size() / 1024),
-                ok ? "" : " (NONE)", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
+    devlog::add("Game area %s%s; RAM left %u KB, block %u KB; draw task %s", area_text(), ok ? "" : " (NONE)", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
                 s_draw ? "on core 0" : "NONE");
     return ok;
@@ -166,7 +176,7 @@ void run(int index, AudioRing& ring)
     // starts from the same memory, whatever ran before (Tom, v0.14.6).
     const uint32_t before_kb = arena::renew(kSystemReserve) / 1024;
     const uint32_t area_kb = arena::size() / 1024;
-    devlog::add("%s: start; game area %u KB (was %u); RAM outside %u KB free, block %u KB", g.id, unsigned(area_kb),
+    devlog::add("%s: start; game area %s, was %u KB; RAM outside %u KB free, block %u KB", g.id, area_text(),
                 unsigned(before_kb),
                 unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
@@ -181,12 +191,13 @@ void run(int index, AudioRing& ring)
         devlog::add("%s: %s - %s", g.id, title, text);
         message(title, text);
     };
-    char why[64];
+    char why[112];
 
     crash_note::step(g.title, "making its machine");
     m = g.make();
     if (!m) {
-        std::snprintf(why, sizeof why, "Its machine doesn't fit the %u KB game area", unsigned(area_kb));
+        std::snprintf(why, sizeof why, "Its machine doesn't fit the %s game area; %u KB free outside it",
+                      area_text(), unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
         give_up("Not enough memory", why);
         return;
     }
@@ -207,8 +218,9 @@ void run(int index, AudioRing& ring)
         static_cast<uint32_t*>(arena::alloc(size_t(g.height) * size_t(segs.segs) * sizeof(uint32_t)));
     int16_t* audio = static_cast<int16_t*>(arena::alloc(kAudioCap * sizeof(int16_t)));
     if (!strip || !src || !x_map || !seg_hash || !audio || g.height > kMaxLines) {
-        std::snprintf(why, sizeof why, "Machine %u KB + buffers don't fit the %u KB game area",
-                      unsigned(machine_kb), unsigned(area_kb));
+        std::snprintf(why, sizeof why, "Machine %u KB + buffers don't fit the %s game area; %u KB free outside it",
+                      unsigned(machine_kb), area_text(),
+                      unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
         give_up("Not enough memory", why);
         return;
     }

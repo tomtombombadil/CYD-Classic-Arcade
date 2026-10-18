@@ -177,7 +177,8 @@ bool load(const games::Info& game, Loaded& out)
         out.in_psram[r] = out.regions[r] != nullptr;
     }
     // Each block in the area costs a few bytes of its own
-    const uint32_t budget = arena::room() > 64u * romset::kMaxRegions ? arena::room() - 64u * romset::kMaxRegions : 0;
+    const uint32_t budget =
+        arena::room_total() > 64u * romset::kMaxRegions ? arena::room_total() - 64u * romset::kMaxRegions : 0;
     for (;;) {
         uint32_t want = 0;
         int biggest = -1;

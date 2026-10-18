@@ -326,7 +326,16 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   area had come out at 37 KB at that start-up and stayed so): the area is
   given back and reserved again at every game start (`arena::renew`), from
   what is free then, keeping `kSystemReserve`; the game's start line logs
-  the size and the size before. Allocation goes up from the bottom; freeing gives room
+  the size and the size before. v0.15.3 (Tom, v0.15.2 on the 3.2": still a 32 KB area,
+  Donkey Kong and Galaga "don't fit", Pac-Man plays): the ESP32's RAM is
+  several regions and Bluetooth's blocks split the biggest, so one block
+  can be far less than what's free (v0.14 games took pieces from all of
+  them). The area is now up to 4 blocks (`arena::kMaxChunks`), biggest
+  first, while `kSystemReserve` stays free; an allocation goes into the
+  block with the least room that takes it; the loader's ROM budget is the
+  room in all of them (a region that fits no block goes to flash). Log and
+  messages give the blocks: "70 KB (48 + 14 + 8)", and a failed start the
+  RAM free outside the area. Allocation goes up from the bottom; freeing gives room
   back only for the newest block. The draw task (core 0) is made once at
   start-up, outside the area. The Log page borrows the area while it's
   open (no game then). About shows the area's size and the most a game
