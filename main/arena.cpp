@@ -45,6 +45,16 @@ bool reserve(uint32_t keep_free)
     return true;
 }
 
+uint32_t renew(uint32_t keep_free)
+{
+    const uint32_t before = s_size;
+    if (s_base) heap_caps_free(s_base);
+    s_base = nullptr;
+    s_size = s_top = s_last = 0;
+    reserve(keep_free);
+    return before;
+}
+
 void* alloc(size_t n)
 {
     if (!s_base) return nullptr;

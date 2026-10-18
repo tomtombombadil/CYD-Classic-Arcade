@@ -1,5 +1,5 @@
-// The game area: one block of internal RAM set aside once at start-up (after
-// Bluetooth has started), used only by the game being played - its machine,
+// The game area: one block of internal RAM set aside at start-up (after
+// Bluetooth has started) and again at each game start, used only by the game being played - its machine,
 // the runner's buffers, its snapshot and the ROM regions kept in RAM - and
 // emptied in one go when the game ends (Tom, v0.14.6: "Exiting a game
 // should be similar almost to a reboot ... start each game from a unified
@@ -18,6 +18,11 @@ namespace arena {
 // Takes the biggest block that leaves `keep_free` bytes of internal RAM to
 // the rest of the system (Bluetooth, USB loader). False if nothing usable.
 bool reserve(uint32_t keep_free);
+// At each game start: gives the (empty) area back and reserves it again
+// from what is free now, so one start-up that found little RAM (Tom,
+// v0.15.1 on the 3.2": a 37 KB area, Galaga "doesn't fit") isn't kept
+// until the next reboot. Returns the size before.
+uint32_t renew(uint32_t keep_free);
 
 void* alloc(size_t n);      // 8-byte aligned; null when there's no room
 void  free(void* p);        // gives the room back only for the newest block

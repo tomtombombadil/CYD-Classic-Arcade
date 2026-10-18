@@ -164,9 +164,10 @@ void run(int index, AudioRing& ring)
     // core 0, then as many ROM regions as fit (the rest stream into flash).
     // When the game ends the area is emptied in one go, so the next game
     // starts from the same memory, whatever ran before (Tom, v0.14.6).
-    arena::reset();
+    const uint32_t before_kb = arena::renew(kSystemReserve) / 1024;
     const uint32_t area_kb = arena::size() / 1024;
-    devlog::add("%s: start; game area %u KB; RAM outside %u KB free, block %u KB", g.id, unsigned(area_kb),
+    devlog::add("%s: start; game area %u KB (was %u); RAM outside %u KB free, block %u KB", g.id, unsigned(area_kb),
+                unsigned(before_kb),
                 unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
     games::Machine* m = nullptr;

@@ -321,7 +321,12 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   at the area, the PC tools at malloc), the runner's buffers, the tile
   games' snapshot, then ROM regions while they fit (the rest into the
   scratch flash; PSRAM first on the S3); `arena::reset()` empties it when
-  the game ends. Allocation goes up from the bottom; freeing gives room
+  the game ends. v0.15.2 (Tom, v0.15.1 on the 3.2": after Donkey Kong,
+  Galaga said "Machine 23 KB + buffers don't fit the 37 KB game area" - the
+  area had come out at 37 KB at that start-up and stayed so): the area is
+  given back and reserved again at every game start (`arena::renew`), from
+  what is free then, keeping `kSystemReserve`; the game's start line logs
+  the size and the size before. Allocation goes up from the bottom; freeing gives room
   back only for the newest block. The draw task (core 0) is made once at
   start-up, outside the area. The Log page borrows the area while it's
   open (no game then). About shows the area's size and the most a game
