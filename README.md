@@ -34,6 +34,12 @@ ESP32-S3 has Bluetooth LE only: Xbox Wireless and other BLE controllers
 pair; classic-Bluetooth ones (PlayStation, Switch Pro, many 8BitDo modes)
 don't. ROM zips go in over USB from the web page, or from an SD card.
 
+## HOW TO INSTALL
+
+Go the the web flasher at:
+https://tomtombombadil.github.io/CYD-Classic-Arcade/
+and follow the onscreen instructions. It's just like many of the other web-flashers for ESP32-based devices.
+
 ## Using it
 
 Touch the screen or use a controller. Tap a game to play it; the gear at
