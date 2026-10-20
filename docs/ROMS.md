@@ -48,6 +48,8 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
 | Battlezone | `bzone` (or `bzonea`, Rev 1) | Battlezone (Rev 2) / (Rev 1) | `bzone` for `bzonea` |
 | Zaxxon | `zaxxon` (or `zaxxon2`) | Zaxxon (set 1, rev D) / (set 2, unknown rev) | `zaxxon` for `zaxxon2` |
+| Galaxian | `galaxian` | Galaxian (Namco set 1) | - |
+| Amidar | `amidar` | Amidar (Konami) | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -128,6 +130,15 @@ Notes:
   `zaxxon.zip` beside it. Set 3 and the Japanese set (encrypted) aren't
   read. The sound board's analog sounds are our own models - MAME's
   Zaxxon sample set isn't used.
+- **Galaxian:** the Namco set (MAME's `galaxian`: `galmidw.u` `.v` `.w`
+  `.y`, `7l`, `1h.bin`, `1k.bin`, `6l.bpr`; the program chips carry
+  Midway's names). Midway's own set (`galmidw`) and the many bootlegs and
+  clones have other program ROMs and aren't read. The `galaxian` sample
+  set isn't needed: its sounds are modelled.
+- **Amidar:** the Konami set (MAME's `amidar`: `amidar.2c` `.2e` `.2f`
+  `.2h`, sound `amidar.5c` `.5d`, graphics `amidar.5f` `.5h`, the colour
+  PROM `amidar.clr`). The Stern and bootleg sets (`amidaru`, `amidaro`,
+  `amidarb`, ...) have other program ROMs and aren't read.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

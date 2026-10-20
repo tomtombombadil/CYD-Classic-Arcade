@@ -37,6 +37,8 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 |---|---|---|---|---|---|---|---|
 | Space Invaders | 9.2 | - | 14.7 / 16.1 | **23.9 / 25.3** | - | 8.0 | 2 |
 | Pac-Man | 14.4 | - | 15.7 / 17.1 | **30.1 / 31.5** | 2.0 | 24.8 | 4 |
+| Galaxian | 14.4 | - | 14.7 / 16.1 | **29.1 / 30.5** | 2.1 | 14.0 | 2 |
+| Amidar | 17.1 | - | 14.7 / 16.1 | **31.8 / 33.2** | 2.1 | 28.0 | 4 |
 | Burger Time | 17.6 | - | 14.2 / 15.6 | **31.9 / 33.3** | - | 52.0 | 4 |
 | Missile Command | 18.3 | - | 14.4 / 16.0 | **32.8 / 34.3** | 15.5 | 12.0 | 2 |
 | Rally-X | 18.6 | - | 15.0 / 16.8 | **33.7 / 35.5** | 2.6 | 21.1 | 4 |
@@ -71,6 +73,16 @@ heads; at 320x480 (shown 463 x 320): strip 7,408, x map 928 - 18,136
 bytes. Snapshot: 1,024 x 20 + 8. Most segments seen: 525 (attract mode),
 449 (play). With everything in RAM: 42.9 + 20.0 + 16.0 = 78.9 KB at
 240x320, 81.4 KB at 320x480 - inside the ~92 KB area.
+
+Galaxian / Amidar (2026-10-20, xtensa-esp-elf-g++ 14.2 `sizeof` of the
+games.cpp wrappers, -mdynconfig esp32): 14,792 / 17,536 bytes - of which
+the shared video's decoded graphics 8 KB and the star states 1 KB
+(`galaxian_video::Video` 9,436 B), the Z80 576 B each, Galaxian's sound
+model 200 B, an AY 84 B. Buffers as Donkey Kong's (224 x 256): strip 3,840
+/ 5,120 + line 448 + x map 480 / 640 + segment hashes 8,192 (256 lines x
+8 x 4) + sound 2,048, each with its 8-byte head. Snapshot = the
+VideoState, 2,182 B (tiles 1 KB, object RAM 128 B, the frame's stars ~1
+KB). ROM: Galaxian 10 + 4 KB + 32 B, Amidar 16 + 8 + 4 KB + 32 B.
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
 Robotron / Defender / Bubbles 51.9) or one of Qix's 32 KB halves.

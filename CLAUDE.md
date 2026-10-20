@@ -219,7 +219,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   frame in PC runs with Tom's ROMs (pacman / mspacman 300 - the grid test
   ends there, rallyx 770, galaga 870, digdug 700, robotron 760, defender
   1625 - its Williams logo, bubbles 750 - its sink, qix 190, starwars 90,
-  bzone 70 - black until its first picture at 67, the rest 30 for the
+  bzone 70 - black until its first picture at 67, galaxian 216 - after
+  its cross-hatch test, amidar 193, the rest 30 for the
   first black / garbage frame). The runner runs them before the game loop
   with nothing drawn and the sound thrown away, as fast as the board goes
   (bar, back check and a vTaskDelay(1) for the watchdog only every 32
@@ -300,7 +301,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   measurement.
 - Two cores (v0.14.6, the next step after the speed page; Galaga's busy
   waves on the 4.0"): the tile games (Pac-Man, Ms. Pac-Man, Galaga, Dig
-  Dug, Donkey Kong, Rally-X, Q*bert) copy their VideoState after a frame
+  Dug, Donkey Kong, Rally-X, Q*bert, Galaxian, Amidar) copy their
+  VideoState after a frame
   (`Machine::snapshot()`, a `Shot<>` in games.cpp, ~2-5 KB allocated at the
   first one) and a "draw" task on core 0 (priority 1, as BTstack's loop;
   5 KB stack; 1 ms pause after each picture for the idle task's watchdog)
@@ -925,7 +927,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   BCD time count (4B04-4B07, a step every 1000 IRQs = 4.1 s) changed
   since the last time: about every 7 minutes, never the first time round
   (the old note "no sound command whatever the switch" came from runs
-  under 7 minutes). No switch, attract silent on the cabinet: Pac-Man,
+  under 7 minutes); Amidar IN2 bit 1 (clear = on; the demo play's tunes
+  and sounds, ~50 s into the attract cycle). No switch, attract silent on the cabinet: Galaxian, Pac-Man,
   Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong, Mr. Do!, Burger Time,
   Asteroids, Tempest, Missile Command (MAME's DIP lists have none for these
   sets; Missile Command's attract measured silent, peak 0 over 10,000
@@ -946,7 +949,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   --demo-sounds on|off`, 4000 frames after start-up, peak / RMS): Galaga
   16,335 / 1,085 vs 0; Dig Dug 17,816 / 1,085 vs 0; Q*bert 18,827 / 2,188
   vs power-on only; Qix 12,071 / 1,342 vs 0; Star Wars over 16 minutes
-  9,975 / 274 (24 s of sound) vs 0. Play after a coin sounds the same
+  9,975 / 274 (24 s of sound) vs 0; Amidar (6000 frames) 20,343 / 679 vs
+  0; Galaxian silent after its power-on blip (in the boot frames). Play after a coin sounds the same
   either way.
 - Star Wars speed (2026-10-17; Tom, v0.14.x: 47.4 frames and 32 pictures a
   second on the 3.2", "completely unplayable", the S3 too). Measured with a
@@ -1118,6 +1122,91 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   tile map / graphics regions mostly go to the scratch flash. Unsure: the
   sound models (character only), the 63-pixel skew offset and sprite
   offsets (MAME's figures; the picture lines up), flip screen.
+- Galaxian (`emu/machines/galaxian.*`, set `galaxian` = Namco set 1,
+  program chips with Midway's names; portrait 224x256 = lines 16-239 of
+  the board's 256-pixel scanlines, the monitor turned like Pac-Man's;
+  60.606 Hz). Emulated: Z80 at 3.072 MHz, NMI at line 240 while 7001 is
+  on, RAM / tiles / object RAM and their mirrors, inputs (active high;
+  set_dips = IN2: bonus, lives; coinage fixed 1 coin 1 credit, upright),
+  the watchdog (read 7800, 8 frames), and the video shared with Amidar
+  (`emu/machines/galaxian_video.*`): 32 x 32 tiles with a scroll and a
+  colour per tile column (= per display row), 8 sprites (sprites 0-2 one
+  line lower, none in a scanline's first 17 pixels), the bullets (7 white
+  shells - one a line, the last wins - and the yellow missile, 4 pixels on
+  one line), the star field (the 17-bit LFSR clocked twice a pixel; the
+  256 states that light are found once at init and placed each frame -
+  `capture()` buckets them by display line, ~1.5 KB of the 2.1 KB
+  VideoState; checked against a brute-force table of the whole period;
+  the field moves one state a frame; a pixel shows the later of its two
+  states, the board's thirds of a pixel are not drawn), the 32-byte
+  palette PROM through 1K / 470 / 220 ohm (blue 470 / 220) into 470 ohm,
+  scaled to 224 as MAME does. Flip screen (cocktail) not drawn. Modelled
+  (`emu/sound/galaxian_sound.*`, part values from MAME's discrete model,
+  read for facts): the tone (1.536 MHz / (256 - pitch) into a 4-bit
+  counter, QA 33k / QC 22k (+10k with VOL1) / QD 15k (VOL2) - integrated
+  exactly per sample in 16.16 fixed point, so pitch FF is silent), the
+  swarm (FS1-3: 555s 100k + 470k / 330k / 220k, 0.01 uF, reset while off,
+  their control voltage a sawtooth from a slow 555: 1 uF charged by (DAC -
+  0.7 V) / 100k from the 6004-6007 DAC (1M / 470k / 220k / 100k, 15k to
+  4.4 V, 330k to ground) - 16-21 Hz - through x 1.43 - 1.06 V = 1.3-3.7
+  V), HIT (noise from a 17-bit register at 122.88 kHz sampled at 7.92 kHz,
+  held 0.38 s by 172k / 2.2 uF, band-pass 168 Hz Q 2.5), FIRE (a 555 10k +
+  22k / 0.01 uF whose control voltage falls with a 2.2k / 47 uF RC while
+  FIRE is on - the pitch rises - plus noise, ringing out 0.1 s), the
+  mixer (5.1k / 1.32k / 2.2k into 10k). `Astable` = a 555 with a moving
+  control voltage run exactly per sample (logs only at a switch). Assumed /
+  unsure: the slow 555's current formula and the DAC's 4 V high level (so
+  the swarm's 16-21 Hz), the noise taps (the stars'), a 20 Hz output
+  coupling, and the levels: by the resistors the tunes would be a sixth
+  of the shot / explosion (which would drive the op-amp to its rails), so
+  each path has a level for a small speaker (tone x 4.2, swarm x 0.85, HIT
+  x 0.9, FIRE x 0.45) and a soft knee 15,000 -> 22,000: play peaks
+  ~19,800 (tunes ~12,000, swarm ~6,000, shot ~11,000, explosions
+  ~15,000). Silent parts cost nothing (noise, HIT filter and the shot's
+  555 run only while heard). No idle skipping: the game's CPU is busy all
+  frame (no address takes over ~2 % of its instructions in play). Controls: left / right,
+  A (or B) fire, Select coin, Start 1P, L 2P. PC (in play, best of 3, the
+  same run): emu 0.061 ms (Pac-Man 0.035; callgrind 465K host
+  instructions a frame vs Pac-Man's 352K: sound ~107K of it), render 0.035
+  (Pac-Man 0.060). `--panel`: ~8,400 pixels a picture at 240x320, 15,000
+  at 320x480 (the stars change ~13 % of the panel every frame), 0 wrong.
+- Amidar (`emu/machines/amidar.*`, set `amidar` = Konami; portrait
+  224x256, the Galaxian video with no stars or bullets and the background
+  colour of Konami's boards: latch bits red 0x55 / green 0x47 / blue 0x55).
+  Main board (MAME's "turtles" map): Z80 3.072 MHz, NMI at line 240
+  (A008), RAM 8000, tiles 9000, object RAM 9800 (A14 not decoded above
+  8000), A000-A03F latch (background, NMI, flips, coin counters),
+  watchdog read A800 (8 frames), two 8255s at B000 / B800 (register = A4-
+  A5; only their port data is modelled: PPI 1 A / B / C = IN0 / IN1 /
+  IN2, PPI 2 A = the sound command, B = sound control - bit 3 falling
+  sets the IRQ flip-flop, bit 4 mutes -, C = IN3 coinage). Inputs active
+  low; set_dips = lives (IN1 bits 0-1) + bonus (IN2 bit 2), demo sounds =
+  IN2 bit 1 (set_demo_sounds), coinage fixed, upright. Sound board,
+  exact: Z80 at 14.318 MHz / 8, ROM 0000-1FFF, RAM 8000-83FF (mirrors to
+  FFFF), two AY-3-8910 at the same clock (I/O: 10 / 20 = AY 2 address /
+  data, 40 / 80 = AY 1; reads AND both when both are picked), AY 1 port A
+  = the command, port B = the counter chain (16 x 16 x 2 x 8 x 5 x 2
+  crystal clocks: B7 the last /2, B6-B5 the /5's top bits, B4 the /8's
+  top bit, B3-B1 high, B0 low), the IRQ (IM 1) held until the CPU takes it
+  (stepped an instruction at a time while it waits, as Mr. Do!'s), the
+  filters at 9000-9FFF (address bits: two a channel, 0.22 / 0.047 uF; AY
+  1 = A0-A5). The sound CPU runs to the main CPU's time at each command /
+  control write and at the frame's end (29,531.3 cycles a frame, the
+  remainder carried). Assumed: the filters' resistance (1k || 5.1k, from
+  MAME's older model of this board), a 20 Hz output coupling, all six
+  channels mixed equally; level x 5 (the loudest - coin, start and death
+  tunes - peak ~20,350). Idle skipping, exact (`galaxian_tests` against
+  runs without it; 8000 frames of the real game compared frame by frame -
+  picture, audio, CPU registers): the sound program's timer waits (01E2 /
+  01E9, through RST 08 = OUT (40),A / IN A,(80)), 69 cycles and 7 fetches
+  a pass; after a read that keeps it waiting the passes that would read
+  the same bit 7 are skipped (time, R, A = the last read, F = AND 80's),
+  the CPU runs the last one - ~19,700 of 29,531 sound cycles a frame.
+  Controls: 4-way stick, B (and A) = Jump (stuns the enemies; the cabinet
+  has one button), Select coin, Start 1P, L 2P. PC (in play, best of 3,
+  same run as above): emu 0.068 ms (Pac-Man 0.035; callgrind 579K host
+  instructions a frame vs 352K), render 0.040. `--panel`: ~2,600 pixels a
+  picture at 240x320, 4,700 at 320x480, 0 wrong.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

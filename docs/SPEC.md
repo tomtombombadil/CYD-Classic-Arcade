@@ -35,6 +35,8 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Defender | 6809 1 MHz | 6808 sound CPU + DAC, ROM banked at C000 | 292x240 landscape | done: the stick reverses / thrusts by the ship's facing |
 | Bubbles | 6809 1 MHz | Robotron's board (SC1 blitter, 6808 sound CPU + DAC) with an 8-bit CMOS RAM | 292x240 landscape | done: ~1.9x Pac-Man's emulation time on the PC in play; ~104 KB of RAM with the ROMs |
 | Zaxxon | Z80 3.04 MHz | 8255 switching discrete sound circuits (our own models), skewed scrolling background from tile map ROMs, 32 x 32 sprites | 224x256 portrait | done: the main loop's idle passes skipped (exact); background tiles decoded as drawn into an 8 KB cache |
+| Galaxian | Z80 3.072 MHz | tiles with a scroll and colour per column, 8 sprites, bullets, the LFSR star field; analog sound (our models of its circuits) | 224x256 portrait | done: ~1.3x Pac-Man's host instructions a frame (the game keeps its CPU busy) |
+| Amidar | Z80 3.072 MHz | Galaxian's video (no stars or bullets, a background colour); Z80 sound CPU + 2 AY-3-8910 + RC filters | 224x256 portrait | done: the sound CPU's timer waits skipped (exact), ~1.6x Pac-Man's host instructions a frame |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
 | Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
@@ -48,8 +50,9 @@ its sound one of three ways, and we do what the machine did:
    Galaga, Dig Dug (Namco wavetable: the waveforms are in a 256-byte PROM
    in the ROM set, the game program writes pitch and volume 60 times a
    second); Mr. Do! (two SN76489s: square waves and noise); Burger Time
-   (two AY-3-8910s, programmed by a sound 6502); Spy Hunter
-   (AY-8910s). We emulate the chip; the sound is exact.
+   (two AY-3-8910s, programmed by a sound 6502); Amidar (two
+   AY-3-8910s, programmed by a sound Z80, through RC filters it switches);
+   Spy Hunter (AY-8910s). We emulate the chip; the sound is exact.
 2. **A sound CPU with its own program and a DAC** - Donkey Kong's music
    (i8035), Q\*bert's effects (6502), Defender / Stargate (all of it,
    6800), Qix (all of it, 6802). We run that CPU's program from the ROM
@@ -58,8 +61,8 @@ its sound one of three ways, and we do what the machine did:
    (and so the phoneme timing) runs as on the board, and our own small
    source-filter model voices the phonemes (Q\*bert's swearing is random
    phonemes anyway).
-3. **Analog circuits** - Space Invaders, Asteroids and Zaxxon (all of
-   it), Donkey Kong's walk / jump / stomp, Q\*bert's knocker (a solenoid hitting the
+3. **Analog circuits** - Space Invaders, Asteroids, Zaxxon and Galaxian (all
+   of it), Donkey Kong's walk / jump / stomp, Q\*bert's knocker (a solenoid hitting the
    cabinet!), Galaga's explosion filters. The ROM only switches these
    on and off. We play our own small sound models of those circuits
    (noise + tones + envelopes), built into the firmware. No sample files

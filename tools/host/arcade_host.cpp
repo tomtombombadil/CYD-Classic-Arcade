@@ -56,6 +56,9 @@
 //                         d-pad) coin coin2 start1 start2 test step;
 //                         zaxxon: up (= dive) down left right fire
 //                         coin coin2 start1 start2 service test;
+//                         galaxian: left right fire coin coin2
+//                         start1 start2 service test; amidar: up down left
+//                         right jump coin coin2 start1 start2 service;
 //                         any game: lx=N / ly=N, the left stick's X / Y
 //                         -512..511 (down positive), e.g.
 //                         "1200+60:lx=-300+fire")
