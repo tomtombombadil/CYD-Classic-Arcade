@@ -31,6 +31,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Star Wars | 6809 1.5 MHz + matrix processor (PROM microcode) | colour vector generator (AVG), 6809 sound CPU + RIOT, 4 POKEY, TMS5220 speech (our LPC synthesiser; the voices are LPC data in the sound ROMs) | 320x240 landscape (lines drawn row by row from a segment list) | done: ~1.0M host instructions a frame (2x Pac-Man); machine ~51 KB + 72 KB of ROM |
 | Robotron: 2084 | 6809 1 MHz | SC1 blitter, 6808 sound CPU + DAC, 304x256 4-bit bitmap (38 KB) | 292x240 landscape | done: idle loops skipped (exact), ~104 KB of RAM with the ROMs |
 | Defender | 6809 1 MHz | 6808 sound CPU + DAC, ROM banked at C000 | 292x240 landscape | done: the stick reverses / thrusts by the ship's facing |
+| Zaxxon | Z80 3.04 MHz | 8255 switching discrete sound circuits (our own models), skewed scrolling background from tile map ROMs, 32 x 32 sprites | 224x256 portrait | done: the main loop's idle passes skipped (exact); background tiles decoded as drawn into an 8 KB cache |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
 | Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
@@ -54,8 +55,8 @@ its sound one of three ways, and we do what the machine did:
    (and so the phoneme timing) runs as on the board, and our own small
    source-filter model voices the phonemes (Q\*bert's swearing is random
    phonemes anyway).
-3. **Analog circuits** - Space Invaders and Asteroids (all of it), Donkey
-   Kong's walk / jump / stomp, Q\*bert's knocker (a solenoid hitting the
+3. **Analog circuits** - Space Invaders, Asteroids and Zaxxon (all of
+   it), Donkey Kong's walk / jump / stomp, Q\*bert's knocker (a solenoid hitting the
    cabinet!), Galaga's explosion filters. The ROM only switches these
    on and off. We play our own small sound models of those circuits
    (noise + tones + envelopes), built into the firmware. No sample files

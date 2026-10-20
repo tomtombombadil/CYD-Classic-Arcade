@@ -50,10 +50,21 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Robotron | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 52.0 | 4 |
 | Defender | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 30.0 | 4 |
 | Star Wars | 52.6 | - | 15.8 / 17.7 | **68.4 / 70.2** | 27.6 | 72.0 | 16 |
+| Zaxxon | 20.8 | - | 14.7 / 16.1 | **35.5 / 36.9** | 1.2 | 104.5 | 8 |
 | Qix | 8.1 | 64.0 (2 x 32) | 14.7 / 16.1 | **86.8 / 88.2** | - | 32.0 | 2 |
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
 Robotron / Defender 51.9) or one of Qix's 32 KB halves.
+
+Zaxxon (2026-10-20, xtensa-esp32-elf-g++ `sizeof`): the games.cpp wrapper
+21,344 bytes (zaxxon::Machine 21,328: Z80, RAM 4 KB + characters 1 KB +
+sprites 256 B, the VideoState 1,192 B, characters decoded by column 4 KB,
+the background tile cache 8 KB + 512 B of tags, palette 512 B); buffers
+for 224 x 256 as Pac-Man's but 256 lines of hashes; snapshot 1,192 B. Its
+ROM (104.5 KB in 6 regions: program 20, characters 4, background tiles
+24, sprites 24, tile map 32, PROMs 0.5) can't all be in RAM: what doesn't
+fit is read from the scratch flash (the renderer reads the tile map,
+background and sprite ROMs every line).
 
 ## 2. The ESP32 boards' RAM
 

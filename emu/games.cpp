@@ -21,6 +21,7 @@
 #include "machines/starwars.h"
 #include "machines/tempest.h"
 #include "machines/williams.h"
+#include "machines/zaxxon.h"
 
 #include <cstring>
 #include <new>
@@ -641,6 +642,47 @@ const ButtonName kStarwarsButtons[] = {
     {"test", starwars::kTest}, {"step", starwars::kDiagStep},
 };
 
+// ---- Zaxxon -------------------------------------------------------------------
+
+class Zaxxon : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        using namespace zaxxon;
+        m_.init({r[kRegionCpu], r[kRegionChars], r[kRegionBgGfx], r[kRegionSprites], r[kRegionMap],
+                 r[kRegionProms]}, rate, swap);
+    }
+    // No demo sounds switch: SW1's "Sound" turns all sound off, and the
+    // game is silent in its attract mode either way (zaxxon.h).
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    zaxxon::Machine m_;
+    Shot<zaxxon::Machine> shot_;
+};
+
+// The stick as the cabinet's flight stick: up = pushed forward = dive,
+// down = pulled back = climb. A or B fires, Select = coin, Start = 1
+// player, L = 2 players (they take turns).
+const Control kZaxxonControls[] = {
+    {kPadUp, zaxxon::kUp}, {kPadDown, zaxxon::kDown}, {kPadLeft, zaxxon::kLeft},
+    {kPadRight, zaxxon::kRight}, {kPadA, zaxxon::kFire}, {kPadB, zaxxon::kFire},
+    {kPadSelect, zaxxon::kCoin}, {kPadStart, zaxxon::kStart1}, {kPadL, zaxxon::kStart2},
+};
+
+const ButtonName kZaxxonButtons[] = {
+    {"up", zaxxon::kUp}, {"down", zaxxon::kDown}, {"left", zaxxon::kLeft}, {"right", zaxxon::kRight},
+    {"fire", zaxxon::kFire}, {"coin", zaxxon::kCoin}, {"coin2", zaxxon::kCoin2},
+    {"start1", zaxxon::kStart1}, {"start2", zaxxon::kStart2}, {"service", zaxxon::kService},
+    {"test", zaxxon::kTest},
+};
+
 template <class M> Machine* make() { return new (std::nothrow) M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -700,6 +742,9 @@ const Info kGames[] = {
     {"starwars", "Star Wars", &starwars::kRomSet, starwars::kScreenW, starwars::kScreenH,
      Orientation::Landscape, starwars::kCpuClock, starwars::kCyclesPerFrame, kStarwarsControls,
      COUNT(kStarwarsControls), kStarwarsButtons, COUNT(kStarwarsButtons), nullptr, 0, make<Starwars>, false, false, "Atari", 1983, 90},
+    {"zaxxon", "Zaxxon", &zaxxon::kRomSet, zaxxon::kScreenW, zaxxon::kScreenH, Orientation::Portrait,
+     zaxxon::kCpuClock, zaxxon::kCyclesPerFrame, kZaxxonControls, COUNT(kZaxxonControls), kZaxxonButtons,
+     COUNT(kZaxxonButtons), nullptr, 0, make<Zaxxon>, false, false, "Sega", 1982, 30},
 };
 
 const int kGameCount = COUNT(kGames);

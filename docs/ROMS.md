@@ -44,6 +44,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Defender | `defender` or `defenderg` | Defender (Red label) / (Green label) | `defender` for `defenderg` |
 | Stargate (stretch) | `stargate` | Stargate | - |
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
+| Zaxxon | `zaxxon` (or `zaxxon2`) | Zaxxon (set 1, rev D) / (set 2, unknown rev) | `zaxxon` for `zaxxon2` |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -95,6 +96,14 @@ Notes:
   Red label: a split `defenderg.zip` needs `defender.zip` beside it. With
   both sets present, the Red label is used. The decoder PROMs aren't
   needed.
+- **Zaxxon:** set 1, rev D (MAME's `zaxxon`; its program ROMs carry a
+  red "D"). Older collections name its 17 files `zaxxon.1` ... `zaxxon.15`,
+  `zaxxon.u72`, `zaxxon.u98` (same contents; today `zaxxon_rom1d.u29` ...,
+  `mro16.u76`). Set 2 (`zaxxon2`: program ROMs 3 and 1 and the character
+  colour PROM `mro17.u41` differ) works too; a split `zaxxon2.zip` needs
+  `zaxxon.zip` beside it. Set 3 and the Japanese set (encrypted) aren't
+  read. The sound board's analog sounds are our own models - MAME's
+  Zaxxon sample set isn't used.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.
