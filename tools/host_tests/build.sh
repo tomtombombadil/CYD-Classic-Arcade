@@ -34,7 +34,8 @@
 #      the N / V / Z checks on), both builds; atari_tests (6502 timing /
 #      interrupts / opcode hook, POKEY, the vector display, DVG, Asteroids
 #      sound and wiring, AVG, math box, Tempest wiring), -O2 and with the
-#      sanitizers
+#      sanitizers; bzone_tests (the AVG's clip window, the Battlezone sound
+#      models, the treads, the board's wiring, idle skipping), both builds
 #  12. Burger Time: the AY-3-8910 (tones, noise, envelopes, bus, ports),
 #      the DECO CPU-7 opcode scramble and the board's wiring on hand-made
 #      programs, -O2 and with the sanitizers
@@ -76,6 +77,7 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/sound/pokey.cpp $ROOT/emu/sound/asteroids_sound.cpp $ROOT/emu/machines/vector_display.cpp \
      $ROOT/emu/machines/atari_dvg.cpp $ROOT/emu/machines/asteroids.cpp $ROOT/emu/machines/atari_avg.cpp \
      $ROOT/emu/machines/atari_mathbox.cpp $ROOT/emu/machines/tempest.cpp \
+     $ROOT/emu/sound/bzone_sound.cpp $ROOT/emu/machines/bzone.cpp \
      $ROOT/emu/machines/pia6821.cpp $ROOT/emu/machines/williams_blitter.cpp \
      $ROOT/emu/sound/williams_sound.cpp $ROOT/emu/machines/williams.cpp $ROOT/emu/sound/qix_sound.cpp \
      $ROOT/emu/machines/qix.cpp $ROOT/emu/sound/tms5220.cpp $ROOT/emu/machines/riot6532.cpp \
@@ -166,6 +168,11 @@ g++ $FLAGS -O2 -o "$OUT/atari_tests" "$ROOT/tools/host_tests/atari_tests.cpp" "$
 g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cpp" "$LIB_SAN"
 "$OUT/atari_tests"
 "$OUT/atari_tests_san"
+echo "== Battlezone tests (AVG clip window, sound models, treads, board wiring, idle skipping)"
+g++ $FLAGS -O2 -o "$OUT/bzone_tests" "$ROOT/tools/host_tests/bzone_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/bzone_tests_san" "$ROOT/tools/host_tests/bzone_tests.cpp" "$LIB_SAN"
+"$OUT/bzone_tests"
+"$OUT/bzone_tests_san"
 
 echo "== Star Wars tests (TMS5220, matrix processor, divider, LFSR, RIOT, AVG variant, board wiring)"
 g++ $FLAGS -O2 -o "$OUT/starwars_tests" "$ROOT/tools/host_tests/starwars_tests.cpp" "$LIB_O2"

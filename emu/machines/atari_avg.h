@@ -28,6 +28,14 @@
 // 8-11: 10 red, 9 green, 8 blue) and an 8-bit intensity (bits 0-7) at once;
 // and a vector's brightness is that intensity through a resistor DAC driven
 // by its 3-bit z (12k / 24k / 47k for z's bits 2 / 1 / 0) - z = 0 is a move.
+//
+// Battlezone's AVG (Variant::Battlezone) is monochrome: STAT sets only the
+// intensity (bits 4-7), and it has clipping hardware - a STAT with bit 10
+// clear latches the beam's position as a corner of a window (bit 9 set:
+// the top right one, clear: the bottom left one), and the lines after it
+// are cut to that window until the picture ends (MAME's driver, read for
+// facts only: the clip latches as the next instruction starts, where the
+// beam is still at the STAT's position).
 #pragma once
 
 #include <cstdint>
@@ -40,7 +48,7 @@ using read_fn = uint8_t (*)(void* ctx, uint16_t addr);
 // Star Wars: 1-255). A dot when the ends meet.
 using line_fn = void (*)(void* ctx, int32_t x0, int32_t y0, int32_t x1, int32_t y1, int color, int intensity);
 
-enum class Variant : uint8_t { Tempest, StarWars };
+enum class Variant : uint8_t { Tempest, StarWars, Battlezone };
 
 class Avg {
 public:
@@ -78,6 +86,11 @@ public:
     int intensity() const { return intensity_; }
     int scale() const { return scale_; }
     int bin_scale() const { return bin_scale_; }
+    // Battlezone: the clip window's corners as last latched (16.16).
+    int32_t clip_x0() const { return clip_lo_x_; }
+    int32_t clip_y0() const { return clip_lo_y_; }
+    int32_t clip_x1() const { return clip_hi_x_; }
+    int32_t clip_y1() const { return clip_hi_y_; }
 
 private:
     static int shifts_to_normalise(int v);
@@ -97,6 +110,8 @@ private:
     int      color_ = 0, intensity_ = 0;
     uint8_t  level_[8] = {};        // Star Wars: each z's brightness at this STAT
     int      scale_ = 0, bin_scale_ = 0;
+    // Battlezone's clip corners: bottom left (bit 9 clear), top right (set).
+    int32_t  clip_lo_x_ = 0, clip_lo_y_ = 0, clip_hi_x_ = 0, clip_hi_y_ = 0;
     int      ops_ = 0;
     bool     halted_ = true;
 };
@@ -129,6 +144,34 @@ inline int Avg::normalise(int& dvx, int& dvy, int bin_scale, bool svec)
     return svec ? 0x100 >> (k < 8 ? k : 8) : 0x8000 >> (k < 15 ? k : 15);
 }
 
+// Battlezone's clipping: the line (x0, y0) - (x1, y1) cut to the window
+// [wx0, wx1] x [wy0, wy1] (16.16), X first, then Y; out(x0, y0, x1, y1)
+// gets what is left, if anything.
+template <class Out>
+inline void clip_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t wx0, int32_t wy0, int32_t wx1,
+                      int32_t wy1, Out&& out)
+{
+    if ((x0 < wx0 && x1 < wx0) || (x0 > wx1 && x1 > wx1)) return;
+    auto cut_x = [](int32_t& px, int32_t& py, int32_t qx, int32_t qy, int32_t edge) {
+        py = int32_t(py + int64_t(qy - py) * (edge - px) / (qx - px));
+        px = edge;
+    };
+    if (x0 < wx0) cut_x(x0, y0, x1, y1, wx0);
+    else if (x0 > wx1) cut_x(x0, y0, x1, y1, wx1);
+    if (x1 < wx0) cut_x(x1, y1, x0, y0, wx0);
+    else if (x1 > wx1) cut_x(x1, y1, x0, y0, wx1);
+    if ((y0 < wy0 && y1 < wy0) || (y0 > wy1 && y1 > wy1)) return;
+    auto cut_y = [](int32_t& px, int32_t& py, int32_t qx, int32_t qy, int32_t edge) {
+        px = int32_t(px + int64_t(qx - px) * (edge - py) / (qy - py));
+        py = edge;
+    };
+    if (y0 < wy0) cut_y(x0, y0, x1, y1, wy0);
+    else if (y0 > wy1) cut_y(x0, y0, x1, y1, wy1);
+    if (y1 < wy0) cut_y(x1, y1, x0, y0, wy0);
+    else if (y1 > wy1) cut_y(x1, y1, x0, y0, wy1);
+    out(x0, y0, x1, y1);
+}
+
 template <Variant V, class Sink> int Avg::run_lines(Sink& sink, int max_ops)
 {
     // The state the loop changes is kept in locals (the compiler can't tell
@@ -151,6 +194,10 @@ template <Variant V, class Sink> int Avg::run_lines(Sink& sink, int max_ops)
         if (V == Variant::StarWars) return uint16_t((rd_(ctx_, a) << 8) | rd_(ctx_, uint16_t(a + 1)));
         return uint16_t(rd_(ctx_, a) | (rd_(ctx_, uint16_t(a + 1)) << 8));
     };
+    // Battlezone: the clip window (16.16, x0 <= x1, y0 <= y1), on from the
+    // first corner latched in this picture.
+    bool     clip = false;
+    int32_t  wx0 = 0, wy0 = 0, wx1 = 0, wy1 = 0;
     // dvx / dvy: 13-bit two's complement. Returns the time in master clocks.
     auto vector = [&](int dvx, int dvy, int z, bool svec) __attribute__((always_inline)) {
         const int t = normalise(dvx, dvy, bin, svec);
@@ -162,6 +209,16 @@ template <Variant V, class Sink> int Avg::run_lines(Sink& sink, int max_ops)
         const int32_t y1 = y - int32_t((vy * rate) >> 4);
         // Star Wars: the brightness for z, worked out at STAT (level_).
         const int level = V == Variant::StarWars ? level_[z & 7] : (z == 1 ? intensity_ : z * 2);
+        if constexpr (V == Variant::Battlezone) {
+            if (level && clip) {
+                clip_line(x, y, x1, y1, wx0, wy0, wx1, wy1, [&](int32_t a, int32_t b, int32_t c, int32_t d) {
+                    sink(a, b, c, d, color_, level);
+                });
+                x = x1;
+                y = y1;
+                return t;
+            }
+        }
         if (level) sink(x, y, x1, y1, color_, level);
         x = x1;
         y = y1;
@@ -181,6 +238,22 @@ template <Variant V, class Sink> int Avg::run_lines(Sink& sink, int max_ops)
                 scale_ = w0 & 0xff;
                 rate_scale = scale_ ^ 0xff;
                 bin = bin_scale_ = (w0 >> 8) & 7;
+            } else if constexpr (V == Variant::Battlezone) {
+                intensity_ = (w0 >> 4) & 0xf;
+                if (!(w0 & 0x400)) {    // a clip corner where the beam is
+                    if (w0 & 0x200) {
+                        clip_hi_x_ = x;
+                        clip_hi_y_ = y;
+                    } else {
+                        clip_lo_x_ = x;
+                        clip_lo_y_ = y;
+                    }
+                    clip = true;
+                    wx0 = clip_lo_x_ < clip_hi_x_ ? clip_lo_x_ : clip_hi_x_;
+                    wx1 = clip_lo_x_ < clip_hi_x_ ? clip_hi_x_ : clip_lo_x_;
+                    wy0 = clip_lo_y_ < clip_hi_y_ ? clip_lo_y_ : clip_hi_y_;
+                    wy1 = clip_lo_y_ < clip_hi_y_ ? clip_hi_y_ : clip_lo_y_;
+                }
             } else {
                 set_stat(w0);
             }

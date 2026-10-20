@@ -1,4 +1,4 @@
-// Atari AVG (Tempest) - see atari_avg.h.
+// Atari AVG (Tempest, Star Wars, Battlezone) - see atari_avg.h.
 #include "atari_avg.h"
 
 namespace atari_avg {
@@ -58,8 +58,11 @@ struct CallLine {
 int Avg::run(int max_ops)
 {
     CallLine sink{line_, ctx_};
-    return variant_ == Variant::StarWars ? run_lines<Variant::StarWars>(sink, max_ops)
-                                         : run_lines<Variant::Tempest>(sink, max_ops);
+    switch (variant_) {
+    case Variant::StarWars:   return run_lines<Variant::StarWars>(sink, max_ops);
+    case Variant::Battlezone: return run_lines<Variant::Battlezone>(sink, max_ops);
+    default:                  return run_lines<Variant::Tempest>(sink, max_ops);
+    }
 }
 
 } // namespace atari_avg

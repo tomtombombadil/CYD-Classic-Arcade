@@ -215,8 +215,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   boot_frames` = frames from power-on to the attract mode, found frame by
   frame in PC runs with Tom's ROMs (pacman / mspacman 300 - the grid test
   ends there, rallyx 770, galaga 870, digdug 700, robotron 760, defender
-  1625 - its Williams logo, qix 190, starwars 90, the rest 30 for the
-  first black / garbage frame). The runner runs them before the game loop
+  1625 - its Williams logo, qix 190, starwars 90, bzone 70 - black until
+  its first picture at 67, the rest 30 for the first black / garbage
+  frame). The runner runs them before the game loop
   with nothing drawn and the sound thrown away, as fast as the board goes
   (bar, back check and a vTaskDelay(1) for the watchdog only every 32
   frames), behind `ui::loading()` (game title, gold progress bar). Tom:
@@ -645,6 +646,71 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   ms a frame emulated (the game keeps its CPU busy: ~6800 instructions a
   frame), ~0.025 ms rendered. Sound: the two POKEYs x 4, AC-coupled; game
   peaks ~20,000.
+- Battlezone (`emu/machines/bzone.*`, set `bzone` (Rev 2) or `bzonea`
+  (Rev 1, Tom's; older MAME's `bzone`, files `036414.01` ...) as romset
+  variants - only the first program chip differs; no AVG / math box
+  PROMs; landscape 320 x 221). Emulated: 6502 at 1.512 MHz, NMI every
+  6144 cycles (off while the self-test switch is on), A15 not decoded,
+  IN0 (coins, slam, self-test, 3 kHz clock, AVG halted), the switches
+  (`set_dips` = M10, the game options, default as the manual: 3 tanks,
+  missile at 10,000, bonus 15,000 and 100,000, English; P10 pricing fixed
+  at 1 coin 1 credit), the math box (Tempest's), the POKEY (sound;
+  ALLPOT = the treads, fire and the starts, high when pressed), and the
+  AVG's Battlezone variant (`atari_avg`, Variant::Battlezone): STAT sets
+  only the intensity, and its clip window - a STAT with bit 10 clear
+  latches the beam's position as a corner (bit 9 set: top right, clear:
+  bottom left), lines after it are cut to the window, which is off again
+  at each picture's start (the game cuts its 3-D world off below the radar
+  and scores this way; with no clipping, "ENEMY IN RANGE" showed in the
+  attract mode). The NMI handler starts the AVG every 6th NMI (41
+  pictures a second) on one of two list buffers (the list's first word
+  jumps to it); each picture is drawn whole at its AVG GO. The picture:
+  the 580 x 400 window at square units (the radar round), 580 units over
+  320 columns = 221 rows; the cabinet's overlay (MAME's artwork: red over
+  the top fifth, green below, 1 / 0.125 tints) - rows 0-43 red, the rest
+  green, lines cut in two at the edge; intensity as Tempest's (a floor so
+  dim lines show). Drawn on core 0 from a copy (`snapshot()`, 1024
+  segments, 20 KB; most seen 525 in the attract mode's pages, 449 in
+  play). Modelled (`emu/sound/bzone_sound.*`, part values from the
+  board's parts list and Al Kossow's notes on the 1840 latch: 0
+  explosion, 1 explosion loud, 2 shell, 3 shell loud, 4 engine rev, 5
+  sound on - every sound, the POKEY's too -, 6 start lamp, 7 engine on):
+  a 16-bit noise register at 6 kHz (12 kHz halved; XNOR of bits 3 and 14
+  in); shell / explosion = a 4.7 / 10 uF cap charged through a CD4066
+  while its bit is on and discharged through 23k while its noise bit is
+  high (shell: the output halved; explosion: the NAND of bits 11-14
+  halved - slower, rumbling), the noise chopping its charge into an
+  op-amp (x 33 loud, x 8.7 soft, 330k / 4.7 nF = 103 Hz); engine = the
+  rev bit's control voltage (4.12 / 2.5 V from R5-R7) through 100k / 10
+  uF (1 s revving up, 0.18 s down through the diode) into a 555 (100k,
+  R11, 15 nF: ~355 Hz idle, ~800 Hz revved), two counters dividing it by
+  12 and 10 (outputs QD and ripple), summed through 33k each onto 0.47 uF
+  (the "integrated square wave"); the POKEY through 10k / 0.015 uF; the
+  mixer's resistors; the output's 0.1 uF / 22k coupling (72 Hz). Levels
+  set for a small speaker as Asteroids': explosion ~17,000, shell
+  ~14,000, engine ~7,000 (constant while playing), POKEY ~8,000, a soft
+  knee above 16,000 (play peaks ~21,000). Assumed: R11 (the engine pitch
+  pot, 250k on the board) at 36k, MAME's default setting; the shell's
+  loud bit as Kossow's notes say (D3; MAME wires the explosion's); the
+  watchdog (131072 cycles, as Asteroids). Unsure: the engine and shell
+  levels against each other (the board's mixer would make the explosion
+  ~3x the others). Controls (Tom's rule, by position): Select = coin,
+  Start = 1P, L = 2P, A = fire; the d-pad drives: up = both treads
+  forward, down = both back, left = left back + right forward (turn left
+  on the spot), right the mirror; a diagonal adds both and a tread pressed
+  both ways stops (`Machine::in3`), so up + left = the right tread alone
+  (forward, turning left), down + left = the left tread back; or the
+  sticks, tank style (`bzone::treads`): once either stick's Y is past a
+  third, left Y = left tread, right Y = right tread (up = forward), and
+  the d-pad's tread bits (which the left stick sets too) are dropped.
+  Idle skipping, exact (checked frame by frame - picture, audio, PC, A -
+  over 20,000 played frames with and without it; `bzone_tests` too): the
+  main loop's waits LSR zp / BCC (for the NMI handler's count, every 16th
+  NMI) and LDX zp / BEQ (for the buffer swap), whole turns to the next
+  NMI - ~25 % of the cycles (the game keeps its CPU busy). Attract mode
+  silent (see Demo sounds). PC, in play: emu ~0.05 ms, render ~0.011 ms
+  a frame (Pac-Man 0.035 / 0.070, Tempest 0.059 / 0.021 in the same run).
+  Memory (docs/MEMORY.md): machine 27.7 KB, ROM 16 KB in 2 regions.
 - Williams boards (`emu/machines/williams.*`; Robotron: 2084 and
   Defender). Emulated: the 6809 at 1 MHz (260 lines of 64 cycles, 60.10
   Hz); the 304x256 bitmap of 4-bit pixels in 38 KB of RAM (columns of
@@ -821,6 +887,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   under 7 minutes). No switch, attract silent on the cabinet: Pac-Man,
   Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong, Mr. Do!, Burger Time,
   Asteroids, Tempest (MAME's DIP lists have none for these sets),
+  Battlezone (no switch either; its program sets the sound-on bit of the
+  1840 latch only during play - checked: 20,000 frames of attract mode
+  wrote only the start lamp),
   Robotron (its Game Adjustment page: no sound item - "Fancy Attract
   Mode" is pictures), Defender (28 audit / adjust items, none about sound;
   Game Adjust 1-10 are unnamed on screen). Not attract sound: Q*bert's
