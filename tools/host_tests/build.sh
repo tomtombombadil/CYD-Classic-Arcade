@@ -48,6 +48,10 @@
 #      start of each opcode's file, ~600 tests each, fetched on first use
 #      into build/i8088 by fetch_i8088_tests.py - not ours, never
 #      committed), both builds
+#  16. the Galaxian-family parts (the shared video incl. the star field
+#      against a brute-force LFSR table, the Galaxian sound model, the
+#      Galaxian and Amidar boards on hand-made programs, Amidar's timer-wait
+#      skipping against runs without it), -O2 and with the sanitizers
 # and the ROM store / USB protocol (core/), with the web page's loader
 # (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
@@ -79,7 +83,8 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/pia6821.cpp $ROOT/emu/machines/williams_blitter.cpp \
      $ROOT/emu/sound/williams_sound.cpp $ROOT/emu/machines/williams.cpp $ROOT/emu/sound/qix_sound.cpp \
      $ROOT/emu/machines/qix.cpp $ROOT/emu/sound/tms5220.cpp $ROOT/emu/machines/riot6532.cpp \
-     $ROOT/emu/machines/starwars_mathbox.cpp $ROOT/emu/machines/starwars.cpp"
+     $ROOT/emu/machines/starwars_mathbox.cpp $ROOT/emu/machines/starwars.cpp \
+     $ROOT/emu/machines/galaxian_video.cpp $ROOT/emu/sound/galaxian_sound.cpp $ROOT/emu/machines/galaxian.cpp $ROOT/emu/machines/amidar.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -184,6 +189,12 @@ g++ $FLAGS $SAN -o "$OUT/qbert_tests_san" "$ROOT/tools/host_tests/qbert_tests.cp
 "$OUT/qbert_tests"
 "$OUT/qbert_tests_san"
 
+echo "== Galaxian / Amidar tests (video, stars, Galaxian sound model, board wiring, idle skipping)"
+g++ $FLAGS -O2 -o "$OUT/galaxian_tests" "$ROOT/tools/host_tests/galaxian_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/galaxian_tests_san" "$ROOT/tools/host_tests/galaxian_tests.cpp" "$LIB_SAN"
+"$OUT/galaxian_tests"
+"$OUT/galaxian_tests_san"
+
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" "$LIB_O2" > /dev/null
 python3 "$ROOT/tools/host_tests/make_fake_romset.py" "$OUT/fake"
@@ -191,7 +202,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars galaxian amidar; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

@@ -46,7 +46,10 @@
 //                         start1 start2 advance;
 //                         starwars: fire fire2 fire3 fire4 up down left right
 //                         (the sights) coin coin2 aux start1 (= fire) test
-//                         step; any game: lx=N / ly=N, the left stick's X / Y
+//                         step; galaxian: left right fire coin coin2
+//                         start1 start2 service test; amidar: up down left
+//                         right jump coin coin2 start1 start2 service;
+//                         any game: lx=N / ly=N, the left stick's X / Y
 //                         -512..511 (down positive), e.g.
 //                         "1200+60:lx=-300+fire")
 //     --verbose           one timing line per frame

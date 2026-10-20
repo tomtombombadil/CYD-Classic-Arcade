@@ -6,10 +6,12 @@
 #include <type_traits>
 #include <utility>
 
+#include "machines/amidar.h"
 #include "machines/asteroids.h"
 #include "machines/btime.h"
 #include "machines/digdug.h"
 #include "machines/dkong.h"
+#include "machines/galaxian.h"
 #include "machines/galaga.h"
 #include "machines/invaders.h"
 #include "machines/mrdo.h"
@@ -64,10 +66,10 @@ private:
 namespace {
 
 // Demo sounds (Machine::set_demo_sounds): only Galaga, Dig Dug, Q*bert,
-// Qix and Star Wars have the switch (a DIP switch, or Qix's operator
-// setting); the others' attract modes are silent on the cabinet, with no
-// switch for it (MAME's DIP lists, Robotron's and Defender's operator
-// pages), so they keep the default (false).
+// Qix, Star Wars and Amidar have the switch (a DIP switch, or Qix's
+// operator setting); the others' attract modes are silent on the cabinet,
+// with no switch for it (MAME's DIP lists, Robotron's and Defender's
+// operator pages), so they keep the default (false).
 
 // ---- Pac-Man ----------------------------------------------------------------
 
@@ -641,6 +643,79 @@ const ButtonName kStarwarsButtons[] = {
     {"test", starwars::kTest}, {"step", starwars::kDiagStep},
 };
 
+// ---- Galaxian -----------------------------------------------------------------
+
+class Galaxian : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[galaxian::kRegionCpu], r[galaxian::kRegionGfx], r[galaxian::kRegionProms]}, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    galaxian::Machine m_;
+    Shot<galaxian::Machine> shot_;
+};
+
+// Left / right and one button: A (or B) fires. Select = coin, Start = 1
+// player, L = 2 players (they take turns).
+const Control kGalaxianControls[] = {
+    {kPadLeft, galaxian::kLeft}, {kPadRight, galaxian::kRight}, {kPadA, galaxian::kFire},
+    {kPadB, galaxian::kFire}, {kPadSelect, galaxian::kCoin}, {kPadStart, galaxian::kStart1},
+    {kPadL, galaxian::kStart2},
+};
+
+const ButtonName kGalaxianButtons[] = {
+    {"left", galaxian::kLeft}, {"right", galaxian::kRight}, {"fire", galaxian::kFire},
+    {"coin", galaxian::kCoin}, {"coin2", galaxian::kCoin2}, {"start1", galaxian::kStart1},
+    {"start2", galaxian::kStart2}, {"service", galaxian::kService}, {"test", galaxian::kTest},
+};
+
+// ---- Amidar -------------------------------------------------------------------
+
+class Amidar : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[amidar::kRegionCpu], r[amidar::kRegionSound], r[amidar::kRegionGfx], r[amidar::kRegionProms]},
+                rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    // IN2's Demo Sounds switch (on by default): the attract mode's tunes.
+    bool set_demo_sounds(bool on) override { m_.set_demo_sounds(on); return true; }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    amidar::Machine m_;
+    Shot<amidar::Machine> shot_;
+};
+
+// The 4-way stick and the one button, Jump (it stuns the enemies): B, and A
+// too. Select = coin, Start = 1 player, L = 2 players (they take turns).
+const Control kAmidarControls[] = {
+    {kPadUp, amidar::kUp}, {kPadDown, amidar::kDown}, {kPadLeft, amidar::kLeft},
+    {kPadRight, amidar::kRight}, {kPadB, amidar::kJump}, {kPadA, amidar::kJump},
+    {kPadSelect, amidar::kCoin}, {kPadStart, amidar::kStart1}, {kPadL, amidar::kStart2},
+};
+
+const ButtonName kAmidarButtons[] = {
+    {"up", amidar::kUp}, {"down", amidar::kDown}, {"left", amidar::kLeft}, {"right", amidar::kRight},
+    {"jump", amidar::kJump}, {"coin", amidar::kCoin}, {"coin2", amidar::kCoin2},
+    {"start1", amidar::kStart1}, {"start2", amidar::kStart2}, {"service", amidar::kService},
+};
+
 template <class M> Machine* make() { return new (std::nothrow) M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -700,6 +775,12 @@ const Info kGames[] = {
     {"starwars", "Star Wars", &starwars::kRomSet, starwars::kScreenW, starwars::kScreenH,
      Orientation::Landscape, starwars::kCpuClock, starwars::kCyclesPerFrame, kStarwarsControls,
      COUNT(kStarwarsControls), kStarwarsButtons, COUNT(kStarwarsButtons), nullptr, 0, make<Starwars>, false, false, "Atari", 1983, 90},
+    {"galaxian", "Galaxian", &galaxian::kRomSet, galaxian::kScreenW, galaxian::kScreenH, Orientation::Portrait,
+     galaxian::kCpuClock, galaxian::kCyclesPerFrame, kGalaxianControls, COUNT(kGalaxianControls),
+     kGalaxianButtons, COUNT(kGalaxianButtons), nullptr, 0, make<Galaxian>, false, false, "Namco", 1979, 216},
+    {"amidar", "Amidar", &amidar::kRomSet, amidar::kScreenW, amidar::kScreenH, Orientation::Portrait,
+     amidar::kCpuClock, amidar::kCyclesPerFrame, kAmidarControls, COUNT(kAmidarControls), kAmidarButtons,
+     COUNT(kAmidarButtons), nullptr, 0, make<Amidar>, true, false, "Konami", 1981, 193},
 };
 
 const int kGameCount = COUNT(kGames);

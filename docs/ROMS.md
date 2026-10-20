@@ -44,6 +44,8 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Defender | `defender` or `defenderg` | Defender (Red label) / (Green label) | `defender` for `defenderg` |
 | Stargate (stretch) | `stargate` | Stargate | - |
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
+| Galaxian | `galaxian` | Galaxian (Namco set 1) | - |
+| Amidar | `amidar` | Amidar (Konami) | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -95,6 +97,15 @@ Notes:
   Red label: a split `defenderg.zip` needs `defender.zip` beside it. With
   both sets present, the Red label is used. The decoder PROMs aren't
   needed.
+- **Galaxian:** the Namco set (MAME's `galaxian`: `galmidw.u` `.v` `.w`
+  `.y`, `7l`, `1h.bin`, `1k.bin`, `6l.bpr`; the program chips carry
+  Midway's names). Midway's own set (`galmidw`) and the many bootlegs and
+  clones have other program ROMs and aren't read. The `galaxian` sample
+  set isn't needed: its sounds are modelled.
+- **Amidar:** the Konami set (MAME's `amidar`: `amidar.2c` `.2e` `.2f`
+  `.2h`, sound `amidar.5c` `.5d`, graphics `amidar.5f` `.5h`, the colour
+  PROM `amidar.clr`). The Stern and bootleg sets (`amidaru`, `amidaro`,
+  `amidarb`, ...) have other program ROMs and aren't read.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.
