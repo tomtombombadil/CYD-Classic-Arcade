@@ -60,7 +60,9 @@ Robotron / Defender 51.9) or one of Qix's 32 KB halves.
 - Internal RAM usable by the heap: **(board)** "Heap: N KB internal in
   all" at each start.
 - Static RAM (.data + .bss, fixed at build): v0.3.1 105.6 KB, v0.15.x
-  121 KB **(build)**; the biggest static symbols are listed in every CI
+  121 KB **(build)**; symbols at DRAM addresses, v0.15.7: 88.8 KB in 895
+  symbols (CI's list; the rest of PlatformIO's "RAM used" is IRAM and
+  alignment); the biggest static symbols are listed in every CI
   build log ("Biggest static RAM symbols").
 - Static RAM's biggest users **(build, v0.15.6, 3.5")**: BTstack's HCI
   ring buffer 22.3 KB, Bluepad32's g_devices 11.3 KB, the sound ring
