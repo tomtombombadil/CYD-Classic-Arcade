@@ -6,6 +6,7 @@
 // single-precision FPU, and only the effects that are sounding run.
 #include "invaders_sound.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace invaders_sound {
@@ -35,7 +36,11 @@ constexpr float kFleetR2 = 75e3f, kFleetC = 0.1e-6f;
 constexpr float kXsR1 = 100e3f, kXsR2 = 47e3f, kXsC = 1e-6f, kXsTone = 480.0f;
 
 // Output levels (the mixer's input resistors, weighed by each circuit's swing).
-constexpr float kUfoLevel = 4200, kShotLevel = 4500, kBaseHitLevel = 26000, kInvHitLevel = 4500;
+// Shot, measured on a recording (see render): Hz, s, Hz per second
+constexpr float kShotHigh = 1840, kShotLow = 580, kShotSweep = 0.153f, kShotSlope = 8800;
+constexpr float kShotHoldFull = 0.06f, kShotLength = 0.41f;
+
+constexpr float kUfoLevel = 4200, kShotLevel = 3000, kBaseHitLevel = 26000, kInvHitLevel = 4500;
 constexpr float kUfoHitLevel = 4500, kFleetLevel = 9000, kXsLevel = 3000;
 
 } // namespace
@@ -55,12 +60,11 @@ void Synth::init(uint32_t rate)
     ufo_vco_rate_ = 0.64f * 2 * (kSlfHigh + kVcoAbove - kSlfLow) / (kVcoR * kVcoC) / sub;
     ufo_attack_ = lp(1.0f / (kTwoPi * 0.002f));
 
-    // Shot: one-shot ~50 ms, envelope 3 ms on / 56 ms off (560k x 0.1 uF),
-    // pitch ~1.8 kHz falling to ~300 Hz with the integrator (1.5M x 0.22 uF).
+    // Shot: envelope on the bit 3 ms on / 56 ms off (560k x 0.1 uF); the
+    // rest is fitted to a recording of the board (Tom, 2026-10-20: the shot
+    // "isn't right" - v0.1's single slow 1.8 kHz -> 300 Hz slide wasn't it).
     shot_attack_ = 1.0f - decay(0.003f);
     shot_release_ = decay(0.056f);
-    shot_rise_ = 1.0f - decay(0.0022f);
-    shot_fall_ = decay(0.33f);
     shot_noise_lp_ = lp(2000);
 
     // Player hit: noise through 5.6k / 0.1 uF (284 Hz) and 12.4k / 0.1 uF
@@ -102,8 +106,8 @@ void Synth::reset()
     ufo_slf_ = ufo_vco_ = kSlfLow;
     ufo_slf_up_ = ufo_vco_up_ = true;
     ufo_gain_ = 0;
-    shot_amp_ = shot_pitch_ = shot_noise_ = 0;
-    shot_hold_ = 0;
+    shot_amp_ = shot_noise_ = 0;
+    shot_t_ = kShotLength;
     bh_amp_ = bh_lp1_ = bh_lp2_ = 0;
     bh_hold_ = 0;
     ih_amp_ = ih_lfo_ = 0;
@@ -122,7 +126,7 @@ void Synth::write_port3(uint8_t v)
 {
     const uint8_t rise = uint8_t(v & ~p3_);
     p3_ = v;
-    if (rise & 0x02) shot_hold_ = int(0.05f * rate_);
+    if (rise & 0x02) shot_t_ = 0;
     if (rise & 0x04) bh_hold_ = int(0.5f * rate_);
     if (rise & 0x08) ih_hold_ = int(0.06f * rate_);
     if (rise & 0x10) xs_gate_phase_ = 0;              // the 555 starts on its high time
@@ -186,17 +190,27 @@ void Synth::render(int16_t* out, int n)
             mix += float(acc) * (kUfoLevel / kUfoOversample) * ufo_gain_;
         }
 
-        // Shot.
-        if (shot && (shot_hold_ > 0 || shot_pitch_ > 0.001f)) {
+        // Shot: a narrow pulse (a third of each cycle high) whose pitch
+        // falls in a straight line from 1840 Hz to ~580 Hz in 143 ms and
+        // starts again every 153 ms, fading out over 0.41 s - measured on a
+        // recording of the board (a 1999 11 kHz WAV: the sweeps' slope,
+        // period, pulse shape and the loudness, 8 % pitch jitter from the
+        // noise). The game holds the bit ~1 s while the shot flies, so the
+        // circuit, not the bit, ends the sound; a shot that hits sooner
+        // ends with the bit's 56 ms release.
+        if (shot && shot_t_ < kShotLength) {
             shot_amp_ += ((shot_gate ? 1.0f : 0.0f) - shot_amp_) * (shot_gate ? shot_attack_ : 1.0f - shot_release_);
-            if (shot_hold_ > 0) { --shot_hold_; shot_pitch_ += (1.0f - shot_pitch_) * shot_rise_; }
-            else                shot_pitch_ *= shot_fall_;
+            const float t = shot_t_;
+            shot_t_ += 1.0f / rate_;
+            const float u = std::fmod(t, kShotSweep);
             shot_noise_ += (nz - shot_noise_) * shot_noise_lp_;
-            const float f = (300.0f + 1500.0f * shot_pitch_) * (1.0f + 0.35f * shot_noise_);
+            const float f = std::max(kShotLow, kShotHigh - kShotSlope * u) * (1.0f + 0.08f * shot_noise_);
             shot_osc_.set(f, rate_);
-            // The game holds the bit while the shot flies; the sound dies
-            // with the one-shot's integrator, which also sets the pitch.
-            mix += (shot_osc_.tick() ? kShotLevel : -kShotLevel) * shot_amp_ * shot_pitch_;
+            const float fade = t < kShotHoldFull ? 1.0f
+                             : 1.0f - std::pow((t - kShotHoldFull) / (kShotLength - kShotHoldFull), 1.2f);
+            // Pulse +2/3, -1/3 of the swing: no DC
+            const bool high = shot_osc_.tick_duty(0x55555555u);
+            mix += (high ? 2.0f * kShotLevel : -kShotLevel) * shot_amp_ * fade;
         }
 
         // Player hit.

@@ -454,6 +454,19 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
 - Tom, v0.2.0 on the 2.8" ST7789: ROMs over USB worked, Pac-Man and Space
   Invaders "played perfectly". 4.0" log: Pac-Man emu ~5.7 ms + draw ~6-8
   ms a frame (of 16.5), every frame drawn.
+- Space Invaders' shot (Tom, 2026-10-20: "isn't right"; not the ROM - the
+  board's sounds are analog circuits the program only switches): fitted to
+  a recording of the board (classicgaming.cc's 1999 shoot.wav, 11 kHz -
+  used on the PC for comparison only, never in the repo or firmware): a
+  pulse a third of each cycle high, pitch falling in a straight line
+  1840 -> ~580 Hz in 143 ms and starting again every 153 ms, faded out
+  over 0.41 s (full for 60 ms, then 1 - x^1.2), 8 % pitch jitter from the
+  noise; the bit's 3 ms / 56 ms envelope stays (the game holds the bit ~61
+  frames = ~1 s while the shot flies). v0.1's model was one slow 50 %
+  square slide 1.8 kHz -> 300 Hz. Two boards existed: Midway's (US) and
+  Taito's (Japan) shot circuits differ (C12 1 uF vs 0.22 uF, R13 3.3M vs
+  2.2M); which one the recording is from isn't known. The recording seems
+  to start ~62 ms into the first sweep; the model starts at its top.
 - **ROM zips only, no sample files** (Tom, 2026-10-14: on handhelds the
   zip is all a player ever needs). Analog sounds are always our own
   models in the firmware. `emu/sound/samples.*` stays for the PC tool

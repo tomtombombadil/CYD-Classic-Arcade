@@ -52,6 +52,7 @@ private:
         uint32_t phase = 0, step = 0;
         void set(float hz, float rate) { step = uint32_t(hz / rate * 4294967296.0f); }
         bool tick() { phase += step; return phase < 0x80000000u; }
+        bool tick_duty(uint32_t high) { phase += step; return phase < high; }
     };
 
     float lp(float fc) const;           // one-pole low-pass coefficient for cutoff fc
@@ -70,11 +71,10 @@ private:
     bool  ufo_slf_up_ = true, ufo_vco_up_ = true;
     float ufo_slf_rise_ = 0, ufo_slf_fall_ = 0, ufo_vco_rate_ = 0, ufo_attack_ = 0;
 
-    // Shot: a noise-wobbled square whose pitch drops after a short one-shot.
+    // Shot: a narrow pulse in repeated falling sweeps, fading out.
     Square shot_osc_;
-    float  shot_amp_ = 0, shot_pitch_ = 0, shot_noise_ = 0;
-    int    shot_hold_ = 0;
-    float  shot_attack_ = 0, shot_release_ = 0, shot_fall_ = 0, shot_rise_ = 0, shot_noise_lp_ = 0;
+    float  shot_amp_ = 0, shot_noise_ = 0, shot_t_ = 1;   // shot_t_: seconds since the bit rose
+    float  shot_attack_ = 0, shot_release_ = 0, shot_noise_lp_ = 0;
 
     // Player hit: filtered noise with a long envelope.
     float bh_amp_ = 0, bh_lp1_ = 0, bh_lp2_ = 0;
