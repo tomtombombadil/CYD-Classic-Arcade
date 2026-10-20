@@ -19,8 +19,8 @@
 #      CWAI / SYNC, small programs), -O2 and with the sanitizers
 #   7. the 6800 / 6802 / 6808 core (flags, cycles, interrupts incl. WAI),
 #      -O2 and with the sanitizers
-#   8. the Williams parts (6821 PIA, SC1 blitter, sound board, the Robotron
-#      and Defender boards on hand-made programs), -O2 and with the
+#   8. the Williams parts (6821 PIA, SC1 blitter, sound board, the Robotron,
+#      Defender and Bubbles boards on hand-made programs), -O2 and with the
 #      sanitizers
 #   9. the Namco Galaga-family parts (06XX / 51XX / 53XX, starfield, 54XX
 #      model, the three-CPU board and idle skipping on hand-made programs,

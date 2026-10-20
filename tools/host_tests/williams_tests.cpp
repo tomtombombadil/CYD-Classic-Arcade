@@ -313,13 +313,15 @@ struct Board {
     explicit Board(williams::Board k) : kind(k)
     {
         const romset::Set& set = k == williams::Board::Robotron ? williams::robotron::kRomSet
+                               : k == williams::Board::Bubbles  ? williams::bubbles::kRomSet
                                                                 : williams::defender::kRomSet;
         for (int r = 0; r < set.region_count; ++r) regions.emplace_back(set.regions[r].size, 0x12);  // NOPs
     }
     uint8_t* fixed()
     {
         const int r = kind == williams::Board::Robotron ? int(williams::robotron::kRegionFixed)
-                                                         : int(williams::defender::kRegionFixed);
+                    : kind == williams::Board::Bubbles  ? int(williams::bubbles::kRegionFixed)
+                                                        : int(williams::defender::kRegionFixed);
         return regions[size_t(r)].data();
     }
     void start()
@@ -481,6 +483,55 @@ void test_defender_board()
     CHECK_EQ(ram[0x9810], 0x40 | 0x04 | 0x08 | 0x80);
 }
 
+// Bubbles: Robotron's board with an 8-bit CMOS RAM; the starts in IN0 the
+// other way round (bit 5 = one player).
+void test_bubbles_board()
+{
+    Board b(williams::Board::Bubbles);
+    Code c(b.fixed(), 0xd000, 0xd000);
+    c.lds(0xbf00)
+        .lda(0x04).sta(0xc805)          // widget PIA: CRA data
+        .lda(0x04).sta(0xc80d)          // ROM PIA: CRA data
+        .lda(0x07).sta(0xc80f)          // CRB: data, CB1 rising edge, IRQ on
+        .lda(0x01).sta(0xc900)          // ROM over the video RAM
+        .lda_ext(0x8fff).sta(0x9801)
+        .lda(0x00).sta(0xc900)
+        .lda(0xa5).sta(0xcc20)          // CMOS: all 8 bits
+        .lda_ext(0xcc20).sta(0x9802)
+        .b({0x1c, 0xef})                // ANDCC #$EF
+        .here_loop();
+    Code irq(b.fixed(), 0xd000, 0xd100);
+    irq.lda_ext(0xc80e)                 // clears the flag
+        .lda_ext(0xc804).sta(0x9810)    // IN0
+        .lda_ext(0xc80c).sta(0x9811)    // IN2
+        .lda(0x39).sta(0xcbff)          // watchdog
+        .b({0x3b});                     // RTI
+    c.vec(0xfff8, 0xd100);
+    c.vec(0xfffe, 0xd000);
+    b.regions[williams::bubbles::kRegionBanked][0x8fff] = 0x6b;
+    b.start();
+    b.frames(3);
+    const uint8_t* ram = b.m->ram();
+    CHECK_EQ(ram[0x9801], 0x6b);
+    CHECK_EQ(ram[0x9802], 0xa5);
+    CHECK_EQ(b.m->cmos()[0x20], 0xa5);
+    using namespace williams::bubbles;
+    b.frames(1, kUp | kRight | kStart1);
+    CHECK_EQ(ram[0x9810], 0x01 | 0x08 | 0x20);
+    b.frames(1, kDown | kLeft | kStart2 | kCoin);
+    CHECK_EQ(ram[0x9810], 0x02 | 0x04 | 0x10);
+    CHECK_EQ(ram[0x9811], 0x10);                // left coin
+    CHECK_EQ(b.m->watchdog_resets(), 0);
+    // Same visible window as Robotron's: column 0 = hardware x 6.
+    b.m->ram()[3 * 256 + 7] = 0x0f;
+    b.frames(1);
+    uint16_t line[williams::kScreenW];
+    b.m->render_line(0, line);
+    CHECK_EQ(line[0], 0x0000);          // pen 0, palette never written
+    // The ROM set: 12 program ROMs of 4 KB + the sound ROM, as MAME's.
+    CHECK_EQ(williams::bubbles::kRomSet.rom_count, 13);
+}
+
 } // namespace
 
 int main()
@@ -491,6 +542,7 @@ int main()
     test_robotron_board();
     test_watchdog();
     test_defender_board();
+    test_bubbles_board();
     std::printf("williams tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

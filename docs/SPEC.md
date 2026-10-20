@@ -31,6 +31,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Star Wars | 6809 1.5 MHz + matrix processor (PROM microcode) | colour vector generator (AVG), 6809 sound CPU + RIOT, 4 POKEY, TMS5220 speech (our LPC synthesiser; the voices are LPC data in the sound ROMs) | 320x240 landscape (lines drawn row by row from a segment list) | done: ~1.0M host instructions a frame (2x Pac-Man); machine ~51 KB + 72 KB of ROM |
 | Robotron: 2084 | 6809 1 MHz | SC1 blitter, 6808 sound CPU + DAC, 304x256 4-bit bitmap (38 KB) | 292x240 landscape | done: idle loops skipped (exact), ~104 KB of RAM with the ROMs |
 | Defender | 6809 1 MHz | 6808 sound CPU + DAC, ROM banked at C000 | 292x240 landscape | done: the stick reverses / thrusts by the ship's facing |
+| Bubbles | 6809 1 MHz | Robotron's board (SC1 blitter, 6808 sound CPU + DAC) with an 8-bit CMOS RAM | 292x240 landscape | done: ~1.9x Pac-Man's emulation time on the PC in play; ~104 KB of RAM with the ROMs |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
 | Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
@@ -82,7 +83,7 @@ Select, Home. Per game: Start = start, Select = coin, A = fire / jump,
 others as the game needs (Defender's thrust / smart bomb / hyperspace,
 Asteroids' thrust / hyperspace; Tempest: A fires, B = Superzapper, the
 spinner = the left stick's X at a speed in proportion or the d-pad at a
-steady speed; Robotron's right stick fires). Home = the emulator's menu
+steady speed; Robotron's right stick fires; Bubbles is the stick alone). Home = the emulator's menu
 (pause, volume, quit). Two controllers can be paired (`CONFIG_BLUEPAD32_MAX_DEVICES`
 = 2).
 

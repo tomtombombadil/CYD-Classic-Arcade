@@ -42,6 +42,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` |
 | Robotron: 2084 | `robotron` | Robotron: 2084 (Release 5, solid blue label) | - |
 | Defender | `defender` or `defenderg` | Defender (Red label) / (Green label) | `defender` for `defenderg` |
+| Bubbles | `bubbles` | Bubbles | - |
 | Stargate (stretch) | `stargate` | Stargate | - |
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
@@ -95,6 +96,10 @@ Notes:
   Red label: a split `defenderg.zip` needs `defender.zip` beside it. With
   both sets present, the Red label is used. The decoder PROMs aren't
   needed.
+- **Bubbles:** MAME's `bubbles` (`bubbles.1b` ... `bubbles.12b`,
+  `bubbles.snd`). The two decoder PROMs (`decoder.4`, `decoder.6`, for the
+  cocktail flip) aren't needed. Other releases (the red label `bubblesr`,
+  the prototype `bubblesp`) have other program ROMs and aren't supported.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.
