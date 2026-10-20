@@ -106,8 +106,23 @@ audio 0.7 of 3. v0.15.8 after Ms. Pac-Man, Mr. Do!, Galaga, Donkey Kong,
 Dig Dug, Defender, Burger Time, Asteroids: main 3.5, ui 5.6, draw 1.2,
 audio 0.7 - unchanged by seven more games. v0.16.0 after Ms. Pac-Man,
 Pac-Man, Q*bert, Qix, Rally-X, Robotron, Space Invaders, Tempest: the
-same (draw 1.0-1.2). Every game but Star Wars measured; stacks stay as
-they are until it is in.
+same (draw 1.0-1.2). v0.16.1 after Star Wars: main 3.5, ui 5.6, draw 0.8, audio
+0.7. All 16 games measured: no game moved any stack's high-water mark.
+
+v0.16.1, Star Wars on the 3.5" **(board)**: area 98 KB at the menu (no
+controller yet), 93 KB at the game's start (one connected); machine 52
+KB, area used 74, ROM 4 KB in RAM / 68 KB from flash; 61.4 frames, 57
+pictures a second (emu 8.7 ms, worst 13.4). A controller connecting at
+the menu took 5.1 KB and left 5.2 KB free outside the area - not enough
+for a second one.
+
+v0.16.2: ESP32 stacks cut to the most used + ~40 %: ui 12 -> 9 KB, draw 5
+-> 3, audio 3 -> 2 (6 KB more for games; main / BTstack stays 8 - pairing
+a new controller wasn't measured; the S3 keeps its sizes). Kept outside
+the area: 7 KB + 6 KB for each controller slot still free (two slots), so
+a controller connecting at the menu or in a game always has its 5.1 KB.
+Expected on the 3.5" at a game's start with one controller: ~96 KB area
+(Qix needs 88.2), 13 KB outside.
 
 v0.16.0 on the 3.5" (USB loader only on its page) **(board)**: game area
 92 KB in one block, 8 KB free outside (block 6.3). Area used / ROM in RAM

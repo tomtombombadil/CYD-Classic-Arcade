@@ -42,6 +42,7 @@
 #include "input.h"
 #include "line_diff.h"
 #include "memlog.h"
+#include "pad.h"
 #include "screen.h"
 #include "settings.h"
 #include "touch.h"
@@ -75,13 +76,25 @@ constexpr int kAudioCap = 1024;         // samples per frame, at most
 // free) with ~15 KB left, and Bluetooth was fine. v0.15.0-v0.15.4 kept
 // 40 KB back, which left a 31 KB area on his 3.5" and only Pac-Man and
 // Space Invaders fitted (Tom: "these games were playing fine a couple
-// revisions ago"). 12 KB is kept back on the ESP32 now, as v0.14 left;
-// the S3 has RAM to spare.
+// revisions ago"). v0.15.5-v0.16.1 kept 12 KB back on the ESP32. Measured
+// on Tom's 3.5" (v0.16.1): a controller connecting takes 5.1 KB - one that
+// connected at the menu left 5.2 KB free, too little for a second. So on
+// the ESP32: 7 KB, plus 6 KB for each controller slot still free (a
+// controller may connect during a game); the S3 has RAM to spare.
+uint32_t system_reserve()
+{
 #if CONFIG_IDF_TARGET_ESP32
-constexpr uint32_t kSystemReserve = 12 * 1024;
+    int connected = 0;
+    for (int i = 0; i < PAD_MAX; ++i) {
+        pad_state_t p;
+        pad_get(i, &p);
+        connected += p.connected ? 1 : 0;
+    }
+    return 7 * 1024 + 6 * 1024 * uint32_t(PAD_MAX - connected);
 #else
-constexpr uint32_t kSystemReserve = 40 * 1024;
+    return 40 * 1024;
 #endif
+}
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
@@ -170,8 +183,8 @@ bool init()
     // Everything the emulators allocate comes from the game area
     emu::set_allocator(arena::alloc, emu_free);
     s_bus = xSemaphoreCreateMutex();
-    if (s_bus) xTaskCreatePinnedToCore(draw_task, "draw", 5120, nullptr, 1, &s_draw, 0);
-    const bool ok = arena::reserve(kSystemReserve);
+    if (s_bus) xTaskCreatePinnedToCore(draw_task, "draw", memlog::kStackDraw, nullptr, 1, &s_draw, 0);
+    const bool ok = arena::reserve(system_reserve());
     devlog::add("Game area %s%s; RAM left %u KB, block %u KB; draw task %s", area_text(), ok ? "" : " (NONE)", unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
                 s_draw ? "on core 0" : "NONE");
@@ -186,7 +199,7 @@ void run(int index, AudioRing& ring)
     // core 0, then as many ROM regions as fit (the rest stream into flash).
     // When the game ends the area is emptied in one go, so the next game
     // starts from the same memory, whatever ran before (Tom, v0.14.6).
-    const uint32_t before_kb = arena::renew(kSystemReserve) / 1024;
+    const uint32_t before_kb = arena::renew(system_reserve()) / 1024;
     const uint32_t area_kb = arena::size() / 1024;
     devlog::add("%s: start; game area %s, was %u KB; RAM outside %u KB free, block %u KB", g.id, area_text(),
                 unsigned(before_kb),
@@ -518,6 +531,6 @@ void run(int index, AudioRing& ring)
 const Stats& last_stats() { return s_last; }
 
 void release_area() { arena::release(); }
-bool reserve_area() { return arena::reserve(kSystemReserve); }
+bool reserve_area() { return arena::reserve(system_reserve()); }
 
 }  // namespace game_runner

@@ -139,7 +139,7 @@ extern "C" void app_main(void)
     pad_set_swap_ab(settings::get().swap_ab);
     memlog::stage("after NVS");
     ESP_LOGI(kTag, "CYD Classic Arcade %s (%s) on %s", CYD_ARCADE_VERSION, CYD_ARCADE_BUILD, BOARD_NAME);
-    xTaskCreatePinnedToCore(ui_task, "ui", 12288, nullptr, 5, nullptr, 1);
+    xTaskCreatePinnedToCore(ui_task, "ui", memlog::kStackUi, nullptr, 5, nullptr, 1);
     memlog::stage("before Bluetooth");
     pad_bt_run();  // never returns
 }

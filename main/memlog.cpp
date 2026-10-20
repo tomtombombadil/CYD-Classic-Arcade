@@ -65,8 +65,8 @@ void stacks()
     static const struct {
         const char* name;
         uint32_t    size;
-    } kTasks[] = {{"main", CONFIG_ESP_MAIN_TASK_STACK_SIZE}, {"ui", 12288}, {"usb", 6144}, {"draw", 5120},
-                  {"audio", 3072}};
+    } kTasks[] = {{"main", CONFIG_ESP_MAIN_TASK_STACK_SIZE}, {"ui", kStackUi}, {"usb", kStackUsb},
+                  {"draw", kStackDraw}, {"audio", kStackAudio}};
     char text[112];
     int n = std::snprintf(text, sizeof text, "Stacks used / size KB:");
     for (const auto& t : kTasks) {

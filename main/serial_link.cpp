@@ -8,6 +8,7 @@
 #include "catalog.h"
 #include "core/usb_import.h"
 #include "flash_store.h"
+#include "memlog.h"
 #include "version_gen.h"
 
 #include <cstdarg>
@@ -126,7 +127,7 @@ bool start()
     s_session.init(flash_store::store(), send, games, nullptr, CYD_ARCADE_VERSION);
     s_stop = false;
     s_parked = false;
-    if (xTaskCreatePinnedToCore(task, "usb", 6144, nullptr, 4, &s_task, 0) != pdPASS) {
+    if (xTaskCreatePinnedToCore(task, "usb", memlog::kStackUsb, nullptr, 4, &s_task, 0) != pdPASS) {
         s_task = nullptr;
 #if BOARD_USB_SERIAL_JTAG
         esp_log_set_vprintf(s_uart_log);

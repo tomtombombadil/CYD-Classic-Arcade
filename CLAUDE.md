@@ -348,8 +348,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   the area was capped at free RAM minus the 40 KB reserve (70 - 40), not
   by fragmentation. Before v0.15 a game took what it needed from the free
   RAM (Star Wars played on the 3.2" with ~15 KB left, Bluetooth fine), so
-  `kSystemReserve` is 12 KB on the ESP32 (40 on the S3) - never raise it
-  without checking every game still starts on an ESP32 board. The ESP32
+  `kSystemReserve` was 12 KB on the ESP32 (40 on the S3); since v0.16.2
+  `system_reserve()` keeps 7 KB + 6 KB per free controller slot (a
+  controller connecting takes 5.1 KB, measured) - never raise it without
+  checking every game still starts on an ESP32 board (docs/MEMORY.md). The ESP32
   boards have ~70-77 KB free at a game's start (tasks: ui 12 KB, main /
   BTstack 8, usb 6 + 4 KB UART buffer, draw 5 - kept since v0.15.0 -,
   audio 3; static DRAM 105.6 KB at v0.3.1, 121 KB now). The PWM sound
@@ -382,7 +384,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Star Wars "Can't load the ROMs - 136021.214.1f missing"): the ROM
   budget (`catalog::load`) keeps room in the area for the unpacking buffer
   (the biggest ROM going to flash), and a buffer that can't be had says
-  "Out of memory", not a missing ROM.
+  "Out of memory", not a missing ROM. v0.16.2 (all 16 games measured on
+  Tom's 3.5"): ESP32 task stacks cut to the most used + ~40 % (ui 12 -> 9
+  KB, draw 5 -> 3, audio 3 -> 2; `memlog::kStack*`, the S3 keeps its
+  sizes), and the reserve outside the area counts free controller slots
+  (above).
 - ROMs live in flash, not RAM (Tom, 2026-10-17, asked why zips are "in
   memory all the time"): the zips are copied from the SD card / USB into
   the `roms` flash partition (storage, read in place, no RAM); only the

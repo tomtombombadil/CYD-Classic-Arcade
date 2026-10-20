@@ -23,6 +23,7 @@
 #include "audio_out.h"
 
 #include "board_select.h"
+#include "memlog.h"
 
 #include <driver/gpio.h>
 #include <esp_heap_caps.h>
@@ -333,14 +334,14 @@ bool start(Fill fill, void* ctx, bool pwm) {
     (void)pwm;
     if (!start_i2s()) return false;
     set_volume(50);
-    xTaskCreatePinnedToCore(audio_task, "audio", 3072, nullptr, 10, nullptr, 1);
+    xTaskCreatePinnedToCore(audio_task, "audio", memlog::kStackAudio, nullptr, 10, nullptr, 1);
     s_running = true;
     return true;
 #else
     if (pwm) {
         if (!start_pwm()) return false;
         set_volume(50);
-        xTaskCreatePinnedToCore(audio_task, "audio", 3072, nullptr, 10, nullptr, 1);
+        xTaskCreatePinnedToCore(audio_task, "audio", memlog::kStackAudio, nullptr, 10, nullptr, 1);
         s_running = true;
         return true;
     }
@@ -360,7 +361,7 @@ bool start(Fill fill, void* ctx, bool pwm) {
         return false;
     }
     set_volume(50);
-    xTaskCreatePinnedToCore(audio_task, "audio", 3072, nullptr, 10, nullptr, 1);
+    xTaskCreatePinnedToCore(audio_task, "audio", memlog::kStackAudio, nullptr, 10, nullptr, 1);
     s_running = true;
     return true;
 #endif
