@@ -1056,6 +1056,12 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   pioarduino's ESP-IDF build ("No module named SCons.Tool.FortranCommon").
 
 ## Web flasher
+- Pushing (Tom, 2026-10-20: "Why does it take you so long to post the
+  binaries?" - a work-branch run and then the same run on main took
+  30-40 minutes): push firmware changes straight to main; CI deploys the
+  flasher only when the host tests AND every board build pass, so a broken
+  commit never reaches it - fix it at once. The board builds run alongside
+  the host tests (~11 minutes push to flasher).
 - Every push to main: CI builds every env with `custom_firmware_name`,
   merges each into one image at 0x0 (esptool merge_bin) and publishes
   `web/index.html` + `tools/make_site.py`'s manifests on GitHub Pages:
