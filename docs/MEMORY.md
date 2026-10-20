@@ -38,6 +38,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Space Invaders | 9.2 | - | 14.7 / 16.1 | **23.9 / 25.3** | - | 8.0 | 2 |
 | Pac-Man | 14.4 | - | 15.7 / 17.1 | **30.1 / 31.5** | 2.0 | 24.8 | 4 |
 | Burger Time | 17.6 | - | 14.2 / 15.6 | **31.9 / 33.3** | - | 52.0 | 4 |
+| Missile Command | 18.3 | - | 14.4 / 16.0 | **32.8 / 34.3** | 15.5 | 12.0 | 2 |
 | Rally-X | 18.6 | - | 15.0 / 16.8 | **33.7 / 35.5** | 2.6 | 21.1 | 4 |
 | Q*bert | 19.5 | - | 14.7 / 16.1 | **34.2 / 35.6** | 1.4 | 68.0 | 8 |
 | Donkey Kong | 21.3 | - | 14.7 / 16.1 | **36.0 / 37.4** | 1.8 | 32.8 | 4 |
@@ -51,6 +52,13 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Defender | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 30.0 | 4 |
 | Star Wars | 52.6 | - | 15.8 / 17.7 | **68.4 / 70.2** | 27.6 | 72.0 | 16 |
 | Qix | 8.1 | 64.0 (2 x 32) | 14.7 / 16.1 | **86.8 / 88.2** | - | 32.0 | 2 |
+
+Missile Command (2026-10-20, Xtensa sizeof 18,752 bytes): the machine is
+its 16 KB of RAM (work RAM and the picture) + the 6502's page tables (2
+KB) + the POKEY; shown 266 x 240 on the 240x320 panels and 355 x 320 on
+the 320x480 ones (strip 4,256 / 5,680 bytes, segment hashes 231 x 8 x 4 =
+7,392); the snapshot copies its picture's RAM (0200-3FFF) + 8 pens,
+15,888 bytes.
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
 Robotron / Defender 51.9) or one of Qix's 32 KB halves.

@@ -12,6 +12,7 @@
 #include "machines/dkong.h"
 #include "machines/galaga.h"
 #include "machines/invaders.h"
+#include "machines/missile.h"
 #include "machines/mrdo.h"
 #include "machines/mspacman.h"
 #include "machines/pacman.h"
@@ -484,6 +485,51 @@ const ButtonName kTempestButtons[] = {
     {"step", tempest::kDiagStep},
 };
 
+// ---- Missile Command ----------------------------------------------------------
+
+class Missile : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init(r[missile::kRegionCpu], rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    // The left stick rolls the trackball at a speed in proportion: full
+    // over = kTrackFull / 256 counts a frame (the d-pad: a steady
+    // missile::Machine::kButtonSpeed); up = up on the screen.
+    void set_analog(const Analog& a) override
+    {
+        m_.set_trackball(a.lx * kTrackFull / 512, -a.ly * kTrackFull / 512);
+    }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+    bool snapshot() override { return m_.snapshot(); }
+    void render_snapshot_line(int y, uint16_t* out) override { m_.render_snapshot_line(y, out); }
+
+    static constexpr int kTrackFull = 2048;     // 8 counts (pixels) a frame
+
+private:
+    missile::Machine m_;
+};
+
+// D-pad: the crosshair at a steady speed, the left stick in proportion; the
+// three bases' fire buttons by position: X = left, A = centre, B = right.
+const Control kMissileControls[] = {
+    {kPadUp, missile::kUp}, {kPadDown, missile::kDown}, {kPadLeft, missile::kLeft},
+    {kPadRight, missile::kRight}, {kPadX, missile::kFireLeft}, {kPadA, missile::kFireCentre},
+    {kPadB, missile::kFireRight}, {kPadSelect, missile::kCoin}, {kPadStart, missile::kStart1},
+    {kPadL, missile::kStart2},
+};
+
+const ButtonName kMissileButtons[] = {
+    {"up", missile::kUp}, {"down", missile::kDown}, {"left", missile::kLeft}, {"right", missile::kRight},
+    {"fireleft", missile::kFireLeft}, {"fire", missile::kFireCentre}, {"fireright", missile::kFireRight},
+    {"coin", missile::kCoin}, {"coin2", missile::kCoin2}, {"start1", missile::kStart1},
+    {"start2", missile::kStart2}, {"test", missile::kTest}, {"tilt", missile::kTilt},
+};
+
 // ---- Williams: Robotron: 2084, Defender -------------------------------------
 
 template <williams::Board B> class Williams : public Machine {
@@ -700,6 +746,10 @@ const Info kGames[] = {
     {"starwars", "Star Wars", &starwars::kRomSet, starwars::kScreenW, starwars::kScreenH,
      Orientation::Landscape, starwars::kCpuClock, starwars::kCyclesPerFrame, kStarwarsControls,
      COUNT(kStarwarsControls), kStarwarsButtons, COUNT(kStarwarsButtons), nullptr, 0, make<Starwars>, false, false, "Atari", 1983, 90},
+    {"missile", "Missile Command", &missile::kRomSet, missile::kScreenW, missile::kScreenH,
+     Orientation::Landscape, missile::kClock, missile::kTicksPerFrame, kMissileControls,
+     COUNT(kMissileControls), kMissileButtons, COUNT(kMissileButtons), nullptr, 0, make<Missile>, false, false,
+     "Atari", 1980, 48},
 };
 
 const int kGameCount = COUNT(kGames);

@@ -40,6 +40,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Qix | `qix` | Qix (Rev 2) | - |
 | Burger Time | `btime` | Burger Time (Data East set 1) | - |
 | Defender (stretch) | `defender` (or `defenderg`, Green label) | Defender (Red label) | `defender` for `defenderg` |
+| Missile Command | `missile` (or `missile2`, `missile1`) | Missile Command (rev 3) / (rev 2) / (rev 1) | `missile` for `missile2` |
 | Robotron: 2084 | `robotron` | Robotron: 2084 (Release 5, solid blue label) | - |
 | Defender | `defender` or `defenderg` | Defender (Red label) / (Green label) | `defender` for `defenderg` |
 | Stargate (stretch) | `stargate` | Stargate | - |
@@ -85,6 +86,14 @@ Notes:
   ... or, in older collections, just `u4` ... `u19`, `u27`). The other Qix
   sets (`qixa`, `qixb`, `qixo`, `qix2`) have other program ROMs and aren't
   read.
+- **Missile Command:** six 2 KB program chips. Today's `missile` is rev 3
+  (`035822-03e.kl1`); rev 2 (`missile2`) differs in that one chip
+  (`035822-02.kl1`), so a split `missile2.zip` holds only it and needs
+  `missile.zip` beside it. Older collections call rev 2 `missile` with
+  files `035820.02` ... `035825.02` (same contents). Rev 1 (`missile1`,
+  `35820-01.h1` ...) works too. The write-enable PROM (`035826-01.l6`)
+  isn't needed. The sets for the older boards (`missilea`, `missile2a`,
+  `missile1a`, 1 KB chips) aren't recognised.
 - **Robotron: 2084:** older sets name the files `robotron.sb1` ...
   `robotron.sbc` and `robotron.snd` (same contents). The two decoder PROMs
   (`decoder_rom_4.3g`, `decoder_rom_6.3c`, for the cocktail flip) aren't

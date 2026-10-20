@@ -142,7 +142,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   of their length and are counted (`illegal_count`). 256-byte pages
   (boards bank RAM at that grain). `opcode_hook` sees each opcode fetch
   and whether the last instruction wrote (Burger Time's DECO CPU-7
-  decryption). PC: ~800 emulated MHz (the loop and its memory helpers
+  decryption); for Missile Command it may set `indexed_io` (the (zp,X)
+  instruction just fetched makes its data access through the callbacks,
+  whatever the page table says) and a callback may `stall(n)` the
+  instruction running. PC: ~800 emulated MHz (the loop and its memory helpers
   inlined, one flag to look at the interrupt lines).
 - 8088 core (`emu/cpu/i8088.*`, for Q*bert): real mode, every 8086 opcode
   with the 8088's quirks (60-6F = Jcc, C0/C1/C8/C9 = RET/RETF, SALC,
@@ -820,7 +823,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   (the old note "no sound command whatever the switch" came from runs
   under 7 minutes). No switch, attract silent on the cabinet: Pac-Man,
   Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong, Mr. Do!, Burger Time,
-  Asteroids, Tempest (MAME's DIP lists have none for these sets),
+  Asteroids, Tempest, Missile Command (MAME's DIP lists have none for these
+  sets; Missile Command's attract measured silent, peak 0 over 10,000
+  frames),
   Robotron (its Game Adjustment page: no sound item - "Fancy Attract
   Mode" is pictures), Defender (28 audit / adjust items, none about sound;
   Game Adjust 1-10 are unnamed on screen). Not attract sound: Q*bert's
@@ -883,6 +888,58 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Star Wars' 55 KB machine + 18 KB of buffers it doesn't fit an ESP32's
   ~100 KB game area: snapshot() fails there and the runner draws between
   frames (as before); the S3's bigger area takes it.
+- Missile Command (`emu/machines/missile.*`, set `missile` (rev 3), or
+  `missile2` (rev 2, Tom's: his zip's `035820.02` ... `035825.02` are
+  today's `missile2`, CRCs 7a62ce6a df3bd57f a1cd384a 82e552bb 606e42e0
+  f752eaeb) or `missile1` (rev 1) as romset variants - CRCs from MAME's
+  driver; the write-enable PROM 035826-01 isn't needed; landscape 256x231,
+  61.04 Hz). Emulated: the 6502 at 1.25 MHz (10 MHz / 8), half speed on
+  lines 224-255 (time is kept in 1.25 MHz ticks: 80 a line, 20,480 a
+  frame; `Info::cpu_clock` / `cycles_per_frame` are ticks); 16 KB of RAM
+  (A15 ignored) that is the picture: line y at 64 x y, 4 pixels a byte
+  (pixel x & 3: low nibble bit = colour bit 1, high nibble bit = colour
+  bit 2), lines 25-255 shown; the third colour bit of lines 224-255 at
+  0200-05FF (MAME's get_bit3_addr: bit X & 7 of every other byte, Y bit 3
+  picks 0200 / 0400, Y bit 4 the odd bytes); MADSEL - an opcode with low
+  bits 00001 (the (zp,X) instructions) fetched while /IRQH is inactive
+  sends its data access to the pixel logic (address = Y << 8 | X, data
+  bits 7 / 6 / 5 = colour bits 2 / 1 / 0; a read gives them back in those
+  bits, the rest 1), an extra clock for the third bit (via the 6502 core's
+  `indexed_io` / `stall()`); the IRQ = the 32V flip-flop (set at lines 0,
+  64, 128, 192, cleared at 32, 96, 160, 224 or by a write to 4D00),
+  latched into /IRQ at each opcode fetch, the latch before it = /IRQH;
+  VBLANK (4900 bit 7, lines 0-23); the 8-entry colour RAM (bits 3 / 2 / 1
+  low = red / green / blue); one POKEY at 1.25 MHz, ALLPOT = the game
+  options (R8: MAME's defaults 0x73 - 6 cities, mini trackball, a bonus
+  city every 10,000, upright); set_dips = the pricing switches (R10,
+  default 0x80: 1 coin 1 credit, English); the trackball's two 4-bit
+  counters (4800 with CTRLD = 1: Y in bits 4-7, X in 0-3); the watchdog
+  (8 frames). Assumed: the write-enable PROM enables exactly the bits the
+  read path reads (the PROM isn't in Tom's set; MAME uses it as data);
+  the sound is the POKEY's four channels summed x 5, AC-coupled (15 Hz) -
+  play peaks 19,100-20,400 over three 98 s played runs (the game uses
+  volumes up to 8); MAME's POKEY output RC isn't modelled. Not drawn: the
+  cocktail flip (and its other IRQ lines). Controls: the left stick rolls
+  the trackball at a speed in proportion (full = 8 counts = 8 pixels a
+  frame), the d-pad at a steady 3 a frame (a count moves the crosshair a
+  pixel with the mini trackball setting; the game reads the counters at
+  each of the 4 IRQs a frame and takes the 4-bit change, so reads see the
+  frame's speed spread over the frame - up to ~28 counts a frame would
+  read right); X / A / B = the left / centre / right base (by position),
+  Select = coin, Start = 1P, L = 2P. The game polls Start about every 8
+  frames (a press shorter than that can be missed, as on the cabinet).
+  boot_frames 48 (a white frame, black while it clears the RAM, the title
+  at frame 48). Idle skipping, exact (`arcade_host --hash`: every frame's
+  picture and sound the same over 10,000 attract and 3 x 8,000 played
+  frames; `missile_tests` too): the main loop's LSR $9F / BCC wait (500F)
+  skips all but its last pass to the stretch's end, the IRQ handler's BIT
+  4900 / BMI wait for VBLANK's end (7C70) the passes that still read
+  VBLANK; found by their code; ~5,300 -> ~2,800 instructions a frame. PC
+  in play (best of 3, 6,000 frames): emu 0.045 ms, render 0.045 ms (Pac-
+  Man 0.037 / 0.068 in the same run). Drawn on core 0 from a snapshot (the
+  picture's RAM 0200-3FFF + pens, 15.5 KB); `--panel` 240x320 / 320x480: 0
+  wrong. Memory (Xtensa): machine 18.3 KB, + buffers 14.4 / 16.0 KB, ROM
+  12 KB (six 2 KB chips).
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

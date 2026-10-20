@@ -29,6 +29,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Qix | 2x 6809 1.25 MHz | 6802 sound CPU + DAC, 256x256 8-bit bitmap (64 KB video RAM, two 32 KB blocks), 6845 timing | 240x256 portrait (lines 8-247 of 256) | done: the video CPU polls the scanline all the time (~1.4x Pac-Man's host instructions a frame); ~104 KB of RAM with the ROMs |
 | Burger Time | DECO CPU-7 (6502 with scrambled opcodes) 1.5 MHz | 6502 sound CPU + 2 AY-3-8910, a band-pass on one channel; characters, 8 sprites, background map from ROM, palette RAM | 240x240 portrait | done: VBLANK waits and the sound CPU's idle loop skipped (~6-9K main CPU cycles a frame in play) |
 | Star Wars | 6809 1.5 MHz + matrix processor (PROM microcode) | colour vector generator (AVG), 6809 sound CPU + RIOT, 4 POKEY, TMS5220 speech (our LPC synthesiser; the voices are LPC data in the sound ROMs) | 320x240 landscape (lines drawn row by row from a segment list) | done: ~1.0M host instructions a frame (2x Pac-Man); machine ~51 KB + 72 KB of ROM |
+| Missile Command | 6502 1.25 MHz (half speed on lines 224-255) | 16 KB RAM = the 256x256 2-bit bitmap (+ a third bit for the bottom 32 lines), pixels written through MADSEL, POKEY (sound, game option switches), trackball | 256x231 landscape | done: two wait loops skipped (exact), ~1.2x Pac-Man's emulation time; machine 18.3 KB + 12 KB of ROM |
 | Robotron: 2084 | 6809 1 MHz | SC1 blitter, 6808 sound CPU + DAC, 304x256 4-bit bitmap (38 KB) | 292x240 landscape | done: idle loops skipped (exact), ~104 KB of RAM with the ROMs |
 | Defender | 6809 1 MHz | 6808 sound CPU + DAC, ROM banked at C000 | 292x240 landscape | done: the stick reverses / thrusts by the ship's facing |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
@@ -82,7 +83,9 @@ Select, Home. Per game: Start = start, Select = coin, A = fire / jump,
 others as the game needs (Defender's thrust / smart bomb / hyperspace,
 Asteroids' thrust / hyperspace; Tempest: A fires, B = Superzapper, the
 spinner = the left stick's X at a speed in proportion or the d-pad at a
-steady speed; Robotron's right stick fires). Home = the emulator's menu
+steady speed; Robotron's right stick fires; Missile Command: the trackball =
+the left stick at a speed in proportion or the d-pad at a steady speed, X /
+A / B = the left / centre / right base's fire). Home = the emulator's menu
 (pause, volume, quit). Two controllers can be paired (`CONFIG_BLUEPAD32_MAX_DEVICES`
 = 2).
 
@@ -92,7 +95,7 @@ Games render line by line into small strips sent to the panel by DMA - a
 whole 224x288 frame buffer (129 KB) doesn't fit beside Bluetooth. Portrait
 games fill the width of a 240x320 panel with an 8-pixel border; the
 320x480 panels scale up. Landscape games (Asteroids, Defender, Stargate,
-Tempest) turn the panel at game start.
+Tempest, Missile Command) turn the panel at game start.
 
 ## 6. ROM storage
 
