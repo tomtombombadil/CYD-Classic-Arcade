@@ -104,9 +104,23 @@ Stack use, worst seen since start-up **(board)**: v0.15.7 after Galaga:
 main / BTstack 3.5 of 8 KB, ui 5.6 of 12, usb 0.7 of 6, draw 1.0 of 5,
 audio 0.7 of 3. v0.15.8 after Ms. Pac-Man, Mr. Do!, Galaga, Donkey Kong,
 Dig Dug, Defender, Burger Time, Asteroids: main 3.5, ui 5.6, draw 1.2,
-audio 0.7 - unchanged by seven more games. Not yet seen: Qix, Robotron,
-Star Wars, Tempest, Q*bert, Rally-X, Pac-Man, Space Invaders; stacks stay
-as they are until those are in.
+audio 0.7 - unchanged by seven more games. v0.16.0 after Ms. Pac-Man,
+Pac-Man, Q*bert, Qix, Rally-X, Robotron, Space Invaders, Tempest: the
+same (draw 1.0-1.2). Every game but Star Wars measured; stacks stay as
+they are until it is in.
+
+v0.16.0 on the 3.5" (USB loader only on its page) **(board)**: game area
+92 KB in one block, 8 KB free outside (block 6.3). Area used / ROM in RAM
+/ ROM from flash, KB: Qix 90 / 2 / 30 (machine with its video RAM 72 KB;
+55.9 frames a second = its own 55.8 Hz), Tempest 90 / 24 / 0, Ms. Pac-Man
+88 / 34 / 0, Robotron 84 / 16 / 36, Q*bert 73 / 36 / 32, Rally-X 59 / 21 /
+0, Pac-Man 58 / 24 / 0, Space Invaders 33 / 8 / 0. Star Wars: "Can't load
+the ROMs - 136021.214.1f missing" - not a missing ROM: its regions going
+to flash are unpacked through a buffer the size of their biggest ROM (16
+KB), taken from the area after the regions kept in RAM had filled it,
+else from the ~8 KB outside - it fit neither, and the loader reported the
+untouched status list (Missing = 0). v0.16.1: the ROM budget keeps room in
+the area for that buffer, and a failed buffer says "Out of memory".
 
 v0.15.8 on the 3.5" (USB loader stopped during games) **(board)**: game
 area 92 KB in two blocks (88 + 4; 80 KB at the menu with the loader

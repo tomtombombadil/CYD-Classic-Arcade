@@ -179,6 +179,16 @@ bool load(const games::Info& game, Loaded& out)
     // Each block in the area costs a few bytes of its own
     const uint32_t budget =
         arena::room_total() > 64u * romset::kMaxRegions ? arena::room_total() - 64u * romset::kMaxRegions : 0;
+    // Regions going to flash are unpacked a ROM at a time through a buffer
+    // the size of their biggest ROM, which must fit in the area too: with
+    // the area full of regions it came from the rest of RAM, and Star Wars'
+    // 16 KB didn't fit the ~8 KB there (Tom's 3.5", v0.16.0)
+    auto biggest_flash_rom = [&]() {
+        uint32_t b = 0;
+        for (int i = 0; i < set.rom_count; ++i)
+            if (flash[set.roms[i].region] && set.roms[i].size > b) b = set.roms[i].size;
+        return b;
+    };
     for (;;) {
         uint32_t want = 0;
         int biggest = -1;
@@ -187,7 +197,8 @@ bool load(const games::Info& game, Loaded& out)
             want += out.sizes[r];
             if (biggest < 0 || out.sizes[r] > out.sizes[biggest]) biggest = r;
         }
-        if (biggest < 0 || want <= budget) break;
+        const uint32_t unpack = biggest_flash_rom();
+        if (biggest < 0 || want + (unpack ? unpack + 64 : 0) <= budget) break;
         flash[biggest] = true;
     }
     for (int r = 0; r < set.region_count; ++r) {
@@ -233,6 +244,11 @@ bool load(const games::Info& game, Loaded& out)
     const bool scratch_in_area = scratch != nullptr;
     if (biggest_rom && !scratch) scratch = static_cast<uint8_t*>(heap_caps_malloc(biggest_rom, MALLOC_CAP_8BIT));
     bool ok = status && (scratch || !biggest_rom);
+    if (status && !ok) {
+        std::snprintf(s_error, sizeof s_error, "Out of memory: no %u KB to unpack its ROMs",
+                      unsigned((biggest_rom + 1023) / 1024));
+        ESP_LOGE(kTag, "%s: %s", game.id, s_error);
+    }
     if (ok) {
         flash_store::Lock lock;
         const int n = sources(src);
@@ -264,7 +280,9 @@ bool load(const games::Info& game, Loaded& out)
     }
     if (scratch_in_area) arena::free(scratch);
     else heap_caps_free(scratch);
-    if (!ok) {
+    if (!ok && s_error[0]) {
+        unload(out);    // out of memory, said above (the runner logs it)
+    } else if (!ok) {
         char msg[512];
         if (status) romset::report(set, status, msg, sizeof msg);
         ESP_LOGE(kTag, "%s: ROMs not loaded\n%s", game.id, status ? msg : "out of memory");

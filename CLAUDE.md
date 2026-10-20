@@ -378,7 +378,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   again - ~92 KB for games. The page is saved as open (NVS usb_xfer): a
   board reset by the port opening (CH340 on Windows) comes back to it with
   the loader running. The Load ROMs web page's steps and its no-answer
-  message tell the user to open it.
+  message tell the user to open it. v0.16.1 (Tom, v0.16.0 on the 3.5":
+  Star Wars "Can't load the ROMs - 136021.214.1f missing"): the ROM
+  budget (`catalog::load`) keeps room in the area for the unpacking buffer
+  (the biggest ROM going to flash), and a buffer that can't be had says
+  "Out of memory", not a missing ROM.
 - ROMs live in flash, not RAM (Tom, 2026-10-17, asked why zips are "in
   memory all the time"): the zips are copied from the SD card / USB into
   the `roms` flash partition (storage, read in place, no RAM); only the
