@@ -53,7 +53,6 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Ms. Pac-Man | 34.8 | - | 15.7 / 17.1 | **50.5 / 51.9** | 2.0 | 34.8 | 4 |
 | Robotron | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 52.0 | 4 |
 | Defender | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 30.0 | 4 |
-| Bubbles | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 52.0 | 4 |
 | Star Wars | 52.6 | - | 15.8 / 17.7 | **68.4 / 70.2** | 27.6 | 72.0 | 16 |
 | Zaxxon | 20.8 | - | 14.7 / 16.1 | **35.5 / 36.9** | 1.2 | 104.5 | 8 |
 | Qix | 8.1 | 64.0 (2 x 32) | 14.7 / 16.1 | **86.8 / 88.2** | - | 32.0 | 2 |
@@ -85,7 +84,7 @@ VideoState, 2,182 B (tiles 1 KB, object RAM 128 B, the frame's stars ~1
 KB). ROM: Galaxian 10 + 4 KB + 32 B, Amidar 16 + 8 + 4 KB + 32 B.
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
-Robotron / Defender / Bubbles 51.9) or one of Qix's 32 KB halves.
+Robotron / Defender 51.9) or one of Qix's 32 KB halves.
 
 Zaxxon (2026-10-20, xtensa-esp32-elf-g++ `sizeof`): the games.cpp wrapper
 21,344 bytes (zaxxon::Machine 21,328: Z80, RAM 4 KB + characters 1 KB +

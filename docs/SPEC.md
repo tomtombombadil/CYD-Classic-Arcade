@@ -33,7 +33,6 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Missile Command | 6502 1.25 MHz (half speed on lines 224-255) | 16 KB RAM = the 256x256 2-bit bitmap (+ a third bit for the bottom 32 lines), pixels written through MADSEL, POKEY (sound, game option switches), trackball | 256x231 landscape | done: two wait loops skipped (exact), ~1.2x Pac-Man's emulation time; machine 18.3 KB + 12 KB of ROM |
 | Robotron: 2084 | 6809 1 MHz | SC1 blitter, 6808 sound CPU + DAC, 304x256 4-bit bitmap (38 KB) | 292x240 landscape | done: idle loops skipped (exact), ~104 KB of RAM with the ROMs |
 | Defender | 6809 1 MHz | 6808 sound CPU + DAC, ROM banked at C000 | 292x240 landscape | done: the stick reverses / thrusts by the ship's facing |
-| Bubbles | 6809 1 MHz | Robotron's board (SC1 blitter, 6808 sound CPU + DAC) with an 8-bit CMOS RAM | 292x240 landscape | done: ~1.9x Pac-Man's emulation time on the PC in play; ~104 KB of RAM with the ROMs |
 | Zaxxon | Z80 3.04 MHz | 8255 switching discrete sound circuits (our own models), skewed scrolling background from tile map ROMs, 32 x 32 sprites | 224x256 portrait | done: the main loop's idle passes skipped (exact); background tiles decoded as drawn into an 8 KB cache |
 | Galaxian | Z80 3.072 MHz | tiles with a scroll and colour per column, 8 sprites, bullets, the LFSR star field; analog sound (our models of its circuits) | 224x256 portrait | done: ~1.3x Pac-Man's host instructions a frame (the game keeps its CPU busy) |
 | Amidar | Z80 3.072 MHz | Galaxian's video (no stars or bullets, a background colour); Z80 sound CPU + 2 AY-3-8910 + RC filters | 224x256 portrait | done: the sound CPU's timer waits skipped (exact), ~1.6x Pac-Man's host instructions a frame |
@@ -89,9 +88,9 @@ Select, Home. Per game: Start = start, Select = coin, A = fire / jump,
 others as the game needs (Defender's thrust / smart bomb / hyperspace,
 Asteroids' thrust / hyperspace; Tempest: A fires, B = Superzapper, the
 spinner = the left stick's X at a speed in proportion or the d-pad at a
-steady speed; Robotron's right stick fires; Bubbles is the stick alone;
+steady speed; Robotron's right stick fires;
 Missile Command: the trackball =
-the left stick at a speed in proportion or the d-pad at a steady speed, X /
+the left stick at a speed in proportion or the d-pad, faster the longer it's held, X /
 A / B = the left / centre / right base's fire). Home = the emulator's menu
 (pause, volume, quit). Two controllers can be paired (`CONFIG_BLUEPAD32_MAX_DEVICES`
 = 2).

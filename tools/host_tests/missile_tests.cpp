@@ -195,13 +195,17 @@ void test_inputs()
         const int d = (v[0x750 + k] - v[0x750 + k - 1]) & 0x0f;
         CHECK(d == 0 || d == 1);
     }
-    // The d-pad: left at a steady 3 counts a frame.
+    // The d-pad: left, 1 count the first frame, 1 + 8/30 the next.
     m.set_trackball(0, 0);
     m.set_inputs(missile::kLeft);
     run(m, 2);
     const uint8_t a = v[0x740 + 4 * 6], b = v[0x740 + 4 * 7];
     CHECK_EQ((a - b) & 0x0f, missile::Machine::kButtonSpeed / 256);
     CHECK_EQ(b >> 4, a >> 4);
+    CHECK_EQ(missile::Machine::button_speed(0), 256);
+    CHECK_EQ(missile::Machine::button_speed(15), 1280);
+    CHECK_EQ(missile::Machine::button_speed(30), 2304);
+    CHECK_EQ(missile::Machine::button_speed(99), 2304);
 }
 
 // No watchdog write: the board resets after 8 frames.

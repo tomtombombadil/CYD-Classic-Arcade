@@ -71,7 +71,7 @@ namespace {
 // Demo sounds (Machine::set_demo_sounds): only Galaga, Dig Dug, Q*bert,
 // Qix and Star Wars have the switch (a DIP switch, or Qix's operator
 // setting); the others' attract modes are silent on the cabinet, with no
-// switch for it (MAME's DIP lists, Robotron's, Defender's and Bubbles'
+// switch for it (MAME's DIP lists, Robotron's and Defender's
 // operator pages), so they keep the default (false).
 
 // ---- Pac-Man ----------------------------------------------------------------
@@ -500,8 +500,8 @@ public:
     void set_dips(uint8_t d) override { m_.set_dips(d); }
     void set_inputs(uint16_t b) override { m_.set_inputs(b); }
     // The left stick rolls the trackball at a speed in proportion: full
-    // over = kTrackFull / 256 counts a frame (the d-pad: a steady
-    // missile::Machine::kButtonSpeed); up = up on the screen.
+    // over = kTrackFull / 256 counts a frame (the d-pad: 1 count a frame,
+    // rising while held - missile::Machine::button_speed); up = up on the screen.
     void set_analog(const Analog& a) override
     {
         m_.set_trackball(a.lx * kTrackFull / 512, -a.ly * kTrackFull / 512);
@@ -518,7 +518,7 @@ private:
     missile::Machine m_;
 };
 
-// D-pad: the crosshair at a steady speed, the left stick in proportion; the
+// D-pad: the crosshair, faster the longer it's held; the left stick in proportion; the
 // three bases' fire buttons by position: X = left, A = centre, B = right.
 const Control kMissileControls[] = {
     {kPadUp, missile::kUp}, {kPadDown, missile::kDown}, {kPadLeft, missile::kLeft},
@@ -567,12 +567,14 @@ private:
 // diagonal adds both, and a tread pressed both ways stops (bzone::Machine::
 // in3), so up + left = right tread only (forward, turning left), down +
 // left = left tread back. Or the sticks, tank style: left stick Y = left
-// tread, right stick Y = right tread (bzone::treads). A fires.
+// tread, right stick Y = right tread (bzone::treads). A, B and the
+// shoulder buttons fire (Tom, 2026-10-20: with both thumbs on the sticks
+// only L1 / L2 / R1 / R2 can be reached). A one-player game: no 2P start.
 const Control kBzoneControls[] = {
     {kPadUp, bzone::kLeftFwd | bzone::kRightFwd}, {kPadDown, bzone::kLeftBack | bzone::kRightBack},
     {kPadLeft, bzone::kLeftBack | bzone::kRightFwd}, {kPadRight, bzone::kLeftFwd | bzone::kRightBack},
-    {kPadA, bzone::kFire}, {kPadSelect, bzone::kCoin}, {kPadStart, bzone::kStart1},
-    {kPadL, bzone::kStart2},
+    {kPadA, bzone::kFire}, {kPadB, bzone::kFire}, {kPadL, bzone::kFire}, {kPadR, bzone::kFire},
+    {kPadSelect, bzone::kCoin}, {kPadStart, bzone::kStart1},
 };
 
 const ButtonName kBzoneButtons[] = {
@@ -698,7 +700,7 @@ const ButtonName kAmidarButtons[] = {
     {"start1", amidar::kStart1}, {"start2", amidar::kStart2}, {"service", amidar::kService},
 };
 
-// ---- Williams: Robotron: 2084, Defender, Bubbles -----------------------------
+// ---- Williams: Robotron: 2084, Defender --------------------------------------
 
 template <williams::Board B> class Williams : public Machine {
 public:
@@ -760,23 +762,6 @@ const ButtonName kDefenderButtons[] = {
     {"start1", williams::defender::kStart1}, {"start2", williams::defender::kStart2},
     {"advance", williams::defender::kAdvance}, {"autoup", williams::defender::kAutoUp},
     {"hsreset", williams::defender::kHighScoreReset},
-};
-
-// An 8-way stick and nothing else: the sponge goes where it's pushed.
-const Control kBubblesControls[] = {
-    {kPadUp, williams::bubbles::kUp}, {kPadDown, williams::bubbles::kDown},
-    {kPadLeft, williams::bubbles::kLeft}, {kPadRight, williams::bubbles::kRight},
-    {kPadSelect, williams::bubbles::kCoin}, {kPadStart, williams::bubbles::kStart1},
-    {kPadL, williams::bubbles::kStart2},
-};
-
-const ButtonName kBubblesButtons[] = {
-    {"up", williams::bubbles::kUp}, {"down", williams::bubbles::kDown},
-    {"left", williams::bubbles::kLeft}, {"right", williams::bubbles::kRight},
-    {"coin", williams::bubbles::kCoin}, {"coin2", williams::bubbles::kCoin2},
-    {"start1", williams::bubbles::kStart1}, {"start2", williams::bubbles::kStart2},
-    {"advance", williams::bubbles::kAdvance}, {"autoup", williams::bubbles::kAutoUp},
-    {"hsreset", williams::bubbles::kHighScoreReset},
 };
 
 // ---- Qix ---------------------------------------------------------------------
@@ -925,10 +910,6 @@ const Info kGames[] = {
      Orientation::Landscape, williams::kCpuClock, williams::kCyclesPerFrame, kDefenderControls,
      COUNT(kDefenderControls), kDefenderButtons, COUNT(kDefenderButtons), nullptr, 0,
      make<Williams<williams::Board::Defender>>, false, false, "Williams", 1981, 1625},
-    {"bubbles", "Bubbles", &williams::bubbles::kRomSet, williams::kScreenW, williams::kScreenH,
-     Orientation::Landscape, williams::kCpuClock, williams::kCyclesPerFrame, kBubblesControls,
-     COUNT(kBubblesControls), kBubblesButtons, COUNT(kBubblesButtons), nullptr, 0,
-     make<Williams<williams::Board::Bubbles>>, false, false, "Williams", 1982, 750},
     {"qix", "Qix", &qix::kRomSet, qix::kScreenW, qix::kScreenH, Orientation::Portrait, qix::kCpuClock,
      qix::kCyclesPerFrame, kQixControls, COUNT(kQixControls), kQixButtons, COUNT(kQixButtons), nullptr, 0,
      make_qix, true, false, "Taito", 1981, 190},

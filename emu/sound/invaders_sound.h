@@ -81,11 +81,11 @@ private:
     int   bh_hold_ = 0;
     float bh_c1_ = 0, bh_c2_ = 0, bh_attack_ = 0, bh_release_ = 0;
 
-    // Invader hit: a square warbled by a fast triangle, short envelope.
+    // Invader hit: a steady high tone, slowly falling, softened.
     Square ih_osc_;
-    float  ih_amp_ = 0, ih_lfo_ = 0, ih_lfo_dir_ = 1;
+    float  ih_amp_ = 0, ih_t_ = 0, ih_out_ = 0;
     int    ih_hold_ = 0;
-    float  ih_attack_ = 0, ih_release_ = 0, ih_lfo_step_ = 0;
+    float  ih_attack_ = 0, ih_release_ = 0, ih_tone_lp_ = 0;
 
     // UFO hit: a square warbled by a slow triangle; envelope follows the bit.
     Square uh_osc_;

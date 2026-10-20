@@ -26,8 +26,11 @@ constexpr int   kUfoOversample = 4;
 // Fleet: 555 with R2 = 75k, C = 0.1 uF; R1 = the bits' resistors in
 // parallel (bit 0: 20k + 20k, bit 1: 68k, bit 2: 82k, bit 3: 100k), so the
 // four notes are ~76, 66, 62 and 58 Hz. Output filters: 100 ohm / 4.7 uF
-// (339 Hz) and 200 ohm / 10 uF (80 Hz); the second is set to 160 Hz here
-// so a small speaker still carries the thump.
+// (339 Hz) and 200 ohm / 10 uF (80 Hz); the second is set to 339 Hz here:
+// a small speaker plays nothing near 60 Hz, so the march is heard by its
+// harmonics. Level fitted to a recording of the board (Tom, 2026-10-20: no
+// "thrum" heard): through a 400 Hz high-pass (a small speaker) a note is
+// ~1/5 as loud as the shot there; v0.17.0's was 1/16.
 constexpr float kFleetR[4] = {40e3f, 68e3f, 82e3f, 100e3f};
 constexpr float kFleetR2 = 75e3f, kFleetC = 0.1e-6f;
 
@@ -40,8 +43,12 @@ constexpr float kXsR1 = 100e3f, kXsR2 = 47e3f, kXsC = 1e-6f, kXsTone = 480.0f;
 constexpr float kShotHigh = 1840, kShotLow = 580, kShotSweep = 0.153f, kShotSlope = 8800;
 constexpr float kShotHoldFull = 0.06f, kShotLength = 0.41f;
 
-constexpr float kUfoLevel = 4200, kShotLevel = 3000, kBaseHitLevel = 26000, kInvHitLevel = 4500;
-constexpr float kUfoHitLevel = 4500, kFleetLevel = 9000, kXsLevel = 3000;
+constexpr float kUfoLevel = 4200, kShotLevel = 3000, kBaseHitLevel = 26000, kInvHitLevel = 5000;
+constexpr float kUfoHitLevel = 4500, kFleetLevel = 20000, kXsLevel = 3000;
+
+// Invader hit, measured on a recording: a steady ~2.6 kHz tone drifting
+// down ~900 Hz a second, full for 160 ms, then fading (tau 0.1 s).
+constexpr float kInvHitHz = 2650, kInvHitSlope = 900, kInvHitHold = 0.16f, kInvHitTau = 0.1f;
 
 } // namespace
 
@@ -74,11 +81,12 @@ void Synth::init(uint32_t rate)
     bh_attack_ = 1.0f - decay(0.001f);
     bh_release_ = decay(0.68f);
 
-    // Invader hit: one-shot ~60 ms (0.1 uF), envelope rises with 10k x
-    // 0.47 uF, falls ~0.15 s; ~1-2.5 kHz warbled ~70 times a second.
+    // Invader hit: envelope rises with 10k x 0.47 uF; the rest from a
+    // recording (v0.17.0 warbled 1-2.5 kHz 70 times a second - right where
+    // the shot's sweeps are, so the two sounded alike - Tom, 2026-10-20).
     ih_attack_ = 1.0f - decay(0.0047f);
-    ih_release_ = decay(0.15f);
-    ih_lfo_step_ = 2.0f * 70.0f / rate_;
+    ih_release_ = decay(kInvHitTau);
+    ih_tone_lp_ = lp(4000);
 
     // UFO hit: envelope 100k x 1 uF on, ~0.4 s off; ~600-1600 Hz warbled 8 times a second.
     uh_attack_ = 1.0f - decay(0.1f);
@@ -86,7 +94,7 @@ void Synth::init(uint32_t rate)
     uh_lfo_step_ = 2.0f * 8.0f / rate_;
 
     fl_c1_ = lp(339);
-    fl_c2_ = lp(160);
+    fl_c2_ = lp(339);
 
     xs_tone_.set(kXsTone, rate_);
     const float xs_period = 0.693f * (kXsR1 + 2 * kXsR2) * kXsC;
@@ -110,8 +118,7 @@ void Synth::reset()
     shot_t_ = kShotLength;
     bh_amp_ = bh_lp1_ = bh_lp2_ = 0;
     bh_hold_ = 0;
-    ih_amp_ = ih_lfo_ = 0;
-    ih_lfo_dir_ = 1;
+    ih_amp_ = ih_t_ = ih_out_ = 0;
     ih_hold_ = 0;
     uh_amp_ = uh_lfo_ = 0;
     uh_lfo_dir_ = 1;
@@ -128,7 +135,7 @@ void Synth::write_port3(uint8_t v)
     p3_ = v;
     if (rise & 0x02) shot_t_ = 0;
     if (rise & 0x04) bh_hold_ = int(0.5f * rate_);
-    if (rise & 0x08) ih_hold_ = int(0.06f * rate_);
+    if (rise & 0x08) { ih_hold_ = int(kInvHitHold * rate_); ih_t_ = 0; }
     if (rise & 0x10) xs_gate_phase_ = 0;              // the 555 starts on its high time
 }
 
@@ -226,11 +233,10 @@ void Synth::render(int16_t* out, int n)
         if (ih && (ih_hold_ > 0 || ih_amp_ > 0.001f)) {
             if (ih_hold_ > 0) { --ih_hold_; ih_amp_ += (1.0f - ih_amp_) * ih_attack_; }
             else              ih_amp_ *= ih_release_;
-            ih_lfo_ += ih_lfo_dir_ * ih_lfo_step_;
-            if (ih_lfo_ >= 1) { ih_lfo_ = 1; ih_lfo_dir_ = -1; }
-            if (ih_lfo_ <= 0) { ih_lfo_ = 0; ih_lfo_dir_ = 1; }
-            ih_osc_.set(1000.0f + 1500.0f * ih_lfo_, rate_);
-            mix += (ih_osc_.tick() ? kInvHitLevel : -kInvHitLevel) * ih_amp_;
+            ih_osc_.set((kInvHitHz - kInvHitSlope * ih_t_) * (1.0f + 0.03f * nz), rate_);
+            ih_t_ += 1.0f / rate_;
+            ih_out_ += ((ih_osc_.tick() ? 1.0f : -1.0f) - ih_out_) * ih_tone_lp_;
+            mix += ih_out_ * kInvHitLevel * ih_amp_;
         }
 
         // UFO hit.
@@ -269,10 +275,12 @@ void Synth::render(int16_t* out, int n)
         const float y = mix - dc_x_ + dc_r_ * dc_y_;
         dc_x_ = mix;
         dc_y_ = (y > 0.01f || y < -0.01f) ? y : 0.0f;    // no denormals in the silence
-        int s = int(y);
-        if (s > 32767) s = 32767;
-        if (s < -32768) s = -32768;
-        out[i] = int16_t(s);
+        // Soft knee above 16,000 (a march note under the base's explosion
+        // would pass the ~21,000 the volume scale allows for).
+        float v = y;
+        if (v > 16000.0f)       v = 16000.0f + 6000.0f * std::tanh((v - 16000.0f) / 6000.0f);
+        else if (v < -16000.0f) v = -16000.0f - 6000.0f * std::tanh((-v - 16000.0f) / 6000.0f);
+        out[i] = int16_t(v);
     }
 }
 

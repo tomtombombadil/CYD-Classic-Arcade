@@ -101,6 +101,7 @@ void Machine::reset()
     cpu_.indexed_io = false;
     irq_state_ = irq_pin_ = false;
     watchdog_frames_ = 0;
+    held_x_ = held_y_ = 0;
     cpu_.irq(false);
     cpu_.reset();
 }
@@ -334,13 +335,18 @@ int Machine::run_frame(int16_t* audio, int cap)
     audio_n_ = audio ? n : 0;
     audio_done_ = 0;
 
-    // The trackball: the stick's speed plus the d-pad's steady one.
-    frame_vx_ = track_vx_;
-    frame_vy_ = track_vy_;
-    if (buttons_ & kRight) frame_vx_ += kButtonSpeed;
-    if (buttons_ & kLeft) frame_vx_ -= kButtonSpeed;
-    if (buttons_ & kUp) frame_vy_ += kButtonSpeed;
-    if (buttons_ & kDown) frame_vy_ -= kButtonSpeed;
+    // The trackball: the stick's speed plus the d-pad's, which grows the
+    // longer it is held one way.
+    const auto axis = [](int& held, bool plus, bool minus) {
+        const int dir = (plus ? 1 : 0) - (minus ? 1 : 0);
+        if (dir == 0 || (held > 0) != (dir > 0)) held = 0;
+        if (dir == 0) return 0;
+        const int v = dir * button_speed(dir > 0 ? held : -held);
+        held += dir;
+        return v;
+    };
+    frame_vx_ = track_vx_ + axis(held_x_, buttons_ & kRight, buttons_ & kLeft);
+    frame_vy_ = track_vy_ + axis(held_y_, buttons_ & kUp, buttons_ & kDown);
 
     // Eight stretches of 32 lines: the 32V flip-flop sets the IRQ at lines
     // 0, 64, 128, 192 and clears it at 32, 96, 160, 224 (the CPU's write to

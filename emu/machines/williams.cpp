@@ -1,6 +1,6 @@
-// Williams Defender / Robotron / Bubbles boards - see williams.h.
+// Williams Defender / Robotron boards - see williams.h.
 //
-// Robotron and Bubbles (main CPU):
+// Robotron (main CPU):
 //   0000-8FFF  reads: ROM when C900 bit 0 is set, else video RAM; writes
 //              always go to the video RAM
 //   9000-97FF  video RAM          9800-BFFF  work RAM
@@ -13,7 +13,7 @@
 //   CA00-CA07  blitter (mirrored to CAFF)
 //   CB00       video counter: the line & FC (FC from line 256 on)
 //   CBFF       watchdog: write 39
-//   CC00-CFFF  CMOS RAM (4 bits; Bubbles 8)   D000-FFFF  ROM
+//   CC00-CFFF  CMOS RAM (4 bits)   D000-FFFF  ROM
 //
 // Defender (main CPU):
 //   0000-BFFF  RAM (video 0000-97FF)
@@ -108,37 +108,6 @@ const romset::Set kRomSet = {
 
 } // namespace robotron
 
-namespace bubbles {
-
-constexpr romset::Region kRegions[kRegionCount] = {
-    {"maincpu_banked", 0x9000},
-    {"maincpu",        0x3000},
-    {"soundcpu",       0x1000},
-};
-
-// MAME's "bubbles". The two decoder PROMs (flip screen) aren't needed.
-constexpr romset::Rom kRoms[] = {
-    {kRegionBanked, 0x0000, 0x1000, 0x8234f55c, "bubbles.1b",  false},
-    {kRegionBanked, 0x1000, 0x1000, 0x4a188d6a, "bubbles.2b",  false},
-    {kRegionBanked, 0x2000, 0x1000, 0x7728f07f, "bubbles.3b",  false},
-    {kRegionBanked, 0x3000, 0x1000, 0x040be7f9, "bubbles.4b",  false},
-    {kRegionBanked, 0x4000, 0x1000, 0x0b5f29e0, "bubbles.5b",  false},
-    {kRegionBanked, 0x5000, 0x1000, 0x4dd0450d, "bubbles.6b",  false},
-    {kRegionBanked, 0x6000, 0x1000, 0xe0a26ec0, "bubbles.7b",  false},
-    {kRegionBanked, 0x7000, 0x1000, 0x4fd23d8d, "bubbles.8b",  false},
-    {kRegionBanked, 0x8000, 0x1000, 0xb48559fb, "bubbles.9b",  false},
-    {kRegionFixed,  0x0000, 0x1000, 0x26e7869b, "bubbles.10b", false},
-    {kRegionFixed,  0x1000, 0x1000, 0x5a5b572f, "bubbles.11b", false},
-    {kRegionFixed,  0x2000, 0x1000, 0xce22d2e2, "bubbles.12b", false},
-    {kRegionSound,  0x0000, 0x1000, 0x689ce2aa, "bubbles.snd", false},
-};
-
-const romset::Set kRomSet = {
-    "bubbles", nullptr, "Bubbles", kRegions, kRegionCount, kRoms, int(sizeof kRoms / sizeof kRoms[0]),
-};
-
-} // namespace bubbles
-
 namespace defender {
 
 constexpr romset::Region kRegions[kRegionCount] = {
@@ -198,7 +167,7 @@ void Machine::init(Board board, const uint8_t* const* regions, uint32_t audio_ra
         rom_banked_ = regions[robotron::kRegionBanked];
         rom_fixed_ = regions[robotron::kRegionFixed];
         sound_rom = regions[robotron::kRegionSound];
-        sound_size = robotron::kRegions[robotron::kRegionSound].size;     // Bubbles' the same
+        sound_size = robotron::kRegions[robotron::kRegionSound].size;
     } else {
         rom_fixed_ = regions[defender::kRegionFixed];
         rom_banked_ = regions[defender::kRegionBanked];
@@ -378,11 +347,10 @@ void Machine::io_write(uint16_t addr, uint8_t v)
     }
 }
 
-// The CMOS RAM is 4 bits wide: the high nibble reads as 1s. Bubbles' board
-// has an 8-bit wide one.
+// The CMOS RAM is 4 bits wide: the high nibble reads as 1s.
 void Machine::cmos_write(int at, uint8_t v)
 {
-    cmos_[at] = board_ == Board::Bubbles ? v : uint8_t(v | 0xf0);
+    cmos_[at] = uint8_t(v | 0xf0);
     ++cmos_writes_;
     last_cmos_frame_ = frame_;
 }
@@ -407,18 +375,7 @@ void Machine::main_irq(void* ctx)
 void Machine::set_input_ports(uint16_t b)
 {
     uint8_t in0 = 0, in1 = 0, in2 = 0;
-    if (board_ == Board::Bubbles) {
-        // The starts the other way round from Robotron's (as Defender's):
-        // with one credit only bit 5 starts a game, and it is a one-player
-        // game (found by running the game).
-        using namespace bubbles;
-        if (b & kUp)        in0 |= 0x01;
-        if (b & kDown)      in0 |= 0x02;
-        if (b & kLeft)      in0 |= 0x04;
-        if (b & kRight)     in0 |= 0x08;
-        if (b & kStart2)    in0 |= 0x10;
-        if (b & kStart1)    in0 |= 0x20;
-    } else if (board_ == Board::Robotron) {
+    if (board_ == Board::Robotron) {
         using namespace robotron;
         if (b & kUp)        in0 |= 0x01;
         if (b & kDown)      in0 |= 0x02;

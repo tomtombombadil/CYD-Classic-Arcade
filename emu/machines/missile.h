@@ -132,11 +132,19 @@ public:
                         ((pix & 0x1000) >> 12));
     }
 
-    // The d-pad's steady speed: 3 counts a frame (in 1/256 counts). A count
-    // moves the crosshair a pixel (the mini trackball setting); the game
-    // reads the counters at each IRQ, four times a frame, and takes their
-    // 4-bit change, so up to ~28 counts a frame would still read right.
-    static constexpr int kButtonSpeed = 768;
+    // The d-pad's speed (in 1/256 counts a frame): 1 count a frame when
+    // pressed, rising in a straight line to 9 over kButtonRamp frames held
+    // the same way (Tom, 2026-10-20: a steady 3 "doesn't work well" - too
+    // slow to cross the screen, too fast to aim; a tap now moves a pixel).
+    // A count moves the crosshair a pixel (the mini trackball setting); the
+    // game reads the counters at each IRQ, four times a frame, and takes
+    // their 4-bit change, so up to ~28 counts a frame would still read right.
+    static constexpr int kButtonSpeed = 256, kButtonSpeedMax = 2304, kButtonRamp = 30;
+    static int button_speed(int held)
+    {
+        return kButtonSpeed + (held < kButtonRamp ? held : kButtonRamp) * (kButtonSpeedMax - kButtonSpeed) /
+                                  kButtonRamp;
+    }
 
 private:
     static uint8_t mem_read(void* ctx, uint16_t addr);
@@ -179,6 +187,7 @@ private:
     int      track_vx_ = 0, track_vy_ = 0;
     uint32_t track_x_ = 0, track_y_ = 0;           // counters, 1/256 counts, at the frame's start
     int      frame_vx_ = 0, frame_vy_ = 0;         // this frame's speeds
+    int      held_x_ = 0, held_y_ = 0;             // frames the d-pad has been held one way (+ / -)
 
     uint32_t total_ = 0;            // ticks before this frame (the POKEY's clock)
     int      tick_ = 0;             // ticks into this frame at the run's start

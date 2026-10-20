@@ -1,7 +1,7 @@
 // Williams 6809 boards, written for this project (MIT): Defender (the
-// first board: no blitter, ROM banked at C000), Robotron: 2084 and Bubbles
+// first board: no blitter, ROM banked at C000), Robotron: 2084
 // (the second: the SC1 blitter, ROM banked over the video RAM at
-// 0000-8FFF; Bubbles' board differs only in its 8-bit wide CMOS RAM).
+// 0000-8FFF).
 // Both: a 6809 at 1 MHz (12 MHz / 12), 260 lines of 64 cycles a frame
 // (60.10 Hz), a 304 x 256 bitmap of 4-bit pixels in 38 KB of RAM laid out
 // in columns (byte = two pixels side by side, 256 bytes from one column of
@@ -37,7 +37,7 @@ constexpr int      kLinesPerFrame = 260;
 constexpr int      kCyclesPerFrame = kCyclesPerLine * kLinesPerFrame;   // 16640 -> 60.096 Hz
 constexpr int      kFirstLine = 7;                      // visible lines 7-246
 
-enum class Board : uint8_t { Defender, Robotron, Bubbles };
+enum class Board : uint8_t { Defender, Robotron };
 
 // Robotron: 2084 (MAME "robotron", Release 5 / solid blue label).
 namespace robotron {
@@ -51,19 +51,6 @@ enum Button : uint16_t {
 enum Region { kRegionBanked, kRegionFixed, kRegionSound, kRegionCount };
 extern const romset::Set kRomSet;
 } // namespace robotron
-
-// Bubbles (MAME "bubbles"). An 8-way stick, no buttons; IN2 (coins and
-// the operator's switches) as on Robotron, so those bits are shared.
-namespace bubbles {
-enum Button : uint16_t {
-    kUp = 0x0001, kDown = 0x0002, kLeft = 0x0004, kRight = 0x0008,
-    kStart1 = 0x0100, kStart2 = 0x0200, kCoin = 0x0400, kCoin2 = 0x0800,
-    kAdvance = 0x1000, kAutoUp = 0x2000, kHighScoreReset = 0x4000, kTilt = 0x8000,
-};
-// The same regions as Robotron's: 0000-8FFF (banked), D000-FFFF, sound.
-enum Region { kRegionBanked, kRegionFixed, kRegionSound, kRegionCount };
-extern const romset::Set kRomSet;
-} // namespace bubbles
 
 // Defender (MAME "defender" Red label or "defenderg" Green label).
 namespace defender {
@@ -138,7 +125,7 @@ private:
     williams_sound::Board sound_;
 
     uint8_t  ram_[0xc000] = {};             // 0000-97FF video, 9800-BFFF work RAM
-    uint8_t  cmos_[0x400] = {};             // 4-bit: high nibble reads 1 once written (Bubbles: 8-bit)
+    uint8_t  cmos_[0x400] = {};             // 4-bit: high nibble reads 1 once written
     uint8_t  palette_[16] = {};
     uint8_t  bank_ = 0;                     // Defender's C000 bank, Robotron's ROM enable
     uint16_t buttons_ = 0;

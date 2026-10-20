@@ -19,8 +19,8 @@
 #      CWAI / SYNC, small programs), -O2 and with the sanitizers
 #   7. the 6800 / 6802 / 6808 core (flags, cycles, interrupts incl. WAI),
 #      -O2 and with the sanitizers
-#   8. the Williams parts (6821 PIA, SC1 blitter, sound board, the Robotron,
-#      Defender and Bubbles boards on hand-made programs), -O2 and with the
+#   8. the Williams parts (6821 PIA, SC1 blitter, sound board, the Robotron and
+#      Defender boards on hand-made programs), -O2 and with the
 #      sanitizers
 #   9. the Namco Galaga-family parts (06XX / 51XX / 53XX, starfield, 54XX
 #      model, the three-CPU board and idle skipping on hand-made programs,
@@ -228,7 +228,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender bubbles qix starwars missile bzone zaxxon galaxian amidar; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars missile bzone zaxxon galaxian amidar; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"
