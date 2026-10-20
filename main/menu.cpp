@@ -26,7 +26,9 @@
 #include "ui.h"
 #include "version_gen.h"
 
+#include "core/log_pack.h"
 #include "emu/games.h"
+#include "qrcodegen.h"
 
 #include <cstdio>
 #include <cstring>
@@ -59,8 +61,12 @@ struct Menu {
     int set_what[kMaxItems] = {};
     ui::ListPage settings;
 
-    // The open text page and where its < goes
+    // The open text page and where its < goes (the Send Log page is a text
+    // page showing `qr` instead)
     ui::TextPage text;
+    ui::QrPage qr;
+    bool qr_open = false;
+    char qr_note[48] = "";
     Page text_back = Page::Home;
     const char* text_lines[24] = {};
     char text_buf[16][96] = {};
@@ -145,7 +151,8 @@ struct Menu {
     void draw()
     {
         footer.news = shown_news();
-        if (page == Page::Text) ui::draw_text(g(), text, footer, text_starts, text_pages);
+        if (page == Page::Text && qr_open) ui::draw_qr(g(), qr, footer);
+        else if (page == Page::Text) ui::draw_text(g(), text, footer, text_starts, text_pages);
         else ui::draw_list(g(), *list(), footer);
     }
 
@@ -158,6 +165,7 @@ struct Menu {
 
     void open_text(const char* title, const char* const* lines, int count, Page back, bool paged = false)
     {
+        qr_open = false;
         text.title = title;
         text.lines = lines;
         text.count = count;
@@ -201,6 +209,99 @@ struct Menu {
             return;
         }
         open_text("Log", lines, n, Page::Settings, true);
+    }
+
+    // Settings > Send Log (Tom, 2026-10-20: "we need a better way to
+    // transfer the logs"): as CYD Classic Games does - the newest lines that
+    // fit, behind a header, packed (core/log_pack.*) after the address of
+    // the site's log page (web/l/) into one QR code: a phone's camera opens
+    // the page, which offers to email it to the developer. Everything is
+    // in the game area while the page is open (the deflate tables are 16
+    // KB), like the Log page's lines; the next game empties it.
+    static bool qr_dark(const void* ctx, int x, int y)
+    {
+        return qrcodegen_getModule(static_cast<const uint8_t*>(ctx), x, y);
+    }
+
+    void open_send_log()
+    {
+        static const char* const kNone[] = {""};
+        open_text("Send Log", kNone, 0, Page::Settings);
+        qr_open = true;
+        qr = ui::QrPage{};
+        qr.title = "Send Log";
+        qr.caption = "Point your phone's camera at the code to get a link that sends the log to the developer.";
+        qr.note = "Newest 000 of 000 lines";    // its height counts for the room
+        int maxv = (ui::qr_room(g(), qr) / 2 - 4 - 17) / 4;     // modules at least 2 pixels
+        if (maxv > qrcodegen_VERSION_MAX) maxv = qrcodegen_VERSION_MAX;
+
+        arena::reset();
+        constexpr size_t kLine = 112;
+        const int total = devlog::count();
+        const size_t cap = 256 + kLine * size_t(total > 0 ? total : 1);
+        const size_t url_n = std::strlen(logpack::kUrl);
+        const size_t qlen = maxv >= 1 ? qrcodegen_BUFFER_LEN_FOR_VERSION(maxv) : 0;
+        char* lines = static_cast<char*>(arena::alloc(kLine * size_t(total > 0 ? total : 1)));
+        char* report = static_cast<char*>(arena::alloc(cap));
+        uint8_t* work = static_cast<uint8_t*>(arena::alloc(cap + 64));
+        const size_t b43_cap = (cap + 64) * 3 / 2 + 4;
+        char* b43 = static_cast<char*>(arena::alloc(b43_cap));
+        void* tables = arena::alloc(logpack::kTablesBytes);
+        uint8_t* ub = static_cast<uint8_t*>(arena::alloc(qrcodegen_calcSegmentBufferSize(qrcodegen_Mode_BYTE, url_n)));
+        uint8_t* ab = static_cast<uint8_t*>(
+            arena::alloc(qrcodegen_calcSegmentBufferSize(qrcodegen_Mode_ALPHANUMERIC, b43_cap)));
+        uint8_t* code = qlen ? static_cast<uint8_t*>(arena::alloc(qlen)) : nullptr;
+        uint8_t* tmp = qlen ? static_cast<uint8_t*>(arena::alloc(qlen)) : nullptr;
+        int n = 0;
+        if (lines)
+            for (int i = 0; i < total; ++i)
+                if (devlog::line(i, lines + kLine * size_t(n), kLine)) ++n;
+
+        // The report with the newest `k` lines, oldest first
+        const auto build = [&](int k) -> size_t {
+            int len = std::snprintf(report, cap, "CYD Classic Arcade log\nBoard: %s\nFirmware: %s%s%s%s\nLines: newest %d of %d\n",
+                                    BOARD_NAME, CYD_ARCADE_VERSION, CYD_ARCADE_BUILD[0] ? " (" : "", CYD_ARCADE_BUILD,
+                                    CYD_ARCADE_BUILD[0] ? ")" : "", k, n);
+            if (len < 0 || size_t(len) >= cap) return 0;
+            for (int i = k - 1; i >= 0; --i) {
+                const int w = std::snprintf(report + len, cap - size_t(len), "%s\n", lines + kLine * size_t(i));
+                if (w < 0 || size_t(len + w) >= cap) return 0;
+                len += w;
+            }
+            return size_t(len);
+        };
+        const auto encode = [&](int k, bool final) -> bool {
+            const size_t len = build(k);
+            const size_t z = len ? logpack::pack(report, len, work, cap + 64, b43, b43_cap, tables) : 0;
+            if (!z) return false;
+            qrcodegen_Segment segs[2] = {qrcodegen_makeBytes(reinterpret_cast<const uint8_t*>(logpack::kUrl), url_n, ub),
+                                         qrcodegen_makeAlphanumeric(b43, ab)};
+            return qrcodegen_encodeSegmentsAdvanced(segs, 2, qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN, maxv,
+                                                    final ? qrcodegen_Mask_AUTO : qrcodegen_Mask_0, final, tmp, code);
+        };
+        int best = -1;
+        if (lines && report && work && b43 && tables && ub && ab && code && tmp) {
+            int lo = 0, hi = n;     // as many of the newest lines as fit
+            while (lo <= hi) {
+                const int mid = (lo + hi) / 2;
+                if (encode(mid, false)) { best = mid; lo = mid + 1; }
+                else hi = mid - 1;
+            }
+        }
+        if (best >= 0 && encode(best, true)) {
+            qr.n = qrcodegen_getSize(code);
+            qr.dark = qr_dark;
+            qr.ctx = code;
+            if (best == n) std::snprintf(qr_note, sizeof qr_note, "All %d lines of the log", n);
+            else std::snprintf(qr_note, sizeof qr_note, "Newest %d of %d lines", best, n);
+            devlog::add("Send Log: %d of %d lines in a %d x %d QR code", best, n, qr.n, qr.n);
+        } else {
+            std::snprintf(qr_note, sizeof qr_note, "%s", "The log didn't fit a QR code.");
+            qr.caption = "";
+            devlog::add("Send Log: no QR code (game area %u KB)", unsigned(arena::size() / 1024));
+        }
+        qr.note = qr_note;
+        draw();
     }
 
     void open_about()
@@ -443,6 +544,9 @@ struct Menu {
             return;
         case menu_model::kLog:
             open_log();
+            return;
+        case menu_model::kSendLog:
+            open_send_log();
             return;
         case menu_model::kAbout:
             open_about();

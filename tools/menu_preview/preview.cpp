@@ -2,6 +2,8 @@
 // menu_model.*) drawn by LovyanGFX onto sprites the size of each panel, and
 // written as PPM files - to check the layouts at 240x320 and 320x480 (no
 // clipping) and to show them. Build: tools/menu_preview/build.sh.
+#include <algorithm>
+#include <cstdlib>
 #include "ui.h"
 #include "menu_model.h"
 
@@ -195,6 +197,32 @@ void render(int w, int h)
         log.page = pages - 1;
         ui::draw_text(s, log, footer(1, ""), starts, pages);
         save(s, "7d_log_last");
+    }
+
+    {   // Settings > Send Log: the largest code the page allows (a made-up
+        // pattern with the three finder squares, as the layout sees it)
+        ui::QrPage q;
+        q.title = "Send Log";
+        q.note = "All 41 lines of the log";
+        q.caption = "Point your phone's camera at the code to get a link that sends the log to the developer.";
+        int v = (ui::qr_room(s, q) / 2 - 4 - 17) / 4;
+        if (v > 40) v = 40;
+        q.n = 17 + 4 * v;
+        q.ctx = &q.n;
+        q.dark = [](const void* ctx, int x, int y) {
+            const int n = *static_cast<const int*>(ctx);
+            for (int f = 0; f < 3; ++f) {
+                const int fx = f == 1 ? n - 7 : 0, fy = f == 2 ? n - 7 : 0;
+                const int dx = x - fx, dy = y - fy;
+                if (dx >= 0 && dx < 7 && dy >= 0 && dy < 7) {
+                    const int r = std::max(std::abs(dx - 3), std::abs(dy - 3));
+                    return r != 2;
+                }
+            }
+            return ((x * 7919 + y * 104729 + x * y * 31) >> 3) % 2 == 0;
+        };
+        ui::draw_qr(s, q, footer(1, ""));
+        save(s, "7e_send_log");
     }
 
     char info_buf[12][96];

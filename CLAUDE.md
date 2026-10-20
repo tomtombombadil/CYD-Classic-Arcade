@@ -425,7 +425,27 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   `elf-<env>`, 90 days). A crash's message and every failed-start message
   stay until a tap or a controller button (`touch::wait_tap_or_button()`);
   the news line then says "The board restarted: see Settings > Log". Ask
-  Tom for the Log page (a photo) when something goes wrong.
+  Tom for Send Log (or the Log page, a photo) when something goes wrong.
+- Send Log (v0.18.0; Tom, 2026-10-20: "we need a better way to transfer
+  the logs" - as CYD Classic Games' Send Log): Settings > Send Log shows
+  the newest log lines that fit (a binary search on the count), behind a
+  header (board, version + commit, "Lines: newest N of M"), oldest first,
+  as one QR code: byte segment `logpack::kUrl`
+  (`https://tomtombombadil.github.io/CYD-Classic-Arcade/l/#`) + an
+  alphanumeric segment of `core/log_pack.*` (from Classic Games, host-
+  tested in core_tests against our own inflate: raw DEFLATE, fixed
+  Huffman, 4 KB window, ~5x on logs, the 16 KB match tables passed in) as
+  base43; ECC L, modules >= 2 px, a 2-module white margin, as large as the
+  page allows (`ui::draw_qr` / `qr_room`; 5.4 KB of log text fit a 97 x
+  97 code). Under it the line count and "Point your phone's camera at the
+  code to get a link that sends the log to the developer." The encoder is
+  Nayuki's qrcodegen as BTstack ships and builds it (`#include
+  "qrcodegen.h"`, no copy of our own). All its buffers come from the game
+  area (reset first, as the Log page; ~30 KB). `web/l/index.html` decodes
+  it (DecompressionStream "deflate-raw") and offers Email (mailto
+  **cyd.classic.games.logs@gmail.com** - Tom's address for logs, shared
+  with Classic Games), Copy, Download log.txt. The menu preview renders the
+  page with a made-up code of the largest size (`7e_send_log`).
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
   checked by `arcade_host --check-table`; the USB loader's GAMES reply has
   room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).

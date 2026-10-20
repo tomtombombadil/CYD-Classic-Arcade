@@ -1,9 +1,11 @@
 // Host tests for core/: the ROM store on a fake NOR flash, and the USB
 // loading protocol driven the way the web page drives it.
+#include "../../core/log_pack.h"
 #include "../../core/log_ring.h"
 #include "../../core/rom_store.h"
 #include "../../core/usb_import.h"
 #include "../../emu/rom/crc32.h"
+#include "../../emu/util/inflate.h"
 
 #include <cstdarg>
 #include <cstdio>
@@ -302,9 +304,65 @@ void test_log_ring()
     check(r.count() == 1 && r.line(0, out, sizeof out) && std::strlen(out) == 63, "log: a huge line is cut");
 }
 
+// Send Log's packing: DEFLATE that our own inflate reads back, base43 in the
+// QR alphanumeric set without space or '%', and the whole packet.
+void test_log_pack()
+{
+    std::vector<uint16_t> tables(logpack::kTablesBytes / 2);
+    std::string text;
+    for (int k = 0; k < 60; ++k) {
+        char line[96];
+        std::snprintf(line, sizeof line, "[3 %d.%ds] galaga: start; area 92 KB (60 + 32), %d KB free\n", k, k % 10,
+                      30 + k % 7);
+        text += line;
+    }
+    std::vector<uint8_t> z(text.size() + 64), back(text.size() + 16);
+    const size_t zn = logpack::deflate(reinterpret_cast<const uint8_t*>(text.data()), text.size(), z.data(),
+                                       z.size(), tables.data());
+    check(zn > 0 && zn * 4 < text.size(), "log pack: a log shrinks to under a quarter");
+    const long bn = inflate::raw(z.data(), zn, back.data(), back.size());
+    check(bn == long(text.size()) && std::memcmp(back.data(), text.data(), text.size()) == 0,
+          "log pack: inflates back to the log");
+    for (const char* t : {"", "a", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "abcabcabcabcx"}) {
+        uint8_t o[256], b[256];
+        const size_t on = logpack::deflate(reinterpret_cast<const uint8_t*>(t), std::strlen(t), o, sizeof o,
+                                           tables.data());
+        const long n = on ? inflate::raw(o, on, b, sizeof b) : -1;
+        check(n == long(std::strlen(t)) && std::memcmp(b, t, size_t(n)) == 0, "log pack: short texts");
+    }
+    check(logpack::deflate(reinterpret_cast<const uint8_t*>(text.data()), text.size(), z.data(), 8,
+                           tables.data()) == 0, "log pack: too small an output = 0");
+    // Base43: 2 bytes -> 3 characters
+    const uint8_t raw[5] = {0xFF, 0xFF, 0x00, 0x01, 0x80};
+    char enc[16];
+    check(logpack::base43(raw, 5, enc, sizeof enc) == 8, "log pack: base43 length");
+    bool ok = true;
+    for (const char* c = enc; *c; ++c) ok = ok && std::strchr(logpack::kAlphabet, *c) && *c != ' ' && *c != '%';
+    check(ok, "log pack: base43 characters");
+    auto val = [](char c) { return int(std::strchr(logpack::kAlphabet, c) - logpack::kAlphabet); };
+    uint8_t dec[5];
+    int dn = 0;
+    for (int k = 0; k + 2 < 8; k += 3) {
+        const int v = val(enc[k]) + 43 * val(enc[k + 1]) + 1849 * val(enc[k + 2]);
+        dec[dn++] = uint8_t(v >> 8);
+        dec[dn++] = uint8_t(v);
+    }
+    dec[dn++] = uint8_t(val(enc[6]) + 43 * val(enc[7]));
+    check(dn == 5 && std::memcmp(dec, raw, 5) == 0, "log pack: base43 decodes");
+    check(logpack::base43(raw, 5, enc, 8) == 0, "log pack: base43 too small = 0");
+    // The packet: format byte first
+    std::vector<uint8_t> work(text.size() + 64);
+    std::vector<char> out(text.size() * 2);
+    const size_t pn = logpack::pack(text.c_str(), text.size(), work.data(), work.size(), out.data(), out.size(),
+                                    tables.data());
+    check(pn > 0 && val(out[0]) + 43 * val(out[1]) + 1849 * val(out[2]) == logpack::kFormat * 256 + work[1],
+          "log pack: packet starts with the format byte");
+}
+
 int main()
 {
     test_log_ring();
+    test_log_pack();
     test_store();
     test_protocol();
     std::printf("core tests: %d passed, %d failed\n", g_pass, g_fail);

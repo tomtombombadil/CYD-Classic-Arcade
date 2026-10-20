@@ -135,6 +135,22 @@ int  text_pages(Gfx& g, const TextPage& p, int* starts, int cap);
 void draw_text(Gfx& g, const TextPage& p, const Footer& f, const int* starts = nullptr, int pages = 1);
 Target hit_text(Gfx& g, int x, int y, bool paged = false);   // Back (and Prev / Next when paged)
 
+// Send Log: a QR code of n x n modules (dark(ctx, x, y)) on a white square
+// with a 2-module margin, as large as whole-pixel modules allow, a line in
+// the second-line colour under it and small print under that. Back as a
+// text page's (hit_text).
+struct QrPage {
+    const char* title = "";
+    int n = 0;                                          // 0 = none: only the lines
+    bool (*dark)(const void* ctx, int x, int y) = nullptr;
+    const void* ctx = nullptr;
+    const char* note = "";
+    const char* caption = "";
+};
+// The side (pixels) a QR page has for its code with these lines under it
+int  qr_room(Gfx& g, const QrPage& p);
+void draw_qr(Gfx& g, const QrPage& p, const Footer& f);
+
 // Just the header bar (pages drawn elsewhere, e.g. the Controller Test);
 // hit_text() finds its back key.
 void draw_header(Gfx& g, const char* title, bool back, bool gear);

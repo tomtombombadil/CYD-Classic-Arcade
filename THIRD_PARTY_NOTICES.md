@@ -15,9 +15,15 @@ contains the following, downloaded at build time by `tools/fetch_deps.py`
 used for non-commercial purposes only.** The source code in this
 repository stays MIT.
 
+The Send Log QR code is made with Project Nayuki's
+[QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library)
+(MIT), the copy BTstack ships in `3rd-party/qr-code-generator` and builds
+with its component.
+
 From [CYD Classic Games](https://github.com/tomtombombadil/CYD-Classic-Games)
-(same author, MIT): the board files in `main/boards/` and the DEFLATE
-decoder in `emu/util/`.
+(same author, MIT): the board files in `main/boards/`, the DEFLATE
+decoder in `emu/util/`, and Send Log's packing (`core/log_pack.*`) and
+web page (`web/l/`).
 
 Freenove ESP32-S3 Display boards (`main/boards/freenove_s3_display.hpp`):
 the pins come from Freenove's published schematics and sample setups

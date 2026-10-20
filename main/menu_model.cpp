@@ -96,6 +96,7 @@ int build_settings(ui::Item* out, int* what, const SettingsState& s)
     add(kUsb, "USB Transfer", "Load ROMs from a computer", ui::Widget::Chevron);
     add(kSpeed, "Last Game Speed", "Where this board's time goes", ui::Widget::Chevron);
     add(kLog, "Log", "Starts, games, crashes, controllers", ui::Widget::Chevron);
+    add(kSendLog, "Send Log", "A QR code for your phone", ui::Widget::Chevron);
     add(kAbout, "About", "Version, board, memory", ui::Widget::Chevron);
     refresh_settings(out, what, n, s);
     return n;

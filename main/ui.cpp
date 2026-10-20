@@ -555,6 +555,58 @@ void draw_text(Gfx& g, const TextPage& p, const Footer& f, const int* starts, in
 
 void draw_header(Gfx& g, const char* title, bool back, bool gear) { header(g, metrics(g), title, back, gear); }
 
+namespace {
+
+// The QR page's lines under the code: their height, or drawn from y
+int qr_lines(Gfx& g, const Metrics& m, const QrPage& p, int y, bool draw)
+{
+    const int x = m.margin + 6, w = m.w - 2 * x;
+    int h = 0;
+    g.setFont(m.sub);
+    if (p.note[0]) h += wrap(g, p.note, x, y + h, w, kSub, draw, 1 << 30, true);
+    g.setFont(m.tiny);
+    if (p.caption[0]) h += (h ? m.gap : 0) + wrap(g, p.caption, x, y + h + (h ? m.gap : 0), w, kText, draw, 1 << 30, true);
+    return h;
+}
+
+} // namespace
+
+int qr_room(Gfx& g, const QrPage& p)
+{
+    const Metrics m = metrics(g);
+    const int top = m.list_y + m.gap, bottom = m.h - m.pads_h - m.news_h - m.gap;
+    const int h = bottom - top - qr_lines(g, m, p, 0, false) - m.gap;
+    const int w = m.w - 2 * m.margin;
+    return h < w ? h : w;
+}
+
+void draw_qr(Gfx& g, const QrPage& p, const Footer& f)
+{
+    const Metrics m = metrics(g);
+    g.fillRect(0, m.header_h, m.w, m.h - m.header_h, kBg);
+    header(g, m, p.title, true, false);
+    int y = m.list_y + m.gap;
+    if (p.n > 0 && p.dark) {
+        const int side = p.n + 4;
+        const int px = qr_room(g, p) / side;
+        if (px >= 1) {
+            const int s = side * px, x0 = (m.w - s) / 2;
+            g.fillRect(x0, y, s, s, uint16_t(0xFFFF));
+            for (int r = 0; r < p.n; ++r)
+                for (int c = 0; c < p.n;) {
+                    if (!p.dark(p.ctx, c, r)) { ++c; continue; }
+                    int e = c;
+                    while (e < p.n && p.dark(p.ctx, e, r)) ++e;
+                    g.fillRect(x0 + (2 + c) * px, y + (2 + r) * px, (e - c) * px, px, uint16_t(0x0000));
+                    c = e;
+                }
+            y += s + m.gap;
+        }
+    }
+    qr_lines(g, m, p, y, true);
+    draw_footer(g, f);
+}
+
 Target hit_text(Gfx& g, int x, int y, bool paged)
 {
     const Metrics m = metrics(g);

@@ -29,6 +29,7 @@ enum Setting : int {
     kUsb,           // USB Transfer: the ROM loader runs only while it's open
     kSpeed,
     kLog,
+    kSendLog,       // the log as a QR code for a phone
     kAbout,
 };
 

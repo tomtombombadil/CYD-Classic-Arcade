@@ -52,6 +52,10 @@ press Start twice (or press Home, or touch and hold the screen for a
 second) to come back. Resistive screens ask you to tap four corner arrows
 once, the first time.
 
+Something went wrong? Settings > Send Log shows the board's log as a QR
+code: point a phone's camera at it, and the page it opens can email the
+log to the developer.
+
 ## Controllers
 
 Anything [Bluepad32](https://github.com/ricardoquesada/bluepad32) supports:

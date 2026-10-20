@@ -129,8 +129,8 @@ g++ $FLAGS $SAN -o "$OUT/m6502_test_san" "$ROOT/tools/host_tests/m6502_test.cpp"
 g++ $FLAGS -O2 -o "$OUT/i8088_test" "$ROOT/tools/host_tests/i8088_test.cpp" "$ROOT/emu/cpu/i8088.cpp"
 g++ $FLAGS $SAN -o "$OUT/i8088_test_san" "$ROOT/tools/host_tests/i8088_test.cpp" "$ROOT/emu/cpu/i8088.cpp"
 
-echo "== ROM store and USB loading (core/)"
-CORE="$ROOT/core/rom_store.cpp $ROOT/core/usb_import.cpp $ROOT/emu/rom/crc32.cpp"
+echo "== ROM store, USB loading, log ring and Send Log packing (core/)"
+CORE="$ROOT/core/rom_store.cpp $ROOT/core/usb_import.cpp $ROOT/core/log_pack.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/util/inflate.cpp"
 g++ $FLAGS -O2 -o "$OUT/core_tests" "$ROOT/tools/host_tests/core_tests.cpp" $CORE
 g++ $FLAGS $SAN -o "$OUT/core_tests_san" "$ROOT/tools/host_tests/core_tests.cpp" $CORE
 "$OUT/core_tests"
