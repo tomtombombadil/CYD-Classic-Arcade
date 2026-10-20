@@ -71,6 +71,7 @@ struct Menu {
     ui::Footer footer;
     char news[72] = "";
     bool receiving = false;
+    bool usb = false;       // Settings > USB Transfer is open (the loader runs)
 
     // Touch: what the press started on
     ui::Target down;
@@ -222,6 +223,51 @@ struct Menu {
         a.paired = pad_paired_count();
         const int n = menu_model::build_about(a, buf, text_lines, 16);
         open_text("About", text_lines, n, Page::Settings);
+    }
+
+    // Settings > USB Transfer: the ROM loader runs only while this page is
+    // open (Tom, 2026-10-20: ROMs go onto a board about once - "let's not
+    // load it all the time"). Its task and port driver take ~11.7 KB, so the
+    // (empty) game area is given back first and taken again on leaving.
+    void open_usb()
+    {
+        game_runner::release_area();
+        if (!serial_link::start()) {
+            game_runner::reserve_area();
+            if (settings::get().usb_transfer) {
+                settings::get().usb_transfer = false;
+                settings::save();
+            }
+            devlog::add("USB Transfer couldn't start: %u KB free",
+                        unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+            set_news("USB Transfer couldn't start: not enough memory");
+            return;
+        }
+        usb = true;
+        if (!settings::get().usb_transfer) {
+            settings::get().usb_transfer = true;
+            settings::save();
+        }
+        devlog::add("USB Transfer open");
+        set_news("Waiting for the Load ROMs page", false);
+        open_text("USB Transfer", menu_model::kUsbHelp, menu_model::kUsbHelpCount, Page::Settings);
+    }
+
+    // False while ROMs are still coming in (the page stays)
+    bool close_usb()
+    {
+        if (!usb) return true;
+        if (!serial_link::stop()) {
+            set_news("Wait: ROMs are still coming in");
+            return false;
+        }
+        usb = false;
+        game_runner::reserve_area();
+        settings::get().usb_transfer = false;
+        settings::save();
+        devlog::add("USB Transfer closed");
+        if (std::strcmp(news, "Waiting for the Load ROMs page") == 0) news[0] = 0;
+        return true;
     }
 
     void open_speed()
@@ -389,6 +435,9 @@ struct Menu {
         case menu_model::kRoms:
             open_text("How to Add Games", menu_model::kRomsHelp, menu_model::kRomsHelpCount, Page::Settings);
             return;
+        case menu_model::kUsb:
+            open_usb();
+            return;
         case menu_model::kSpeed:
             open_speed();
             return;
@@ -412,7 +461,7 @@ struct Menu {
     void back()
     {
         if (page == Page::Settings) open(Page::Home);
-        else if (page == Page::Text) open(text_back);
+        else if (page == Page::Text && close_usb()) open(text_back);
     }
 
     // ---- touch ----
@@ -508,6 +557,7 @@ struct Menu {
             set_news(buf, false);
             build_home();
             draw();
+            devlog::add("USB Transfer: %d game%s ready", n, n == 1 ? "" : "s");
         }
     }
 };
@@ -533,6 +583,13 @@ void run(AudioRing& ring)
         touch::wait_tap_or_button();
         std::snprintf(m.news, sizeof m.news, "%s", "The board restarted: see Settings > Log");
         m.in.wait_for_release();
+    }
+    // The board restarted with USB Transfer open (opening the port resets
+    // CH340 boards on Windows): straight back to it, the loader running
+    if (settings::get().usb_transfer) {
+        m.page = Page::Settings;
+        m.build_settings();
+        m.open_usb();
     }
     m.draw();
     for (;;) {

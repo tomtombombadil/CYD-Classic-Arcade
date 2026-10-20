@@ -9,6 +9,11 @@ namespace game_runner {
 // (main/arena.h) and starts the draw task on core 0. False = no game area.
 bool init();
 
+// Gives the (empty) game area back to the heap and takes it again, for a
+// part that runs only now and then outside games (Settings > USB Transfer)
+void release_area();
+bool reserve_area();
+
 // `game`: index into games::kGames. `ring`: the audio output's ring.
 void run(int game, AudioRing& ring);
 

@@ -115,6 +115,13 @@ void render(int w, int h)
     ui::draw_text(s, help, footer(1, ""));
     save(s, "6_help");
 
+    ui::TextPage usb;
+    usb.title = "USB Transfer";
+    usb.lines = menu_model::kUsbHelp;
+    usb.count = menu_model::kUsbHelpCount;
+    ui::draw_text(s, usb, footer(1, "Waiting for the Load ROMs page"));
+    save(s, "6_usb");
+
     char about_buf[16][64];
     const char* about_lines[16];
     menu_model::AboutInfo a;

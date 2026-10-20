@@ -32,7 +32,8 @@ Also the Freenove ESP32-S3 Display boards (2.8" ILI9341 FNK0104B and 4.0"
 ST7796 FNK0104S, capacitive touch, 8 MB PSRAM) - not yet tested. The
 ESP32-S3 has Bluetooth LE only: Xbox Wireless and other BLE controllers
 pair; classic-Bluetooth ones (PlayStation, Switch Pro, many 8BitDo modes)
-don't. ROM zips go in over USB from the web page, or from an SD card.
+don't. ROM zips go in over USB from the web page (with the board's Settings > USB
+Transfer page open), or from an SD card.
 
 ## HOW TO INSTALL
 

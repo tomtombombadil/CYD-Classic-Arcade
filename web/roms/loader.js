@@ -282,7 +282,7 @@ export async function transfer(link, files, opts = {}) {
     if (line.startsWith("CYDA HELLO ")) hello = line;
     else if (!line.startsWith("CYDA ")) onLog(line);
   }
-  if (!hello) throw new TransferError("no-answer", "No answer - is CYD Classic Arcade v0.2.0 or newer on the board?");
+  if (!hello) throw new TransferError("no-answer", "No answer - on the board, open Settings > USB Transfer (CYD Classic Arcade v0.16.0 or newer).");
   const parseHello = (h) => {
     const [, , version, free, count] = h.split(" ");
     return { version, free: Number(free) || 0, files: Number(count) || 0 };

@@ -185,7 +185,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   comes first. Settings: Volume [-] [+], Swap A/B and X/Y and Rotate
   Screen 180 switches, Sound Output DAC / PWM (DAC boards), Controller
   Test, Forget Controllers, Calibrate Touch (resistive), How to Add Games,
-  Last Game Speed, Log, About (version, board, games ready, ROM storage,
+  USB Transfer (v0.16.0), Last Game Speed, Log, About (version, board, games ready, ROM storage,
   game area, RAM / PSRAM); v0.15.0 added Demo Sounds (a switch, NVS
   demo_snd, default on - the cabinets' factory setting; Tom, 2026-10-17: leave a game in its attract mode
   "and get all those classic arcade sounds" - the cabinet's demo sounds
@@ -369,10 +369,16 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   fits): parts used only now and then hold no RAM between uses - the
   Controller Test's 14 KB strips borrow the area, the SD import's 4 KB
   buffer the heap at start-up, and the USB ROM loader (11.7 KB: task +
-  UART driver) is stopped for the length of a game (`serial_link::stop()`,
-  not while a file is coming in) and started again after it, with the
-  area given back (`arena::release()`) and reserved again around it -
-  ~92 KB for games.
+  UART driver) runs only while Settings > USB Transfer is open (v0.16.0,
+  Tom, 2026-10-20: ROMs go onto a board about once - "let's not load it
+  all the time. That's just silly."): the page gives the empty game area
+  back (`game_runner::release_area()`), starts the loader, and on leaving
+  stops it (`serial_link::stop()`; not while a file is coming in - the
+  page stays with "Wait: ROMs are still coming in") and takes the area
+  again - ~92 KB for games. The page is saved as open (NVS usb_xfer): a
+  board reset by the port opening (CH340 on Windows) comes back to it with
+  the loader running. The Load ROMs web page's steps and its no-answer
+  message tell the user to open it.
 - ROMs live in flash, not RAM (Tom, 2026-10-17, asked why zips are "in
   memory all the time"): the zips are copied from the SD card / USB into
   the `roms` flash partition (storage, read in place, no RAM); only the

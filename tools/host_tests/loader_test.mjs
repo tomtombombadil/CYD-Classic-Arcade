@@ -222,7 +222,7 @@ const realZip = (n) => args.roms && fs.existsSync(path.join(args.roms, n)) ? fs.
   const b = board("--mute");
   let err = null;
   try { await L.transfer(b.link, [file("pacman.zip", fakePac)], { helloTimeoutMs: 2000 }); } catch (e) { err = e; }
-  check(err && err.code === "no-answer" && /v0\.2\.0/.test(err.message), "no answer is reported");
+  check(err && err.code === "no-answer" && /USB Transfer/.test(err.message), "no answer is reported");
   b.end();
 }
 

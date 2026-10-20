@@ -26,7 +26,6 @@
 #include "pad.h"
 #include "screen.h"
 #include "sd_import.h"
-#include "serial_link.h"
 #include "settings.h"
 #include "touch.h"
 #include "ui.h"
@@ -77,8 +76,6 @@ void ui_task(void*)
         }
         catalog::refresh();
         memlog::stage("after ROM catalog");
-        serial_link::start();
-        memlog::stage("after USB loader");
     } else {
         screen::line(screen::line_h() * 3, screen::kRed, "No ROM storage - reinstall");
     }

@@ -127,5 +127,6 @@ Two ways, on every board:
     CYD-Classic-Arcade/invaders.zip
 
   At power-on the firmware copies new zips it recognises into its own flash.
-- **USB:** the install site's Load ROMs page (Chrome or Edge) sends them
-  over the USB cable.
+- **USB:** open Settings > USB Transfer on the board (the loader runs only
+  while that page is open), then the install site's Load ROMs page
+  (Chrome or Edge) sends them over the USB cable.

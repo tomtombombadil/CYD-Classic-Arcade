@@ -18,6 +18,9 @@ struct Values {
                                   // its demo and hear the classic sounds) - the
                                   // cabinet's demo sounds switch where it has one;
                                   // on, as the cabinets leave the factory
+    bool    usb_transfer = false; // Settings > USB Transfer is open: kept so a
+                                  // board reset by the port opening (CH340
+                                  // boards on Windows) comes back to it
 };
 
 void load();

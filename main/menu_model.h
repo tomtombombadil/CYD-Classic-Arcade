@@ -26,6 +26,7 @@ enum Setting : int {
     kForget,
     kCalibrate,     // resistive touch only
     kRoms,
+    kUsb,           // USB Transfer: the ROM loader runs only while it's open
     kSpeed,
     kLog,
     kAbout,
@@ -47,6 +48,8 @@ void refresh_settings(ui::Item* items, const int* what, int count, const Setting
 // Text pages
 extern const char* const kRomsHelp[];
 extern const int kRomsHelpCount;
+extern const char* const kUsbHelp[];     // Settings > USB Transfer
+extern const int kUsbHelpCount;
 extern const char* const kGameHelp[];   // how to play / leave a game
 extern const int kGameHelpCount;
 

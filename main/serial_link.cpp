@@ -104,8 +104,9 @@ void task(void*)
 
 }  // namespace
 
-void start()
+bool start()
 {
+    if (s_task) return true;
     // RX buffer: the web page sends a 2 KB chunk and waits for its ACK, so
     // 4 KB holds a chunk plus the command lines while a flash erase holds
     // the task up (it was 16 KB until v0.10.1 - RAM games need).
@@ -120,7 +121,7 @@ void start()
 #endif
     if (err != ESP_OK) {
         ESP_LOGE(kTag, "serial port not available (%s): no ROM loading over USB", esp_err_to_name(err));
-        return;
+        return false;
     }
     s_session.init(flash_store::store(), send, games, nullptr, CYD_ARCADE_VERSION);
     s_stop = false;
@@ -134,7 +135,9 @@ void start()
         uart_driver_delete(kPort);
 #endif
         ESP_LOGE(kTag, "no room for the usb task: no ROM loading over USB");
+        return false;
     }
+    return true;
 }
 
 bool stop()

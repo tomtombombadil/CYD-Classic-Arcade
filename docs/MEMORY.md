@@ -114,7 +114,7 @@ outside the area.
 
 | Part | RAM | Needed when |
 |---|---|---|
-| USB ROM loader: usb task 6 KB + UART driver (4 KB receive buffer) | 11.7 KB (board) | the web page sends ROMs - the menu only: stopped for the length of a game since v0.15.8 (`serial_link::stop()`), started again when it ends |
+| USB ROM loader: usb task 6 KB + UART driver (4 KB receive buffer) | 11.7 KB (board) | only while Settings > USB Transfer is open (v0.16.0; about once per board) |
 | draw task (core 0) stack | 5 KB | a game that draws from a snapshot |
 | PWM sound buffer | 4 KB | Sound Output = PWM only (v0.15.5: taken on demand) |
 | SD import buffers | while copying | start-up only |
@@ -124,7 +124,8 @@ outside the area.
 
 1. **Measure**: done on the 3.5" (section 3).
 2. **Budget** (3.5"): area = free at the menu - draw task - 12 KB reserve =
-   81 KB; with the USB loader stopped during a game (v0.15.8) ~92 KB.
+   81 KB with the USB loader running (v0.15.7); ~92 KB since it runs only
+   on the USB Transfer page (v0.16.0).
 3. **Fit every game**: ~92 KB holds every game's minimum, Qix's 88.2 KB
    included (its two 32 KB halves fit the one block); the rest of the
    area takes ROM regions. Next, as numbers come in: every game's

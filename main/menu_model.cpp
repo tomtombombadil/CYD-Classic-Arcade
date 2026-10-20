@@ -93,6 +93,7 @@ int build_settings(ui::Item* out, int* what, const SettingsState& s)
     add(kForget, "Forget Controllers", "Pair them again afterwards", ui::Widget::None);
     if (s.has_calibration) add(kCalibrate, "Calibrate Touch", "Tap four corner arrows", ui::Widget::Chevron);
     add(kRoms, "How to Add Games", "From SD card or USB", ui::Widget::Chevron);
+    add(kUsb, "USB Transfer", "Load ROMs from a computer", ui::Widget::Chevron);
     add(kSpeed, "Last Game Speed", "Where this board's time goes", ui::Widget::Chevron);
     add(kLog, "Log", "Starts, games, crashes, controllers", ui::Widget::Chevron);
     add(kAbout, "About", "Version, board, memory", ui::Widget::Chevron);
@@ -105,12 +106,22 @@ const char* const kRomsHelp[] = {
     "Games aren't included: use the MAME ROM zips of games you own, as they are.",
     "",
     "#From a computer",
-    "On the install web page, open Load ROMs, connect by USB and pick the zips.",
+    "Open Settings > USB Transfer here, then the Load ROMs page of the install site in Chrome or Edge.",
     "",
     "#From an SD card",
     "Put them in a CYD-Classic-Arcade folder on the card, then restart the board.",
 };
 const int kRomsHelpCount = int(sizeof kRomsHelp / sizeof kRomsHelp[0]);
+
+const char* const kUsbHelp[] = {
+    "#Ready for ROMs",
+    "On a computer, open the Load ROMs page of the install site in Chrome or Edge.",
+    "",
+    "Connect this board by USB, pick your ROM zips there and send them.",
+    "",
+    "Leave this page when they're in.",
+};
+const int kUsbHelpCount = int(sizeof kUsbHelp / sizeof kUsbHelp[0]);
 
 const char* const kGameHelp[] = {
     "#Playing",
