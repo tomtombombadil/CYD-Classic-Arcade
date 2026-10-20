@@ -215,7 +215,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   boot_frames` = frames from power-on to the attract mode, found frame by
   frame in PC runs with Tom's ROMs (pacman / mspacman 300 - the grid test
   ends there, rallyx 770, galaga 870, digdug 700, robotron 760, defender
-  1625 - its Williams logo, qix 190, starwars 90, the rest 30 for the
+  1625 - its Williams logo, bubbles 750 - its sink, qix 190, starwars 90,
+  the rest 30 for the
   first black / garbage frame). The runner runs them before the game loop
   with nothing drawn and the sound thrown away, as fast as the board goes
   (bar, back check and a vTaskDelay(1) for the watchdog only every 32
@@ -717,6 +718,31 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   by callgrind: 1.3x Pac-Man's 483K; the sound CPU is half of it - the
   game's waveform loops write the DAC ~40,000 times a second), render
   ~0.035 ms.
+- Bubbles (2026-10-20, set `bubbles`: `bubbles.1b` ... `12b` + `bubbles.snd`;
+  the red label `bubblesr` / prototype `bubblesp` have other program ROMs,
+  not supported). Robotron's board (`williams::Board::Bubbles`): the same
+  map (ROM over the video RAM by C900, blitter SC1 at CA00, PIAs, video
+  counter, watchdog CBFF / 39), the same 292x240 window (x from 6),
+  regions and sound board - so the sound is exact; play peaks ~19,200 (the
+  DAC's full swing, as Robotron), no gain change. What differs: the CMOS RAM is 8 bits
+  wide (MAME's driver: written as given, not | F0), and IN0 = stick up /
+  down / left / right in bits 0-3, bit 5 = 1-player start, bit 4 = 2-player
+  start - the other way round from Robotron's (found by running it: with one
+  credit only bit 5 starts a game, and a one-player one; bit 4 with two
+  credits starts two players). Controls: an 8-way stick and no buttons on
+  the cabinet - d-pad / left stick move the sponge, Select = coin, Start =
+  1P, L = 2P; A and the other face buttons do nothing. First boot: ~7 s of
+  RAM test noise, "INITIAL TESTS INDICATE ALL SYSTEMS GO", "FACTORY
+  SETTINGS RESTORED" (the Advance press as Robotron's, 60 quiet frames),
+  attract from frame 740 (blue), the sink at 750 = `boot_frames`. Demo
+  sounds: none (see Demo sounds). Memory (xtensa sizeof): the games.cpp
+  wrapper 53,176 bytes = 51.9 KB, as Robotron (the same class) + buffers
+  15.2 / 17.0 KB + ROM 52 KB (largest chip 4 KB) - fits the ESP32 boards'
+  ~92-96 KB area, the rest of it takes ROM regions. PC in play: emu
+  ~0.075 ms a frame (Pac-Man 0.04), render ~0.05 (Pac-Man 0.08); draws
+  between frames on core 1 like Robotron. `--panel` 240x320 / 320x480:
+  0 wrong. Unsure: the start bits only by running (not checked against a
+  schematic); the watchdog length as Robotron's (assumed).
 - Freenove ESP32-S3 Display (Tom bought an FNK0104, 2026-10-16; v0.11.0):
   envs `fnk28_ili9341_cap` (FNK0104B, 2.8" ILI9341) and `fnk40_st7796_cap`
   (FNK0104S, 4.0" ST7796), `custom_chip = esp32s3` (CI's merge puts the
@@ -836,7 +862,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Asteroids, Tempest (MAME's DIP lists have none for these sets),
   Robotron (its Game Adjustment page: no sound item - "Fancy Attract
   Mode" is pictures), Defender (28 audit / adjust items, none about sound;
-  Game Adjust 1-10 are unnamed on screen). Not attract sound: Q*bert's
+  Game Adjust 1-10 are unnamed on screen), Bubbles (its Game Adjustments
+  page: extra man, men, pricing, difficulty, letters, resets, auto cycle,
+  attract message, highest score name - no sound item; its attract play
+  measured silent over 2000 frames). Not attract sound: Q*bert's
   power-on speech and Burger Time's power-on sound (~2 s in) come after
   their 30 boot frames, either way. Measured on the PC (`arcade_host
   --demo-sounds on|off`, 4000 frames after start-up, peak / RMS): Galaga
