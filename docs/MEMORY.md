@@ -100,10 +100,21 @@ the allocator manages, in KB **(board)**.
 | Kept back for the system (`kSystemReserve`) | | | 12 |
 | **Game area** | **81** (one block) | | |
 
-Stack use, worst seen (Galaga, then the menu) **(board)**: main / BTstack
-3.5 of 8 KB, ui 5.6 of 12, usb 0.7 of 6, draw 1.0 of 5, audio 0.7 of 3.
-Only one game measured so far, so stacks stay as they are until every
-game's "Stacks" line has been seen.
+Stack use, worst seen since start-up **(board)**: v0.15.7 after Galaga:
+main / BTstack 3.5 of 8 KB, ui 5.6 of 12, usb 0.7 of 6, draw 1.0 of 5,
+audio 0.7 of 3. v0.15.8 after Ms. Pac-Man, Mr. Do!, Galaga, Donkey Kong,
+Dig Dug, Defender, Burger Time, Asteroids: main 3.5, ui 5.6, draw 1.2,
+audio 0.7 - unchanged by seven more games. Not yet seen: Qix, Robotron,
+Star Wars, Tempest, Q*bert, Rally-X, Pac-Man, Space Invaders; stacks stay
+as they are until those are in.
+
+v0.15.8 on the 3.5" (USB loader stopped during games) **(board)**: game
+area 92 KB in two blocks (88 + 4; 80 KB at the menu with the loader
+running), 11 KB free outside it (blocks 5.4 + 2.8 KB) - enough for
+Bluetooth, every game ran. Area used / ROM in RAM / ROM from flash, KB:
+Ms. Pac-Man 88 / 34 / 0, Dig Dug 89 / 39 / 16, Galaga 81 / 37 / 0, Mr.
+Do! 73 / 24 / 32, Donkey Kong 71 / 32 / 0, Asteroids 71 / 8 / 0. Speeds:
+all 59.5-64 frames and 58-61 pictures a second.
 
 With the 81 KB area every game's minimum (section 1, 320x480) fits but
 Qix's 88.2 KB. Galaga used 65 of 81 KB (machine 23, ROM 21 KB in RAM, 16
