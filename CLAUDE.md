@@ -933,6 +933,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Battlezone (no switch either; its program sets the sound-on bit of the
   1840 latch only during play - checked: 20,000 frames of attract mode
   wrote only the start lamp),
+  Zaxxon (its SW1 "Sound" switch silences all sound; the attract mode is
+  silent either way - the game's own code),
   Robotron (its Game Adjustment page: no sound item - "Fancy Attract
   Mode" is pictures), Defender (28 audit / adjust items, none about sound;
   Game Adjust 1-10 are unnamed on screen), Bubbles (its Game Adjustments
@@ -1050,6 +1052,72 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   picture's RAM 0200-3FFF + pens, 15.5 KB); `--panel` 240x320 / 320x480: 0
   wrong. Memory (Xtensa): machine 18.3 KB, + buffers 14.4 / 16.0 KB, ROM
   12 KB (six 2 KB chips).
+- Zaxxon (`emu/machines/zaxxon.*`, set `zaxxon` = set 1 rev D - Tom's
+  zip has the old names `zaxxon.1` ... `zaxxon.15`, `zaxxon.u72` / `.u98`;
+  `zaxxon2` (set 2) as a romset variant; portrait 224x256 = the board's
+  256 x 224 (lines 16-239) turned like Pac-Man's (MAME's ROT90), 60.0 Hz).
+  Emulated: Z80 at 3.041 MHz (48.66 MHz / 16, 264 lines of 192 cycles),
+  the VBLANK IRQ (IM 1) raised when U56 bit 0 is set and held until the
+  game writes that bit 0 (its handler does), the coin latches (set by a
+  coin only while U55's enable bit is on, cleared by writing it 0), the
+  inputs (active high), the service switch's NMI, no watchdog; the
+  background: a 256 x 4096 picture of 8 x 8 tiles (32 x 512, codes and
+  colours from the 32 KB tile map ROMs, 3 bits a pixel) at row y - 2 x the
+  11-bit position, column x - y / 2 + 63 (the skew that makes the
+  isometric view), its palette half (U56 bit 6) and switch (bit 7, else
+  black); 32 sprites of 32 x 32 x 3 bits (code & 63, flips in bits 6-7,
+  colour, top line 0xEF - Y, left column X - 16, wrapping at 256; sprite 0
+  on top); the characters (32 x 32, 2 bits, colour from the second PROM at
+  column + 32 x (row / 4), their palette half U56 bit 1) on top; the
+  palette PROM through 1K / 470 / 220 (blue 470 / 220) with 470 ohm
+  pull-downs. Flip screen (cocktail) not drawn. Drawing: a display line is
+  a board column; pixel pairs share a picture column, so the line walks
+  the picture two rows and one column a pair, a run per tile (~45 a line);
+  background tiles are decoded as drawn into a 256-slot cache (8 KB, ~50
+  misses a frame in play) - never the whole 32 KB set, nor a pre-drawn
+  background; the characters' fully opaque tiles at a line's ends (the
+  score / fuel lines are all opaque black or lettered characters, the
+  altitude meter) leave out the background and sprites under them;
+  sprites skip columns that draw nothing. `snapshot()` (1.2 KB) for core
+  0. Idle skipping, exact (picture and audio CRC of every frame the same
+  with and without it over 9,000 frames incl. a two-player game): the
+  main loop's idle passes (01F4: an empty task queue, 600D unchanged;
+  206 / 274 / 279 T-states and 22 / 30 / 31 opcode fetches by its path)
+  are skipped but the last, R and the pass count at 600C added; only when
+  the loop's bytes have set 1's CRC; ~42 % of the cycles in play. PC
+  (best of 3, 3,000 frames with play): emu 0.030 ms (Pac-Man 0.034), render
+  0.080 ms (Pac-Man 0.061); callgrind: render 1.04M host instructions a
+  frame (Pac-Man 0.78M), emulation 0.22M (Pac-Man 0.32M; 0.45M before idle
+  skipping). `--panel` 240x320 / 320x480: 0 wrong; ~19K pixels sent a
+  picture on 320x480 (the background scrolls every frame). Sound: the 8255
+  (E03C-E03F, the game writes FF3C) drives discrete circuits, its outputs
+  active low (facts, MAME's driver): A0-1 engine level, A2 / A3 engines
+  (fortress / space), A4 homing missile, A6 force field, A7 battleship -
+  all held while low; one shots on a falling edge: A5 base missile, B4
+  small explosion, B5 big explosion (not while sounding), B7 cannon, C0
+  enemy shot, C2 alarm 2, C3 alarm 3 (not while sounding). Modelled
+  (`emu/sound/zaxxon_sound.*`), all our own design - the board's part
+  values weren't to be had (no schematic text online; the manual's
+  schematics are scans): two shift-register noise sources (~15 / ~9 kHz,
+  the board has two 555 noise generators), the engines as low-passed /
+  band-passed noise at 0.5 + 0.157 x the level bits (MAME's figure), 555
+  style square VCOs for the missiles, cannon, shot and alarms, a buzzing
+  saw for the force field, a throbbing low square for the battleship,
+  RC-decayed low-passed noise for the explosions; a 20 Hz DC blocker and a
+  soft knee above 16,000 (peaks ~20,000 in play). The 8255's mode write
+  (outputs low for a few microseconds before the game writes FF) isn't
+  passed to the models (it would start every one shot at power-on).
+  Controls: the stick as the cabinet's flight stick - up = pushed forward
+  = dive, down = climb (the arcade's own; the ship moves down the screen
+  when diving), A or B fire, Select coin, Start 1P, L 2P. SW1 switch 7
+  "Sound" is all sound, not an attract switch: the IRQ handler (00DE)
+  outputs sound only with it on and outside the attract mode (6004 bit 0),
+  so `set_demo_sounds` answers false (attract silent either way, checked).
+  `boot_frames` 30: no start-up test, the title page is up at frame 5.
+  Memory: machine 20.8 KB (xtensa), ROM 104.5 KB (biggest 8 KB) - the
+  tile map / graphics regions mostly go to the scratch flash. Unsure: the
+  sound models (character only), the 63-pixel skew offset and sprite
+  offsets (MAME's figures; the picture lines up), flip screen.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

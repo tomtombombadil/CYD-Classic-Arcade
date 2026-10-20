@@ -47,6 +47,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Stargate (stretch) | `stargate` | Stargate | - |
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
 | Battlezone | `bzone` (or `bzonea`, Rev 1) | Battlezone (Rev 2) / (Rev 1) | `bzone` for `bzonea` |
+| Zaxxon | `zaxxon` (or `zaxxon2`) | Zaxxon (set 1, rev D) / (set 2, unknown rev) | `zaxxon` for `zaxxon2` |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -119,6 +120,14 @@ Notes:
   `bubbles.snd`). The two decoder PROMs (`decoder.4`, `decoder.6`, for the
   cocktail flip) aren't needed. Other releases (the red label `bubblesr`,
   the prototype `bubblesp`) have other program ROMs and aren't supported.
+- **Zaxxon:** set 1, rev D (MAME's `zaxxon`; its program ROMs carry a
+  red "D"). Older collections name its 17 files `zaxxon.1` ... `zaxxon.15`,
+  `zaxxon.u72`, `zaxxon.u98` (same contents; today `zaxxon_rom1d.u29` ...,
+  `mro16.u76`). Set 2 (`zaxxon2`: program ROMs 3 and 1 and the character
+  colour PROM `mro17.u41` differ) works too; a split `zaxxon2.zip` needs
+  `zaxxon.zip` beside it. Set 3 and the Japanese set (encrypted) aren't
+  read. The sound board's analog sounds are our own models - MAME's
+  Zaxxon sample set isn't used.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

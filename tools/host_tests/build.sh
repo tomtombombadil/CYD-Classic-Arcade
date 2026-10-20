@@ -45,7 +45,10 @@
 #  14. the Star Wars board (TMS5220, matrix processor on synthetic PROMs,
 #      divider, LFSR, RIOT, the AVG's Star Wars variant, wiring on hand-made
 #      6809 programs), -O2 and with the sanitizers
-#  15. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
+#  15. the Zaxxon board (its picture against a per-pixel model on
+#      synthetic graphics, interrupts, inputs and coin latches, the 8255 and
+#      the sound models), -O2 and with the sanitizers
+#  16. the 8088: hand-made checks and the SingleStepTests 8088 suite (the
 #      start of each opcode's file, ~600 tests each, fetched on first use
 #      into build/i8088 by fetch_i8088_tests.py - not ours, never
 #      committed), both builds
@@ -85,7 +88,8 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/pia6821.cpp $ROOT/emu/machines/williams_blitter.cpp \
      $ROOT/emu/sound/williams_sound.cpp $ROOT/emu/machines/williams.cpp $ROOT/emu/sound/qix_sound.cpp \
      $ROOT/emu/machines/qix.cpp $ROOT/emu/sound/tms5220.cpp $ROOT/emu/machines/riot6532.cpp \
-     $ROOT/emu/machines/starwars_mathbox.cpp $ROOT/emu/machines/starwars.cpp $ROOT/emu/machines/missile.cpp"
+     $ROOT/emu/machines/starwars_mathbox.cpp $ROOT/emu/machines/starwars.cpp $ROOT/emu/machines/missile.cpp \
+     $ROOT/emu/sound/zaxxon_sound.cpp $ROOT/emu/machines/zaxxon.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -201,6 +205,12 @@ g++ $FLAGS $SAN -o "$OUT/qbert_tests_san" "$ROOT/tools/host_tests/qbert_tests.cp
 "$OUT/qbert_tests"
 "$OUT/qbert_tests_san"
 
+echo "== Zaxxon tests (picture vs a per-pixel model, interrupts, inputs, 8255 -> sound models)"
+g++ $FLAGS -O2 -o "$OUT/zaxxon_tests" "$ROOT/tools/host_tests/zaxxon_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/zaxxon_tests_san" "$ROOT/tools/host_tests/zaxxon_tests.cpp" "$LIB_SAN"
+"$OUT/zaxxon_tests"
+"$OUT/zaxxon_tests_san"
+
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" "$LIB_O2" > /dev/null
 python3 "$ROOT/tools/host_tests/make_fake_romset.py" "$OUT/fake"
@@ -208,7 +218,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars missile; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender bubbles qix starwars missile bzone zaxxon; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"
