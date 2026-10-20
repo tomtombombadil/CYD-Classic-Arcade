@@ -13,6 +13,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   `python -m pip install`, never bare `pip install`.
 - He does not want to repeat instructions. Anything decided goes in this
   file, `docs/SPEC.md`, `docs/ROMS.md` or `THIRD_PARTY_NOTICES.md`.
+- Memory (Tom, 2026-10-20: "Stop shooting blindly in the dark. Do the
+  math."): `docs/MEMORY.md` is the RAM budget - each game's exact needs
+  (Xtensa sizeof + the runner's buffers), the always-running baseline and
+  the optional parts, each number with its source. Measure before
+  changing anything about memory; keep the file current. The board's
+  numbers come from `main/memlog.*` (Log: "Mem <step>", "Free blocks",
+  "Stacks used / size").
 - Tom touches the screen with a Nintendo DS Lite stylus, firm presses.
 
 ## Decisions (Tom, 2026-10-14)

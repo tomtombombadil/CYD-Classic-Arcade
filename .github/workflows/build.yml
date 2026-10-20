@@ -91,6 +91,15 @@ jobs:
           ls -l $B/*.bin
           SIZE=$(find ~/.platformio/packages -name 'xtensa-${{ matrix.chip }}-elf-size' -o -name 'xtensa-esp-elf-size' | head -1)
           [ -n "$SIZE" ] && "$SIZE" $B/firmware.elf || true
+          # Static RAM by symbol, biggest first (docs/MEMORY.md): .data / .bss in DRAM
+          NM=$(find ~/.platformio/packages -name 'xtensa-*-elf-nm' | head -1)
+          if [ -n "$NM" ]; then
+            echo "Biggest static RAM symbols (bytes, type, name):"
+            "$NM" -S --size-sort -C $B/firmware.elf | python3 -c "import sys
+          rows = [l.split(None, 3) for l in sys.stdin]
+          rows = [r for r in rows if len(r) == 4 and r[2] in 'bBdD']
+          for r in rows[-40:]: print('%8d %s %s' % (int(r[1], 16), r[2], r[3].strip()))"
+          fi
 
       # One file per board, flashed at 0x0: bootloader + partition table + app
       - name: Merge firmware

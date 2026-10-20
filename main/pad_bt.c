@@ -24,6 +24,7 @@ static pad_state_t s_pads[PAD_MAX];
 static volatile bool s_ready = false;
 
 void devlog_c(const char* text);    // main/devlog.h (C++)
+void memlog_stage_c(const char* what);  // main/memlog.h
 
 static void logf_(const char* fmt, ...) {
     char text[100];
@@ -144,6 +145,7 @@ static void on_init_complete(void) {
 #else
     logf_("BT: started (BLE)");
 #endif
+    memlog_stage_c("Bluetooth started");
     s_ready = true;
 }
 
@@ -185,6 +187,7 @@ static uni_error_t on_ready(uni_hid_device_t* d) {
     // Player LED on controllers that have one
     if (d->report_parser.set_player_leds) d->report_parser.set_player_leds(d, 1 << i);
     logf_("BT: controller %d ready: %s", i + 1, model);
+    memlog_stage_c("controller connected");
     return UNI_ERROR_SUCCESS;
 }
 

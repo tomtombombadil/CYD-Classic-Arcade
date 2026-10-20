@@ -41,6 +41,7 @@
 #include "devlog.h"
 #include "input.h"
 #include "line_diff.h"
+#include "memlog.h"
 #include "screen.h"
 #include "settings.h"
 #include "touch.h"
@@ -191,6 +192,7 @@ void run(int index, AudioRing& ring)
                 unsigned(before_kb),
                 unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
+    memlog::blocks("outside the area");
     games::Machine* m = nullptr;
     catalog::Loaded roms;
     auto give_up = [&](const char* title, const char* text) {
@@ -507,6 +509,7 @@ void run(int index, AudioRing& ring)
     delete m;
     catalog::unload(roms);
     arena::reset();     // the game area is empty again for the next game
+    memlog::stacks();
     crash_note::clear();
     screen::apply_rotation();
     lcd.fillScreen(screen::kBg);

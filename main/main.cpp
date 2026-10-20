@@ -21,6 +21,7 @@
 #include "devlog.h"
 #include "game_runner.h"
 #include "flash_store.h"
+#include "memlog.h"
 #include "menu.h"
 #include "pad.h"
 #include "screen.h"
@@ -47,10 +48,12 @@ void ui_task(void*)
     // starts: the two SPI buses mustn't be busy with DMA at the same time.
     const bool store = flash_store::open();
     const int copied = store ? sd_import::run(sd_status) : 0;
+    memlog::stage("after SD import");
 
     screen::init();
     // Touch first: a resistive panel is calibrated once (first start)
     touch::init();
+    memlog::stage("after screen + touch");
     {
         LGFX& g = screen::lcd();
         const ui::Metrics m = ui::metrics(g);
@@ -73,12 +76,15 @@ void ui_task(void*)
             vTaskDelay(pdMS_TO_TICKS(1500));
         }
         catalog::refresh();
+        memlog::stage("after ROM catalog");
         serial_link::start();
+        memlog::stage("after USB loader");
     } else {
         screen::line(screen::line_h() * 3, screen::kRed, "No ROM storage - reinstall");
     }
     audio::start(audio_fill, nullptr, settings::get().sound_pwm);
     audio::set_volume(settings::get().volume);
+    memlog::stage("after sound");
     // The game area is set aside once Bluetooth has started (its own RAM
     // taken first), so every game starts from the same memory
     for (int i = 0; i < 100 && !pad_bt_ready(); ++i) vTaskDelay(pdMS_TO_TICKS(50));
@@ -86,6 +92,8 @@ void ui_task(void*)
                 unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
                 unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024));
     game_runner::init();
+    memlog::stage("after game area");
+    memlog::blocks("at the menu");
     menu::run(s_ring);
 }
 
@@ -121,6 +129,8 @@ extern "C" void app_main(void)
         devlog::add("Start %s (%s) on %s; reset: %s", CYD_ARCADE_VERSION, CYD_ARCADE_BUILD, BOARD_NAME, why);
         crash_note::at_start();   // a crash's details into the log
         log_flash_setup();
+        devlog::add("Heap: %.1f KB internal in all", double(heap_caps_get_total_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)) / 1024.0);
+        memlog::stage("at start");
     }
     // BTstack keeps controller pairings in NVS; our settings live there too
     esp_err_t err = nvs_flash_init();
@@ -130,7 +140,9 @@ extern "C" void app_main(void)
     }
     settings::load();
     pad_set_swap_ab(settings::get().swap_ab);
+    memlog::stage("after NVS");
     ESP_LOGI(kTag, "CYD Classic Arcade %s (%s) on %s", CYD_ARCADE_VERSION, CYD_ARCADE_BUILD, BOARD_NAME);
     xTaskCreatePinnedToCore(ui_task, "ui", 12288, nullptr, 5, nullptr, 1);
+    memlog::stage("before Bluetooth");
     pad_bt_run();  // never returns
 }
