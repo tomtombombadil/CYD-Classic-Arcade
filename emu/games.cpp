@@ -623,12 +623,6 @@ const ButtonName kZaxxonButtons[] = {
     {"test", zaxxon::kTest},
 };
 
-template <class M> Machine* make() { return new (std::nothrow) M; }
-
-#define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
-
-} // namespace
-
 // ---- Williams: Robotron: 2084, Defender, Bubbles -----------------------------
 
 template <williams::Board B> class Williams : public Machine {
