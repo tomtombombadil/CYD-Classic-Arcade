@@ -1,5 +1,7 @@
 #!/bin/sh
-# Builds the headless runner: tools/host/build.sh [out dir] (default build/host)
+# Builds the headless runner: tools/host/build.sh [out dir] [emulator library]
+# (default build/host; the host tests pass the -O2 library they built, so
+# emu/ isn't compiled again)
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT=${1:-$ROOT/build/host}
@@ -23,6 +25,7 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/williams.cpp $ROOT/emu/sound/qix_sound.cpp $ROOT/emu/machines/qix.cpp \
      $ROOT/emu/sound/tms5220.cpp $ROOT/emu/machines/riot6532.cpp $ROOT/emu/machines/starwars_mathbox.cpp \
      $ROOT/emu/machines/starwars.cpp"
+[ -n "$2" ] && EMU="$2"
 g++ -std=c++17 -O2 -Wall -Wextra -o "$OUT/arcade_host" \
     "$ROOT/tools/host/arcade_host.cpp" "$ROOT/tools/host/writers.cpp" $EMU
 echo "built $OUT/arcade_host"

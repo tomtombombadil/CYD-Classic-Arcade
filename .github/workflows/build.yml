@@ -72,6 +72,18 @@ jobs:
             external
           key: pio-6.1.18-${{ hashFiles('platformio.ini', 'tools/fetch_deps.py') }}
 
+      # The board's last build, so a push recompiles only what changed (a
+      # full ESP-IDF + BTstack build is ~2 minutes). A new sdkconfig.defaults,
+      # platformio.ini, CMake file or dependency pin starts from scratch: a
+      # kept sdkconfig.<env> would otherwise ignore changed defaults.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .pio/build/${{ matrix.env }}
+            sdkconfig.${{ matrix.env }}
+          key: build-${{ matrix.env }}-${{ hashFiles('sdkconfig.defaults*', 'platformio.ini', '**/CMakeLists.txt', 'tools/fetch_deps.py') }}-${{ github.sha }}
+          restore-keys: build-${{ matrix.env }}-${{ hashFiles('sdkconfig.defaults*', 'platformio.ini', '**/CMakeLists.txt', 'tools/fetch_deps.py') }}-
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

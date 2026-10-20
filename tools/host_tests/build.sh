@@ -83,9 +83,28 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
+# The emulator is compiled once per build (-O2 and with the sanitizers), on
+# every core, into a library the tests link: compiling all of emu/ again for
+# each test program, twice, took most of CI's 10 minutes (Tom, 2026-10-20).
+JOBS=$(nproc 2>/dev/null || echo 2)
+emu_lib() {     # emu_lib <name> <flags...>
+    name=$1
+    shift
+    mkdir -p "$OUT/obj_$name"
+    rm -f "$OUT/obj_$name"/*.o "$OUT/libemu_$name.a"
+    printf '%s\n' $EMU "$ROOT/emu/games.cpp" |
+        xargs -P "$JOBS" -I{} sh -c 'g++ $0 -c "$1" -o "$2/$(basename "$1" .cpp).o"' "$FLAGS $*" {} "$OUT/obj_$name"
+    ar rcs "$OUT/libemu_$name.a" "$OUT/obj_$name"/*.o
+}
+echo "== emulator library (-O2, sanitizers; $JOBS jobs)"
+emu_lib o2 -O2
+emu_lib san $SAN
+LIB_O2="$OUT/libemu_o2.a"
+LIB_SAN="$OUT/libemu_san.a"
+
 echo "== build"
-g++ $FLAGS -O2 -o "$OUT/unit_tests" "$ROOT/tools/host_tests/unit_tests.cpp" $EMU
-g++ $FLAGS $SAN -o "$OUT/unit_tests_san" "$ROOT/tools/host_tests/unit_tests.cpp" $EMU
+g++ $FLAGS -O2 -o "$OUT/unit_tests" "$ROOT/tools/host_tests/unit_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/unit_tests_san" "$ROOT/tools/host_tests/unit_tests.cpp" "$LIB_SAN"
 g++ $FLAGS -O2 -o "$OUT/zex_test" "$ROOT/tools/host_tests/zex_test.cpp" "$ROOT/emu/cpu/z80.cpp"
 g++ $FLAGS $SAN -o "$OUT/zex_test_san" "$ROOT/tools/host_tests/zex_test.cpp" "$ROOT/emu/cpu/z80.cpp"
 g++ $FLAGS -O2 -o "$OUT/i8080_test" "$ROOT/tools/host_tests/i8080_test.cpp" "$ROOT/emu/cpu/i8080.cpp"
@@ -120,53 +139,53 @@ g++ $FLAGS $SAN -o "$OUT/m6800_tests_san" "$ROOT/tools/host_tests/m6800_tests.cp
 "$OUT/m6800_tests_san"
 
 echo "== Williams board tests"
-g++ $FLAGS -O2 -o "$OUT/williams_tests" "$ROOT/tools/host_tests/williams_tests.cpp" $EMU
-g++ $FLAGS $SAN -o "$OUT/williams_tests_san" "$ROOT/tools/host_tests/williams_tests.cpp" $EMU
+g++ $FLAGS -O2 -o "$OUT/williams_tests" "$ROOT/tools/host_tests/williams_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/williams_tests_san" "$ROOT/tools/host_tests/williams_tests.cpp" "$LIB_SAN"
 "$OUT/williams_tests"
 "$OUT/williams_tests_san"
 
 echo "== Qix board tests"
-g++ $FLAGS -O2 -o "$OUT/qix_tests" "$ROOT/tools/host_tests/qix_tests.cpp" $EMU
-g++ $FLAGS $SAN -o "$OUT/qix_tests_san" "$ROOT/tools/host_tests/qix_tests.cpp" $EMU
+g++ $FLAGS -O2 -o "$OUT/qix_tests" "$ROOT/tools/host_tests/qix_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/qix_tests_san" "$ROOT/tools/host_tests/qix_tests.cpp" "$LIB_SAN"
 "$OUT/qix_tests"
 "$OUT/qix_tests_san"
 
 echo "== Namco board tests"
-g++ $FLAGS -O2 -o "$OUT/namco_tests" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
-g++ $FLAGS $SAN -o "$OUT/namco_tests_san" "$ROOT/tools/host_tests/namco_tests.cpp" $EMU
+g++ $FLAGS -O2 -o "$OUT/namco_tests" "$ROOT/tools/host_tests/namco_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/namco_tests_san" "$ROOT/tools/host_tests/namco_tests.cpp" "$LIB_SAN"
 "$OUT/namco_tests"
 "$OUT/namco_tests_san"
 
 echo "== Ms. Pac-Man aux board, Mr. Do!, SN76489"
-g++ $FLAGS -O2 -o "$OUT/mspacman_mrdo_tests" "$ROOT/tools/host_tests/mspacman_mrdo_tests.cpp" $EMU
-g++ $FLAGS $SAN -o "$OUT/mspacman_mrdo_tests_san" "$ROOT/tools/host_tests/mspacman_mrdo_tests.cpp" $EMU
+g++ $FLAGS -O2 -o "$OUT/mspacman_mrdo_tests" "$ROOT/tools/host_tests/mspacman_mrdo_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/mspacman_mrdo_tests_san" "$ROOT/tools/host_tests/mspacman_mrdo_tests.cpp" "$LIB_SAN"
 "$OUT/mspacman_mrdo_tests"
 "$OUT/mspacman_mrdo_tests_san"
 echo "== Atari board tests (6502, POKEY, vector display, DVG, AVG, math box, Asteroids, Tempest)"
-g++ $FLAGS -O2 -o "$OUT/atari_tests" "$ROOT/tools/host_tests/atari_tests.cpp" $EMU
-g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cpp" $EMU
+g++ $FLAGS -O2 -o "$OUT/atari_tests" "$ROOT/tools/host_tests/atari_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/atari_tests_san" "$ROOT/tools/host_tests/atari_tests.cpp" "$LIB_SAN"
 "$OUT/atari_tests"
 "$OUT/atari_tests_san"
 
 echo "== Star Wars tests (TMS5220, matrix processor, divider, LFSR, RIOT, AVG variant, board wiring)"
-g++ $FLAGS -O2 -o "$OUT/starwars_tests" "$ROOT/tools/host_tests/starwars_tests.cpp" $EMU
-g++ $FLAGS $SAN -o "$OUT/starwars_tests_san" "$ROOT/tools/host_tests/starwars_tests.cpp" $EMU
+g++ $FLAGS -O2 -o "$OUT/starwars_tests" "$ROOT/tools/host_tests/starwars_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/starwars_tests_san" "$ROOT/tools/host_tests/starwars_tests.cpp" "$LIB_SAN"
 "$OUT/starwars_tests"
 "$OUT/starwars_tests_san"
 
 echo "== Burger Time tests (AY-3-8910, DECO CPU-7, board wiring)"
-g++ $FLAGS -O2 -o "$OUT/btime_tests" "$ROOT/tools/host_tests/btime_tests.cpp" $EMU
-g++ $FLAGS $SAN -o "$OUT/btime_tests_san" "$ROOT/tools/host_tests/btime_tests.cpp" $EMU
+g++ $FLAGS -O2 -o "$OUT/btime_tests" "$ROOT/tools/host_tests/btime_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/btime_tests_san" "$ROOT/tools/host_tests/btime_tests.cpp" "$LIB_SAN"
 "$OUT/btime_tests"
 "$OUT/btime_tests_san"
 echo "== Q*bert board tests"
-g++ $FLAGS -O2 -o "$OUT/qbert_tests" "$ROOT/tools/host_tests/qbert_tests.cpp" $EMU "$ROOT/emu/games.cpp"
-g++ $FLAGS $SAN -o "$OUT/qbert_tests_san" "$ROOT/tools/host_tests/qbert_tests.cpp" $EMU "$ROOT/emu/games.cpp"
+g++ $FLAGS -O2 -o "$OUT/qbert_tests" "$ROOT/tools/host_tests/qbert_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/qbert_tests_san" "$ROOT/tools/host_tests/qbert_tests.cpp" "$LIB_SAN"
 "$OUT/qbert_tests"
 "$OUT/qbert_tests_san"
 
 echo "== host runner on a synthetic ROM set (no game code)"
-"$ROOT/tools/host/build.sh" "$OUT" > /dev/null
+"$ROOT/tools/host/build.sh" "$OUT" "$LIB_O2" > /dev/null
 python3 "$ROOT/tools/host_tests/make_fake_romset.py" "$OUT/fake"
 rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
@@ -180,7 +199,7 @@ echo "missing ROMs reported: ok"
 
 echo "== the web page's ROM loader (web/roms/loader.js) against a fake board"
 g++ $FLAGS -O2 -o "$OUT/fake_board" "$ROOT/tools/host_tests/fake_board.cpp" \
-    "$ROOT/core/rom_store.cpp" "$ROOT/core/usb_import.cpp" $EMU "$ROOT/emu/games.cpp"
+    "$ROOT/core/rom_store.cpp" "$ROOT/core/usb_import.cpp" "$LIB_O2"
 if command -v node > /dev/null 2>&1; then
     "$OUT/arcade_host" --list-json > "$OUT/games.json"
     node --check "$ROOT/web/roms/loader.js"

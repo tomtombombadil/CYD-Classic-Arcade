@@ -1061,7 +1061,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   30-40 minutes): push firmware changes straight to main; CI deploys the
   flasher only when the host tests AND every board build pass, so a broken
   commit never reaches it - fix it at once. The board builds run alongside
-  the host tests (~11 minutes push to flasher).
+  the host tests. Still ~11 minutes (Tom: "WAY too long ... my other
+  repos post super quick"): the host tests compiled all of emu/ ~26 times
+  on one core. Now emu/ is built once per flavour (-O2, sanitizers) as a
+  library on every core and each test links it; each board keeps its last
+  `.pio/build` in the Actions cache (fresh when sdkconfig / platformio.ini
+  / a CMake file / a dependency pin changes), so a push recompiles only
+  what changed. Never go back to compiling emu/ per test program.
 - Every push to main: CI builds every env with `custom_firmware_name`,
   merges each into one image at 0x0 (esptool merge_bin) and publishes
   `web/index.html` + `tools/make_site.py`'s manifests on GitHub Pages:
