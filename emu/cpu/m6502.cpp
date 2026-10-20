@@ -160,7 +160,7 @@ void Cpu::sbc(uint8_t m)
 
 // The eight read modes of a group-1 opcode column (ORA AND EOR ADC LDA CMP SBC).
 #define G1(base, OP) \
-    case base + 0x01: { const uint8_t m = rd(INDX());   OP; break; } \
+    case base + 0x01: { const uint8_t m = rd_indx(INDX()); OP; break; } \
     case base + 0x05: { const uint8_t m = rd(ZP());     OP; break; } \
     case base + 0x09: { const uint8_t m = fetch();      OP; break; } \
     case base + 0x0d: { const uint8_t m = rd(ABS());    OP; break; } \
@@ -219,7 +219,7 @@ EMU_HOT int Cpu::run(int cycles)
         G1(0xe0, sbc(m))
 
         // STA
-        case 0x81: wr(INDX(), a); break;
+        case 0x81: wr_indx(INDX(), a); break;
         case 0x85: wr(ZP(), a); break;
         case 0x8d: wr(ABS(), a); break;
         case 0x91: wr(INDY(), a); break;

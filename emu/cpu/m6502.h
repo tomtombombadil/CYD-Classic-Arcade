@@ -16,6 +16,11 @@
 // fetch; it returns the opcode to run. For CPUs that decrypt opcodes (Data
 // East's DECO CPU-7 in Burger Time swaps bits when the previous
 // instruction wrote).
+//
+// indexed_io (set by opcode_hook): the (zp,X) instruction just fetched makes
+// its data access through mem_read / mem_write whatever the page table says
+// (Missile Command's MADSEL: the board sends that access to its pixel
+// logic). stall() adds wait states to the instruction running.
 #pragma once
 
 #include <cstdint>
@@ -77,6 +82,12 @@ public:
     void irq(bool level) { irq_line_ = level; check_ = level || nmi_pending_; }   // level-triggered
     bool irq_line() const { return irq_line_; }
     void nmi() { nmi_pending_ = true; check_ = true; }  // edge: taken once
+    // From a callback: the instruction running takes `n` more cycles.
+    void stall(int n) { done_ += n; }
+
+    // Set by opcode_hook for a (zp,X) opcode: its data access goes to the
+    // callbacks; cleared by that access.
+    bool indexed_io = false;
 
     // --- registers (public for tests and debuggers) -----------------------
     uint8_t  a = 0, x = 0, y = 0, s = 0xfd;
@@ -112,6 +123,20 @@ public:
     }
 
 private:
+    M6502_INLINE uint8_t rd_indx(uint16_t a)
+    {
+        if (!indexed_io) return rd(a);
+        indexed_io = false;
+        return mem_read(ctx, a);
+    }
+    M6502_INLINE void wr_indx(uint16_t a, uint8_t v)
+    {
+        if (!indexed_io) return wr(a, v);
+        indexed_io = false;
+        wrote_ = true;
+        mem_write(ctx, a, v);
+    }
+
     // Flags kept apart: N = bit 7 of n_, Z = (z_ == 0), C = c_ (0 / 1).
     uint8_t n_ = 0, z_ = 1, c_ = 0;
     bool    v_ = false, d_ = false, i_ = true;
