@@ -62,6 +62,16 @@ Robotron / Defender 51.9) or one of Qix's 32 KB halves.
 - Static RAM (.data + .bss, fixed at build): v0.3.1 105.6 KB, v0.15.x
   121 KB **(build)**; the biggest static symbols are listed in every CI
   build log ("Biggest static RAM symbols").
+- Static RAM's biggest users **(build, v0.15.6, 3.5")**: BTstack's HCI
+  ring buffer 22.3 KB, Bluepad32's g_devices 11.3 KB, the sound ring
+  (`s_ring`, audio_out) 8.2 KB, the menu object (`menu::run` m) 7.9 KB,
+  Bluepad32's arrControllers 6.8 KB, the log ring 4.1 KB, ROM store
+  directory 3.9 KB, port_IntStack 3 KB, the USB loader session 2.2 KB.
+  Moved out in v0.15.7 (used only now and then, borrowed while in use):
+  the controller test's 14 KB screen-speed strips (game area) and the SD
+  import's 4 KB copy buffer (heap, at start-up) - 18 KB more for games.
+  Until v0.15.6 CI's list counted const tables in flash (fonts, POKEY's
+  17-bit poly) as RAM; it now lists only symbols at DRAM addresses.
 - v0.1.0 (controller test, Bluetooth on): 142 KB free, largest block
   108 KB **(board, Tom)**.
 - v0.14.6, 3.2" at a game's start: ~77 KB free; v0.15.4, 3.5": 70 KB

@@ -104,13 +104,16 @@ jobs:
           ls -l $B/*.bin
           SIZE=$(find ~/.platformio/packages -name 'xtensa-${{ matrix.chip }}-elf-size' -o -name 'xtensa-esp-elf-size' | head -1)
           [ -n "$SIZE" ] && "$SIZE" $B/firmware.elf || true
-          # Static RAM by symbol, biggest first (docs/MEMORY.md): .data / .bss in DRAM
+          # Static RAM by symbol, biggest first (docs/MEMORY.md). Only what
+          # sits in internal DRAM (0x3FC00000-0x3FFFFFFF on both chips):
+          # const tables in flash also show as 'd' (ESP-IDF's .flash.rodata)
           NM=$(find ~/.platformio/packages -name 'xtensa-*-elf-nm' | head -1)
           if [ -n "$NM" ]; then
             echo "Biggest static RAM symbols (bytes, type, name):"
             "$NM" -S --size-sort -C $B/firmware.elf | python3 -c "import sys
           rows = [l.split(None, 3) for l in sys.stdin]
-          rows = [r for r in rows if len(r) == 4 and r[2] in 'bBdD']
+          rows = [r for r in rows if len(r) == 4 and r[2] in 'bBdD' and 0x3FC00000 <= int(r[0], 16) < 0x40000000]
+          print('in DRAM: %d bytes in %d symbols' % (sum(int(r[1], 16) for r in rows), len(rows)))
           for r in rows[-40:]: print('%8d %s %s' % (int(r[1], 16), r[2], r[3].strip()))"
           fi
 

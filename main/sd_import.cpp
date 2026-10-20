@@ -147,6 +147,8 @@ bool holds_known_rom(FILE* f, long size)
     return known;
 }
 
+constexpr size_t kBuf = 4096;   // copy buffer, on the heap only while importing
+
 bool already_stored(const char* name, long size)
 {
     rom_store::Store& st = flash_store::store();
@@ -155,13 +157,12 @@ bool already_stored(const char* name, long size)
     return false;
 }
 
-bool copy(FILE* f, const char* name, long size)
+bool copy(FILE* f, const char* name, long size, uint8_t* buf)
 {
-    static uint8_t buf[4096];
     uint32_t crc = 0;
     std::fseek(f, 0, SEEK_SET);
     for (long done = 0; done < size;) {
-        const size_t n = std::fread(buf, 1, sizeof buf, f);
+        const size_t n = std::fread(buf, 1, kBuf, f);
         if (n == 0) return false;
         crc = crc32::update(crc, buf, n);
         done += long(n);
@@ -170,7 +171,7 @@ bool copy(FILE* f, const char* name, long size)
     if (!st.begin(name, uint32_t(size), crc)) return false;
     std::fseek(f, 0, SEEK_SET);
     for (long done = 0; done < size;) {
-        const size_t n = std::fread(buf, 1, sizeof buf, f);
+        const size_t n = std::fread(buf, 1, kBuf, f);
         if (n == 0 || !st.add(buf, uint32_t(n))) { st.abort(); return false; }
         done += long(n);
     }
@@ -205,7 +206,10 @@ int run(Status status)
                 char line[64];
                 std::snprintf(line, sizeof line, "Copying %s", name);
                 if (status) status(line);
-                if (copy(f, name, long(stt.st_size))) {
+                uint8_t* buf = static_cast<uint8_t*>(std::malloc(kBuf));
+                const bool ok = buf && copy(f, name, long(stt.st_size), buf);
+                std::free(buf);
+                if (ok) {
                     ++copied;
                     devlog::add("SD: copied %s (%ld KB)", name, long(stt.st_size) / 1024);
                 } else {

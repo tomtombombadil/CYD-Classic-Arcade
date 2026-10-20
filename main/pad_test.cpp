@@ -1,6 +1,7 @@
 // Controller Test (see pad_test.h).
 #include "pad_test.h"
 
+#include "arena.h"
 #include "input.h"
 #include "screen.h"
 #include "touch.h"
@@ -42,11 +43,16 @@ void text(int y, uint16_t color, const char* s)
 }
 
 // Sends a 224x288 frame in 16-line strips, as a game does, and
-// returns the time per frame in 1/10 ms.
+// returns the time per frame in 1/10 ms (-1 without room). The 14 KB of
+// strips are borrowed from the game area (empty in the menu), not kept as
+// static RAM all the time (docs/MEMORY.md).
 int measure_frame_push()
 {
     constexpr int kW = 224, kH = 288, kStrip = 16, kFrames = 10;
-    static uint16_t strips[2][kW * kStrip];
+    arena::reset();
+    uint16_t (*strips)[kW * kStrip] =
+        static_cast<uint16_t (*)[kW * kStrip]>(arena::alloc(2 * kW * kStrip * sizeof(uint16_t)));
+    if (!strips) return -1;
     LGFX& l = lcd();
     const int x0 = (l.width() - kW) / 2;
     const int y0 = l.height() - kH;
@@ -62,6 +68,7 @@ int measure_frame_push()
     const int64_t t1 = esp_timer_get_time();
     l.endWrite();
     l.fillRect(x0, y0, kW, kH, kBg);
+    arena::reset();
     return int((t1 - t0) / (kFrames * 100));
 }
 
@@ -120,8 +127,11 @@ void run(AudioRing& ring)
     const int h = lh();
     char buf[64];
     text(top, kMuted, BOARD_NAME);
-    std::snprintf(buf, sizeof buf, "224x288 frame: %d.%d ms (%d fps max)", ms10 / 10, ms10 % 10,
-                  ms10 ? 10000 / ms10 : 0);
+    if (ms10 < 0)
+        std::snprintf(buf, sizeof buf, "224x288 frame: no room to measure");
+    else
+        std::snprintf(buf, sizeof buf, "224x288 frame: %d.%d ms (%d fps max)", ms10 / 10, ms10 % 10,
+                      ms10 ? 10000 / ms10 : 0);
     text(top + h * 2, kText, buf);
     const int band = h * 2 + 2 * (h + 6) + 6;
     const int pad_y = top + h * 4;
