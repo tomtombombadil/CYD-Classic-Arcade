@@ -69,14 +69,15 @@ constexpr int kStrip = 8;               // lines per strip sent (7.5 KB at 480 w
 constexpr int kMaxLines = 512;
 constexpr int kAudioCap = 1024;         // samples per frame, at most
 // Internal RAM kept out of the game area (main/arena.h) for Bluetooth,
-// the USB loader and the system. The ESP32 boards have only ~70 KB free
-// once everything has started (Tom's 3.5", v0.15.4: 31 KB area + 39 KB
-// outside); Bluetooth's buffers are set aside at start-up, and in v0.14
-// Galaga played with ~25 KB left, so 16 KB is kept there (v0.15.0-v0.15.4
-// kept 40 KB and only Pac-Man and Space Invaders fitted). The S3 has
-// RAM to spare.
+// the USB loader and the system. Before v0.15 a game simply took what it
+// needed from the free RAM: Star Wars played on Tom's 3.2" (ESP32, ~77 KB
+// free) with ~15 KB left, and Bluetooth was fine. v0.15.0-v0.15.4 kept
+// 40 KB back, which left a 31 KB area on his 3.5" and only Pac-Man and
+// Space Invaders fitted (Tom: "these games were playing fine a couple
+// revisions ago"). 12 KB is kept back on the ESP32 now, as v0.14 left;
+// the S3 has RAM to spare.
 #if CONFIG_IDF_TARGET_ESP32
-constexpr uint32_t kSystemReserve = 16 * 1024;
+constexpr uint32_t kSystemReserve = 12 * 1024;
 #else
 constexpr uint32_t kSystemReserve = 40 * 1024;
 #endif

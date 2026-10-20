@@ -337,17 +337,20 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   messages give the blocks: "70 KB (48 + 14 + 8)", and a failed start the
   RAM free outside the area. v0.15.5 (Tom, v0.15.4 on the 3.5": "31 KB (31) game area;
   39 KB free outside" - every game but Pac-Man and Space Invaders "Not
-  enough memory"): the ESP32 boards have only ~70 KB free once Bluetooth,
-  the tasks (ui 12 KB, main / BTstack 8, usb 6 + 4 KB UART buffer, draw 5,
-  audio 3) and the drivers have started (static DRAM grew only 105.6 ->
-  121 KB since v0.3.1), so `kSystemReserve` is 16 KB on the ESP32 (40 on
-  the S3); v0.14 played Galaga with ~25 KB left. The PWM sound buffer (4
-  KB) is taken only when PWM is used. Machine + runner buffers (PC, 64-bit
-  - a little over the board's): Pac-Man 32 KB, Invaders 25, Rally-X 34,
-  Donkey Kong 37, Burger Time 37, Q*bert 39, Galaga 42, Asteroids 43,
-  Tempest 47, Dig Dug 50, Mr. Do! 50, Ms. Pac-Man 52 (its machine alone
-  35 - one block), Robotron 68, Defender 68, Star Wars 69, Qix 89 - the
-  last four don't fit an ESP32 board's ~70 KB; they need the S3. Allocation goes up from the bottom; freeing gives room
+  enough memory"; "these games were playing fine a couple revisions ago"):
+  the area was capped at free RAM minus the 40 KB reserve (70 - 40), not
+  by fragmentation. Before v0.15 a game took what it needed from the free
+  RAM (Star Wars played on the 3.2" with ~15 KB left, Bluetooth fine), so
+  `kSystemReserve` is 12 KB on the ESP32 (40 on the S3) - never raise it
+  without checking every game still starts on an ESP32 board. The ESP32
+  boards have ~70-77 KB free at a game's start (tasks: ui 12 KB, main /
+  BTstack 8, usb 6 + 4 KB UART buffer, draw 5 - kept since v0.15.0 -,
+  audio 3; static DRAM 105.6 KB at v0.3.1, 121 KB now). The PWM sound
+  buffer (4 KB) is taken only when PWM is used. Machine + runner buffers
+  (PC, 64-bit - a little over the board's): Invaders 25 KB, Pac-Man 32,
+  Rally-X 34, Donkey Kong 37, Burger Time 37, Q*bert 39, Galaga 42,
+  Asteroids 43, Tempest 47, Dig Dug 50, Mr. Do! 50, Ms. Pac-Man 52,
+  Robotron 68, Defender 68, Star Wars 69, Qix 89. Allocation goes up from the bottom; freeing gives room
   back only for the newest block. The draw task (core 0) is made once at
   start-up, outside the area. The Log page borrows the area while it's
   open (no game then). About shows the area's size and the most a game
