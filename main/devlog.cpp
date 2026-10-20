@@ -17,8 +17,6 @@
 namespace devlog {
 namespace {
 
-constexpr size_t kLineMax = 112;
-
 RTC_NOINIT_ATTR log_ring::Ring<4096> s_ring;
 portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 

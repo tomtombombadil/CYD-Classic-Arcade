@@ -140,7 +140,7 @@ void Session::line(char* text)
         if (games_) games_(ctx_, list, sizeof list);
         reply("GAMES %s", list);
     } else if (std::strcmp(cmd, "LOG") == 0) {
-        char text[200];
+        char text[260];        // a log line (the board's are at most 255)
         int n = 0;
         while (log_ && n < kMaxLogLines && log_(ctx_, n, text, sizeof text)) {
             for (char* c = text; *c; ++c)

@@ -458,6 +458,19 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   `cyd-arcade-log-<board>-<date>.txt` (CRLF, for Notepad). The board has
   one log (4 KB in RTC memory): there are no other log files. Tested in
   core_tests and loader_test (fake_board answers LOG).
+- Log lines (v0.18.2; Tom's 4.0" log: the end-of-game speed line stopped
+  at "picture 5.0 (worst 14.9"): `devlog::kLineMax` 256 (was 112); the
+  ring keeps lines at their own length, the readers (Log, Send Log, LOG)
+  size their buffers from it.
+- Port opening (v0.18.2; Tom: the 4.0" S3 restarted at every Download
+  Log - "is there a way NOT to reboot every time serial connects?"): RTS
+  on with DTR off resets the board (CH340 auto-reset transistors and the
+  S3's USB-Serial-JTAG alike), and the page's one setSignals({DTR off,
+  RTS off}) passed through that pair (Chrome clears DTR first). Now RTS
+  is cleared first, then DTR. Unconfirmed on a board; if a reset remains
+  it comes from the port opening itself (the driver), which the page
+  can't control - the board then reopens USB Transfer by itself (NVS
+  usb_xfer) and the log survives the reset.
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
   checked by `arcade_host --check-table`; the USB loader's GAMES reply has
   room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).

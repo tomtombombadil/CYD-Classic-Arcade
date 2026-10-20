@@ -452,8 +452,15 @@ async function openBoard(fail, button) {
     fail("Couldn't open the port: " + e.message + " Is something else using it?");
     return null;
   }
-  // Both lines released = the board runs normally (they drive reset / boot mode)
-  try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) { /* not supported */ }
+  // Both lines released = the board runs normally. RTS on with DTR off is
+  // the reset (the CH340 boards' auto-reset transistors and the ESP32-S3's
+  // own USB both read it so), and Chrome clears DTR before RTS when both
+  // are set in one call - so RTS first, then DTR, never that pair between
+  // (Tom, v0.18.1: the 4.0" S3 restarted at every Download Log).
+  try {
+    await port.setSignals({ requestToSend: false });
+    await port.setSignals({ dataTerminalReady: false });
+  } catch (e) { /* not supported */ }
 
   const writer = port.writable.getWriter();
   const reader = port.readable.getReader();

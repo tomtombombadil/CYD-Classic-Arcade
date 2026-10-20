@@ -13,11 +13,16 @@
 
 namespace devlog {
 
+// The longest line kept (with its NUL). v0.18.1's 112 cut the end-of-game
+// speed line short (Tom's 4.0" log, 2026-10-20); lines are stored at their
+// own length, so a bigger limit costs only the buffers that read them.
+constexpr size_t kLineMax = 256;
+
 // At start-up, first thing: keeps the earlier lines unless the board was
 // powered on, then logs this start (firmware, board, why it reset).
 void init();
 
-// One line (printf style; longer than ~110 characters is cut). Safe from
+// One line (printf style; longer than kLineMax - 1 characters is cut). Safe from
 // any task.
 void add(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 

@@ -192,7 +192,7 @@ struct Menu {
     void open_log()
     {
         arena::reset();
-        constexpr size_t kLine = 112;
+        constexpr size_t kLine = devlog::kLineMax;
         const int want = devlog::count();
         int n = 0;
         const char** lines = static_cast<const char**>(arena::alloc(sizeof(char*) * size_t(want > 0 ? want : 1)));
@@ -236,7 +236,7 @@ struct Menu {
         if (maxv > qrcodegen_VERSION_MAX) maxv = qrcodegen_VERSION_MAX;
 
         arena::reset();
-        constexpr size_t kLine = 112;
+        constexpr size_t kLine = devlog::kLineMax;
         const int total = devlog::count();
         const size_t cap = 256 + kLine * size_t(total > 0 ? total : 1);
         const size_t url_n = std::strlen(logpack::kUrl);
