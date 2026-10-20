@@ -46,6 +46,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Bubbles | `bubbles` | Bubbles | - |
 | Stargate (stretch) | `stargate` | Stargate | - |
 | Star Wars | `starwars` | Star Wars (Atari, set 1) | - |
+| Battlezone | `bzone` (or `bzonea`, Rev 1) | Battlezone (Rev 2) / (Rev 1) | `bzone` for `bzonea` |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -71,6 +72,15 @@ program (`136021.214`) is recognised; `starwars1` / `starwarso` (program
 `136021.114`) aren't.
 
 Notes:
+- **Battlezone:** the Rev 2 set (`bzone`, program `036414-02.e1` ...) or
+  Rev 1 (`bzonea`; older MAME collections call it `bzone`, files
+  `036414.01`, `036413.01` ... `036409.01`, `036421.01`, `036422.01`).
+  Only the first program chip (`036414`) differs, so a split `bzonea.zip`
+  needs `bzone.zip` beside it; with both sets present, Rev 2 is used. The
+  vector generator's PROM (`036408-01.k7`) and the math box PROMs
+  (`036174-01.b1`, `036175-01.m1` ... `036180-01.f1`) aren't needed. The
+  cocktail set (`bzonec`) and Bradley Trainer have other programs and
+  aren't read.
 - **Galaga, Dig Dug:** non-merged sets also hold the Namco custom chips'
   own programs (`51xx.bin`, `53xx.bin`, `54xx.bin`). They aren't needed or
   used: the chips are modelled from their known behaviour (Galaga's

@@ -22,6 +22,7 @@
 #include "machines/starwars.h"
 #include "machines/tempest.h"
 #include "machines/williams.h"
+#include "machines/bzone.h"
 
 #include <cstring>
 #include <new>
@@ -530,6 +531,56 @@ const ButtonName kMissileButtons[] = {
     {"start2", missile::kStart2}, {"test", missile::kTest}, {"tilt", missile::kTilt},
 };
 
+// ---- Battlezone ---------------------------------------------------------------
+
+class Bzone : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[bzone::kRegionCpu], r[bzone::kRegionVector]}, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { buttons_ = b; }
+    // The sticks' Y drive the treads, tank style (bzone::treads()).
+    void set_analog(const Analog& a) override { ly_ = a.ly; ry_ = a.ry; }
+    int  run_frame(int16_t* a, int cap) override
+    {
+        m_.set_inputs(bzone::treads(buttons_, ly_, ry_));
+        return m_.run_frame(a, cap);
+    }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+    bool snapshot() override { return m_.snapshot(); }
+    void render_snapshot_line(int y, uint16_t* out) override { m_.render_snapshot_line(y, out); }
+
+private:
+    bzone::Machine m_;
+    uint16_t buttons_ = 0;
+    int      ly_ = 0, ry_ = 0;
+};
+
+// The d-pad drives: up = both treads forward, down = both back, left = left
+// back + right forward (turns left on the spot), right the mirror; a
+// diagonal adds both, and a tread pressed both ways stops (bzone::Machine::
+// in3), so up + left = right tread only (forward, turning left), down +
+// left = left tread back. Or the sticks, tank style: left stick Y = left
+// tread, right stick Y = right tread (bzone::treads). A fires.
+const Control kBzoneControls[] = {
+    {kPadUp, bzone::kLeftFwd | bzone::kRightFwd}, {kPadDown, bzone::kLeftBack | bzone::kRightBack},
+    {kPadLeft, bzone::kLeftBack | bzone::kRightFwd}, {kPadRight, bzone::kLeftFwd | bzone::kRightBack},
+    {kPadA, bzone::kFire}, {kPadSelect, bzone::kCoin}, {kPadStart, bzone::kStart1},
+    {kPadL, bzone::kStart2},
+};
+
+const ButtonName kBzoneButtons[] = {
+    {"fire", bzone::kFire}, {"lfwd", bzone::kLeftFwd}, {"lback", bzone::kLeftBack},
+    {"rfwd", bzone::kRightFwd}, {"rback", bzone::kRightBack},
+    {"up", bzone::kLeftFwd | bzone::kRightFwd}, {"down", bzone::kLeftBack | bzone::kRightBack},
+    {"left", bzone::kLeftBack | bzone::kRightFwd}, {"right", bzone::kLeftFwd | bzone::kRightBack},
+    {"coin", bzone::kCoin}, {"coin2", bzone::kCoin2}, {"start1", bzone::kStart1},
+    {"start2", bzone::kStart2}, {"test", bzone::kTest}, {"step", bzone::kDiagStep},
+};
+
 // ---- Williams: Robotron: 2084, Defender, Bubbles -----------------------------
 
 template <williams::Board B> class Williams : public Machine {
@@ -771,6 +822,9 @@ const Info kGames[] = {
      Orientation::Landscape, missile::kClock, missile::kTicksPerFrame, kMissileControls,
      COUNT(kMissileControls), kMissileButtons, COUNT(kMissileButtons), nullptr, 0, make<Missile>, false, false,
      "Atari", 1980, 48},
+    {"bzone", "Battlezone", &bzone::kRomSet, bzone::kScreenW, bzone::kScreenH, Orientation::Landscape,
+     bzone::kCpuClock, bzone::kCyclesPerFrame, kBzoneControls, COUNT(kBzoneControls), kBzoneButtons,
+     COUNT(kBzoneButtons), nullptr, 0, make<Bzone>, false, false, "Atari", 1980, 70},
 };
 
 const int kGameCount = COUNT(kGames);

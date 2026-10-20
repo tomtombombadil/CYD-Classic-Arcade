@@ -23,6 +23,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Q\*bert | 8088 5 MHz | 6502 sound CPU + RIOT + DAC, Votrax SC-01 speech (our model), knocker (our model) | 240x256 portrait | done: idle-loop skipping brings 81K 8088 cycles a frame to ~7-12K |
 | Asteroids | 6502 1.5 MHz | vector display (DVG), analog sound (our own models) | 320x240 landscape (lines drawn row by row from a segment list) | done: idle-loop skipping, ~0.04 ms a frame on the PC |
 | Tempest | 6502 1.5 MHz | colour vector display (AVG), math box, 2 POKEY (sound, spinner, buttons), EAROM | 320x240 landscape, the nearly square AVG window at its true shape in the middle (lines drawn row by row from a segment list) | done: ~0.06 ms a frame on the PC (the game keeps its CPU busy) |
+| Battlezone | 6502 1.5 MHz | monochrome vector display (AVG with a clip window), math box, POKEY (sound, treads, buttons), analog sound (our own models of the engine, shell and explosion circuits) | 320x221 landscape, the 580 x 400 AVG window at its true shape, red over the top fifth and green below (the cabinet's overlay) | done: waits skipped (exact), ~0.05 ms a frame on the PC |
 | Rally-X | Z80 3.072 MHz | Namco wavetable sound (as Pac-Man), analog crash "bang", scrolling + radar | 288x224 landscape | easy (after Pac-Man) |
 | Ms. Pac-Man | Z80 3.072 MHz | the Pac-Man board + Midway's aux board (scrambled ROMs laid over the Pac-Man program, a latch set / cleared by trap addresses) | 224x288 portrait | done: as Pac-Man |
 | Mr. Do! | Z80 4.1 MHz | 2 x SN76489, two tile layers (one scrolls) + sprites, a protection PAL | 192x240 portrait | done: ~Pac-Man's cost |
@@ -97,7 +98,7 @@ Games render line by line into small strips sent to the panel by DMA - a
 whole 224x288 frame buffer (129 KB) doesn't fit beside Bluetooth. Portrait
 games fill the width of a 240x320 panel with an 8-pixel border; the
 320x480 panels scale up. Landscape games (Asteroids, Defender, Stargate,
-Tempest, Missile Command) turn the panel at game start.
+Tempest, Missile Command, Battlezone) turn the panel at game start.
 
 ## 6. ROM storage
 

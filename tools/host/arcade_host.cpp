@@ -51,7 +51,10 @@
 //                         step;
 //                         missile: up down left right (the trackball, steady)
 //                         fireleft fire fireright coin coin2 start1 start2
-//                         test tilt; any game: lx=N / ly=N, the left stick's X / Y
+//                         test tilt; bzone: fire lfwd lback rfwd rback (the
+//                         treads) up down left right (both treads, as the
+//                         d-pad) coin coin2 start1 start2 test step;
+//                         any game: lx=N / ly=N, the left stick's X / Y
 //                         -512..511 (down positive), e.g.
 //                         "1200+60:lx=-300+fire")
 //     --verbose           one timing line per frame

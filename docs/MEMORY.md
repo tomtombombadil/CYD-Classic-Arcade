@@ -44,6 +44,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Donkey Kong | 21.3 | - | 14.7 / 16.1 | **36.0 / 37.4** | 1.8 | 32.8 | 4 |
 | Galaga | 23.8 | - | 15.7 / 17.1 | **39.5 / 40.9** | 3.6 | 37.0 | 4 |
 | Asteroids | 25.5 | - | 15.8 / 17.7 | **41.3 / 43.2** | 20.0 | 8.0 | 2 |
+| Battlezone | 27.7 | - | 15.2 / 17.7 | **42.9 / 45.4** | 20.0 | 16.0 | 2 |
 | Tempest | 29.2 | - | 15.8 / 17.7 | **45.0 / 46.9** | 20.0 | 24.0 | 4 |
 | Dig Dug | 31.9 | - | 15.7 / 17.1 | **47.6 / 49.0** | 1.8 | 55.0 | 4 |
 | Mr. Do! | 34.3 | - | 14.1 / 15.5 | **48.4 / 49.8** | - | 56.1 | 8 |
@@ -60,6 +61,15 @@ KB) + the POKEY; shown 266 x 240 on the 240x320 panels and 355 x 320 on
 the 320x480 ones (strip 4,256 / 5,680 bytes, segment hashes 231 x 8 x 4 =
 7,392); the snapshot copies its picture's RAM (0200-3FFF) + 8 pens,
 15,888 bytes.
+
+Battlezone (320 x 221) **(xtensa / code)**: machine 28,368 bytes (the
+vector display 20,536 of it - 1,024 segments; the sound board 104, the
+POKEY 132); buffers at 240x320: strip 320 x 8 x 2, line 640, x map 640,
+segment hashes 221 x 8 x 4 = 7,072, sound 2,048 - 15,560 bytes with the
+heads; at 320x480 (shown 463 x 320): strip 7,408, x map 928 - 18,136
+bytes. Snapshot: 1,024 x 20 + 8. Most segments seen: 525 (attract mode),
+449 (play). With everything in RAM: 42.9 + 20.0 + 16.0 = 78.9 KB at
+240x320, 81.4 KB at 320x480 - inside the ~92 KB area.
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
 Robotron / Defender / Bubbles 51.9) or one of Qix's 32 KB halves.
