@@ -33,6 +33,8 @@
 // (CYD-BYOG-PoolRadSeries) draw this way on every board.
 #include "game_runner.h"
 
+#include <sdkconfig.h>
+
 #include "arena.h"
 #include "catalog.h"
 #include "crash_note.h"
@@ -67,9 +69,17 @@ constexpr int kStrip = 8;               // lines per strip sent (7.5 KB at 480 w
 constexpr int kMaxLines = 512;
 constexpr int kAudioCap = 1024;         // samples per frame, at most
 // Internal RAM kept out of the game area (main/arena.h) for Bluetooth,
-// the USB loader and the system; games ran with this much left free in
-// v0.14 and Bluetooth was fine.
+// the USB loader and the system. The ESP32 boards have only ~70 KB free
+// once everything has started (Tom's 3.5", v0.15.4: 31 KB area + 39 KB
+// outside); Bluetooth's buffers are set aside at start-up, and in v0.14
+// Galaga played with ~25 KB left, so 16 KB is kept there (v0.15.0-v0.15.4
+// kept 40 KB and only Pac-Man and Space Invaders fitted). The S3 has
+// RAM to spare.
+#if CONFIG_IDF_TARGET_ESP32
+constexpr uint32_t kSystemReserve = 16 * 1024;
+#else
 constexpr uint32_t kSystemReserve = 40 * 1024;
+#endif
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 

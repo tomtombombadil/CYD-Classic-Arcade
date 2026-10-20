@@ -25,6 +25,7 @@
 #include "board_select.h"
 
 #include <driver/gpio.h>
+#include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -173,7 +174,7 @@ void i2s_out(const int16_t* pcm, int g) {
 #else
 // ---- PWM output ----
 constexpr int kPwmFifo = 2048;        // samples, power of two (~85 ms)
-uint16_t s_fifo[kPwmFifo];
+uint16_t* s_fifo = nullptr;           // 4 KB, taken only when PWM is used (most boards use the DAC)
 volatile uint32_t s_head = 0, s_tail = 0;   // producer: audio task; consumer: the timer interrupt
 gptimer_handle_t s_timer = nullptr;
 
@@ -190,6 +191,11 @@ bool on_sample(gptimer_handle_t, const gptimer_alarm_event_data_t*, void*) {
 }
 
 bool start_pwm() {
+    if (!s_fifo) s_fifo = static_cast<uint16_t*>(heap_caps_calloc(kPwmFifo, sizeof(uint16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (!s_fifo) {
+        ESP_LOGE(kTag, "PWM start failed: no RAM for its buffer");
+        return false;
+    }
     ledc_timer_config_t tc = {};
     tc.speed_mode = LEDC_HIGH_SPEED_MODE;     // the backlight has channel 7 / timer 3
     tc.duty_resolution = LEDC_TIMER_10_BIT;
