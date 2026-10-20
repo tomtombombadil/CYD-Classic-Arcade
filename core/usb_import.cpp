@@ -139,6 +139,16 @@ void Session::line(char* text)
         char list[600] = {};    // ~40 games' ids
         if (games_) games_(ctx_, list, sizeof list);
         reply("GAMES %s", list);
+    } else if (std::strcmp(cmd, "LOG") == 0) {
+        char text[200];
+        int n = 0;
+        while (log_ && n < kMaxLogLines && log_(ctx_, n, text, sizeof text)) {
+            for (char* c = text; *c; ++c)
+                if (*c == '\n' || *c == '\r') *c = ' ';
+            reply("LOG %s", text);
+            ++n;
+        }
+        reply("LOGEND %d", n);
     } else {
         reply("ERR unknown");
     }

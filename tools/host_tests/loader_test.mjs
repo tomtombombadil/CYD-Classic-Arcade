@@ -207,6 +207,19 @@ const realZip = (n) => args.roms && fs.existsSync(path.join(args.roms, n)) ? fs.
   const r4 = await L.transfer(b.link, [file("half.zip", halfPac)], { replace: true, onBoard: (x) => { free = x.free; } });
   check(r4.results[0].state === "ok" && r4.games.length === 0, "Replace clears the board: " + r4.games.join(" "));
   check(free === 0x1B0000 - 4096, "free space after CLEAR");
+
+  // Download Log: the log's lines as they are, the empty one kept, the
+  // board's other output left out.
+  const lg = await L.readLog(b.link, {});
+  check(lg.version === "v0.2.0-fake" &&
+        lg.text === "CYD Classic Arcade log\n\n[1 0.5s] Start v0.2.0-fake on a fake board\n", "the log comes back: " + JSON.stringify(lg.text));
+  b.end();
+}
+{
+  // Download Log from the board just reset by the port opening
+  const b = board("--boot-ms", "1500");
+  const lg = await L.readLog(b.link, {});
+  check(lg.text.startsWith("CYD Classic Arcade log\n"), "the log after a reset");
   b.end();
 }
 {

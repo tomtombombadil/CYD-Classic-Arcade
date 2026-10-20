@@ -120,7 +120,9 @@ const char* const kUsbHelp[] = {
     "",
     "Connect this board by USB, pick your ROM zips there and send them.",
     "",
-    "Leave this page when they're in.",
+    "Its Download Log button saves this board's log on the computer.",
+    "",
+    "Leave this page when you're done.",
 };
 const int kUsbHelpCount = int(sizeof kUsbHelp / sizeof kUsbHelp[0]);
 

@@ -446,6 +446,18 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   **cyd.classic.games.logs@gmail.com** - Tom's address for logs, shared
   with Classic Games), Copy, Download log.txt. The menu preview renders the
   page with a made-up code of the largest size (`7e_send_log`).
+- Download Log (v0.18.1; Tom, 2026-10-20: "if we can transfer files via
+  the web-browser to serial/usb, let's use that and get all the log files
+  in their natural form"): a button on the Load ROMs page (web/roms/)
+  that works while Settings > USB Transfer is open. Protocol `CYDA LOG`
+  -> `CYDA LOG <line>` ... `CYDA LOGEND <n>` (core/usb_import.*,
+  `Session::set_log`); the firmware (serial_link.cpp `log_line`) sends 4
+  lines about the board (name, version + commit, uptime, RAM, line count),
+  a blank line, then the whole RTC log, oldest first. The page
+  (`loader.js readLog`, sharing `waitHello` with `transfer`) saves it as
+  `cyd-arcade-log-<board>-<date>.txt` (CRLF, for Notepad). The board has
+  one log (4 KB in RTC memory): there are no other log files. Tested in
+  core_tests and loader_test (fake_board answers LOG).
 - Game count: the catalog holds `games::kMaxGames` (64; v0.6 held 16),
   checked by `arcade_host --check-table`; the USB loader's GAMES reply has
   room for ~40 ids (600 chars; the usb task's stack is 6 KB for it).

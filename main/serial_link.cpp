@@ -7,6 +7,7 @@
 #include "board_select.h"
 #include "catalog.h"
 #include "core/usb_import.h"
+#include "devlog.h"
 #include "flash_store.h"
 #include "memlog.h"
 #include "version_gen.h"
@@ -18,6 +19,7 @@
 #else
 #include <driver/uart.h>
 #endif
+#include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -77,6 +79,36 @@ void games(void*, char* out, size_t cap)
     catalog::list_ids(out, cap);
 }
 
+// The Load ROMs page's Download Log (Tom, 2026-10-20: "get all the log
+// files in their natural form"): a few lines about the board, then the
+// whole log, oldest first, as the page saves it.
+constexpr int kHeadLines = 5;
+int s_log_lines = 0;        // the log's line count when the page asked
+
+bool log_line(void*, int i, char* out, size_t cap)
+{
+    if (i == 0) s_log_lines = devlog::count();
+    switch (i) {
+    case 0: std::snprintf(out, cap, "CYD Classic Arcade log"); return true;
+    case 1: std::snprintf(out, cap, "Board: %s", BOARD_NAME); return true;
+    case 2:
+        std::snprintf(out, cap, "Firmware: %s%s%s%s", CYD_ARCADE_VERSION, CYD_ARCADE_BUILD[0] ? " (" : "",
+                      CYD_ARCADE_BUILD, CYD_ARCADE_BUILD[0] ? ")" : "");
+        return true;
+    case 3:
+        std::snprintf(out, cap, "Now: up %u s; RAM %u KB free, largest block %u KB; %d log lines, oldest first",
+                      unsigned(esp_timer_get_time() / 1000000),
+                      unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+                      unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024),
+                      s_log_lines);
+        return true;
+    case 4: out[0] = 0; return true;
+    default: break;
+    }
+    const int k = i - kHeadLines;
+    return k < s_log_lines && devlog::line(s_log_lines - 1 - k, out, cap);
+}
+
 void task(void*)
 {
     static uint8_t buf[512];
@@ -125,6 +157,7 @@ bool start()
         return false;
     }
     s_session.init(flash_store::store(), send, games, nullptr, CYD_ARCADE_VERSION);
+    s_session.set_log(log_line);
     s_stop = false;
     s_parked = false;
     if (xTaskCreatePinnedToCore(task, "usb", memlog::kStackUsb, nullptr, 4, &s_task, 0) != pdPASS) {

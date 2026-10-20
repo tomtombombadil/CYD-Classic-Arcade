@@ -89,6 +89,15 @@ void game_list(void*, char* out, size_t cap)
     }
 }
 
+// The board's log for LOG: three made-up lines (one empty)
+bool log_line(void*, int i, char* out, size_t cap)
+{
+    static const char* const kLines[] = {"CYD Classic Arcade log", "", "[1 0.5s] Start v0.2.0-fake on a fake board"};
+    if (i < 0 || i >= int(sizeof kLines / sizeof kLines[0])) return false;
+    std::snprintf(out, cap, "%s", kLines[i]);
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -108,6 +117,7 @@ int main(int argc, char** argv)
     g_store.open(flash);
     usb_import::Session session;
     session.init(g_store, &send, &game_list, nullptr, "v0.2.0-fake");
+    session.set_log(&log_line);
 
     out_line("ets Jun  8 2016 00:22:57");
     out_line("rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)");

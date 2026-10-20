@@ -14,6 +14,8 @@
 //                               -> CYDA ACK <bytes so far>
 //     and after the last one    -> CYDA OK <name>  or  CYDA ERR <why>
 //   CYDA DONE                   -> CYDA GAMES <id> <id> ...   (now playable)
+//   CYDA LOG                    -> CYDA LOG <line> ... CYDA LOGEND <lines>
+//                                  (the board's log as text, oldest first)
 // A PUT whose bytes stop coming for kTimeoutMs is dropped (CYDA ERR timeout).
 #pragma once
 
@@ -26,6 +28,7 @@ namespace usb_import {
 
 constexpr uint32_t kChunk = 2048;
 constexpr uint32_t kTimeoutMs = 5000;
+constexpr int      kMaxLogLines = 1000;
 
 class Session {
 public:
@@ -34,7 +37,12 @@ public:
     // Fills `out` with the playable games' ids, space-separated.
     using GameList = void (*)(void* ctx, char* out, size_t cap);
 
+    // Line i (0 = the first) of the board's log as LOG sends it; false
+    // past the end.
+    using LogLine = bool (*)(void* ctx, int i, char* out, size_t cap);
+
     void init(rom_store::Store& store, Send send, GameList games, void* ctx, const char* version);
+    void set_log(LogLine log) { log_ = log; }
 
     // Bytes from the serial port.
     void feed(const uint8_t* data, size_t len, uint32_t now_ms);
@@ -56,6 +64,7 @@ private:
     rom_store::Store* store_ = nullptr;
     Send     send_ = nullptr;
     GameList games_ = nullptr;
+    LogLine  log_ = nullptr;
     void*    ctx_ = nullptr;
     const char* version_ = "";
 

@@ -258,6 +258,22 @@ void test_protocol()
     check(b.last().rfind("CYDA HELLO", 0) == 0, "an overlong line is skipped");
     b.say("CYDA FOO");
     check(b.last() == "CYDA ERR unknown", "unknown commands are answered");
+
+    // LOG: every line of the board's log, a newline in one sent as a space,
+    // then LOGEND with the count; with no log, just LOGEND 0.
+    b.out.clear();
+    b.say("CYDA LOG");
+    check(b.out.size() == 1 && b.last() == "CYDA LOGEND 0", "LOG with no log");
+    b.session.set_log([](void*, int i, char* out, size_t cap) {
+        static const char* const kLines[] = {"first", "", "two\nparts"};
+        if (i >= 3) return false;
+        std::snprintf(out, cap, "%s", kLines[i]);
+        return true;
+    });
+    b.out.clear();
+    b.say("CYDA LOG");
+    check(b.out.size() == 4 && b.out[0] == "CYDA LOG first" && b.out[1] == "CYDA LOG " &&
+          b.out[2] == "CYDA LOG two parts" && b.out[3] == "CYDA LOGEND 3", "LOG sends the log");
 }
 
 } // namespace

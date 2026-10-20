@@ -267,6 +267,11 @@
     </ol>
   </section>
 
+  <h2 id="log-h">The board's log</h2>
+  <p>Something went wrong on the board? Its log says what happened: each start, the games played and their speed, controllers, crashes. With Settings &gt; USB Transfer open on the board, this saves the whole log on this computer as a text file to send to the developer.</p>
+  <div class="buttons"><button type="button" class="go" id="get-log">Download Log</button></div>
+  <p class="status" id="log-status" role="status" aria-live="polite"></p>
+
   <h2>Good to know</h2>
   <ul class="good">
     <li><strong>Which zips?</strong> The standard MAME sets of the games you own. The chips inside are recognised by their checksums, so any MAME version's zips work. The <a href="https://github.com/tomtombombadil/CYD-Classic-Arcade/blob/main/docs/ROMS.md">list of sets</a> says which ones.</li>
@@ -428,30 +433,24 @@ function setBusy(b) {
   for (const id of ["pick-files", "pick-folder", "replace"]) $(id).disabled = b;
   for (const l of document.querySelectorAll(".pick")) l.classList.toggle("disabled", b);
   $("clear").disabled = b;
+  $("get-log").disabled = b || !hasSerial;
   $("send").disabled = b || !hasSerial || !found || !found.zips.some((z) => z.use);
 }
 
-$("send").addEventListener("click", async () => {
-  if (busy || !found) return;
-  const files = boardNames(found.zips.filter((z) => z.use));
-  if (!files.length) return;
-
+// Opens the board's port: {link, close()} or null (after telling `fail` why).
+async function openBoard(fail, button) {
   let port;
   try {
     port = await navigator.serial.requestPort();
   } catch (e) {
-    status("No port was chosen. Click Send to board again and pick the board's port.", "bad");
-    return;
+    fail(`No port was chosen. Click ${button} again and pick the board's port.`);
+    return null;
   }
-  setBusy(true);
-  $("done-box").hidden = true;
-  $("step-done").classList.add("off");
   try {
     await port.open({ baudRate: L.BAUD, bufferSize: 16384 });
   } catch (e) {
-    status("Couldn't open the port: " + e.message + " Is something else using it?", "bad");
-    setBusy(false);
-    return;
+    fail("Couldn't open the port: " + e.message + " Is something else using it?");
+    return null;
   }
   // Both lines released = the board runs normally (they drive reset / boot mode)
   try { await port.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) { /* not supported */ }
@@ -476,6 +475,28 @@ $("send").addEventListener("click", async () => {
     readLine: (ms) => queue.readLine(ms),
     get closed() { return queue.closed; },
   };
+  // Releases everything so the port can be opened again (here or by the installer)
+  const close = async () => {
+    try { await reader.cancel(); } catch (e) { /* ignore */ }
+    await pump;
+    try { reader.releaseLock(); } catch (e) { /* ignore */ }
+    try { writer.releaseLock(); } catch (e) { /* ignore */ }
+    try { await port.close(); } catch (e) { /* ignore */ }
+  };
+  return { link, close };
+}
+
+$("send").addEventListener("click", async () => {
+  if (busy || !found) return;
+  const files = boardNames(found.zips.filter((z) => z.use));
+  if (!files.length) return;
+
+  const conn = await openBoard((t) => status(t, "bad"), "Send to board");
+  if (!conn) return;
+  const { link } = conn;
+  setBusy(true);
+  $("done-box").hidden = true;
+  $("step-done").classList.add("off");
 
   // One row per file, with a progress bar
   const rows = files.map((f) => {
@@ -526,13 +547,46 @@ $("send").addEventListener("click", async () => {
       status("The connection to the board was lost (" + e.message + "). Plug it back in and try again.", "bad");
     }
   } finally {
-    // Release everything so the port can be opened again (here or by the installer)
-    try { await reader.cancel(); } catch (e) { /* ignore */ }
-    await pump;
-    try { reader.releaseLock(); } catch (e) { /* ignore */ }
-    try { writer.releaseLock(); } catch (e) { /* ignore */ }
-    try { await port.close(); } catch (e) { /* ignore */ }
+    await conn.close();
     setBusy(false);
+  }
+});
+
+// ---- the board's log -------------------------------------------------------------
+
+function logStatus(text, kind = "") {
+  $("log-status").textContent = text;
+  $("log-status").className = "status" + (kind ? " " + kind : "");
+}
+$("get-log").disabled = !hasSerial;
+if (!hasSerial) logStatus("Reading the log needs Chrome or Edge on a computer.");
+
+$("get-log").addEventListener("click", async () => {
+  if (busy) return;
+  const conn = await openBoard((t) => logStatus(t, "bad"), "Download Log");
+  if (!conn) return;
+  setBusy(true);
+  $("get-log").disabled = true;
+  try {
+    let board = null;
+    const r = await L.readLog(conn.link, { onStatus: (t) => logStatus(t), onBoard: (b) => { board = b; } });
+    const name = (r.text.match(/^Board: (.*)$/m) || [])[1] || "board";
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
+    const file = `cyd-arcade-log-${name.replace(/[^A-Za-z0-9.]+/g, "_").replace(/^_|_$/g, "")}-${stamp}.txt`;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([r.text.replace(/\n/g, "\r\n")], { type: "text/plain" }));
+    a.download = file;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    const lines = r.text.split("\n").length - 1;
+    logStatus(`Saved ${file} (${plural(lines, "line", "lines")}, CYD Classic Arcade ${board ? board.version : r.version}). ` +
+              "Email it to cyd.classic.games.logs@gmail.com.", "ok");
+  } catch (e) {
+    logStatus(e.code ? e.message : "The connection to the board was lost (" + e.message + "). Plug it back in and try again.", "bad");
+  } finally {
+    await conn.close();
+    setBusy(false);
+    $("get-log").disabled = !hasSerial;
   }
 });
 

@@ -210,15 +210,74 @@ export class LineQueue {
   }
 }
 
-// ---- Sending ----------------------------------------------------------------
+// ---- Errors -----------------------------------------------------------------
 
 export class TransferError extends Error {
   constructor(code, message, extra = {}) {
     super(message);
-    this.code = code;          // "no-answer" | "timeout" | "no-room" | "clear-failed" | "closed"
+    this.code = code;          // "no-answer" | "timeout" | "no-room" | "clear-failed" | "closed" | "old-firmware"
     Object.assign(this, extra);
   }
 }
+
+// ---- Finding the board ------------------------------------------------------
+
+const parseHello = (h) => {
+  const [, , version, free, count] = h.split(" ");
+  return { version, free: Number(free) || 0, files: Number(count) || 0 };
+};
+
+// HELLO: opening the port may have reset the board, so ask again until it
+// answers. After four tries, keep quiet for 6 s: a board left half way
+// through a file (bytes mode) takes our HELLOs as file bytes until it gives
+// up on that file (5 s without bytes). Returns the "CYDA HELLO ..." line;
+// throws TransferError("no-answer").
+async function waitHello(link, helloTimeout, onLog) {
+  const start = Date.now();
+  const askAt = [0, 1500, 3000, 4500, 11000, 12500, 14000, 15500, 17000, 18500];
+  let hello = null, asked = 0;
+  while (!hello) {
+    const t = Date.now() - start;
+    if (t >= helloTimeout) break;
+    if (asked < askAt.length && t >= askAt[asked]) { await link.sendLine("CYDA HELLO"); asked++; continue; }
+    const nextAsk = asked < askAt.length ? askAt[asked] : helloTimeout;
+    const line = await link.readLine(Math.max(20, Math.min(nextAsk, helloTimeout) - t));
+    if (line === null) { if (link.closed) break; continue; }
+    if (line.startsWith("CYDA HELLO ")) hello = line;
+    else if (!line.startsWith("CYDA ")) onLog(line);
+  }
+  if (!hello) throw new TransferError("no-answer", "No answer - on the board, open Settings > USB Transfer (CYD Classic Arcade v0.16.0 or newer).");
+  return hello;
+}
+
+// The board's log as text (Download Log): HELLO, then LOG, every "CYDA LOG
+// <line>" up to "CYDA LOGEND <n>". opts: onLog, onStatus, onBoard,
+// helloTimeoutMs, stepTimeoutMs. Returns {version, text}.
+export async function readLog(link, opts = {}) {
+  const onLog = opts.onLog || (() => {});
+  const stepTimeout = opts.stepTimeoutMs ?? 10000;
+  (opts.onStatus || (() => {}))("Waiting for the board…");
+  const board = parseHello(await waitHello(link, opts.helloTimeoutMs ?? 20000, onLog));
+  (opts.onBoard || (() => {}))(board);
+  await link.sendLine("CYDA LOG");
+  const lines = [];
+  for (;;) {
+    const line = await link.readLine(stepTimeout);
+    if (line === null) {
+      if (link.closed) throw new TransferError("closed", "The board was disconnected.");
+      throw new TransferError("timeout", "The board stopped answering. Unplug it, plug it back in and try again.");
+    }
+    if (line.startsWith("CYDA LOG ") || line === "CYDA LOG") { lines.push(line.slice(9)); continue; }
+    if (line.startsWith("CYDA LOGEND")) break;
+    if (line.startsWith("CYDA ERR")) {
+      throw new TransferError("old-firmware", "This board's firmware can't send its log yet: install CYD Classic Arcade v0.18.1 or newer.");
+    }
+    if (!line.startsWith("CYDA ")) onLog(line);
+  }
+  return { version: board.version, text: lines.join("\n") + "\n" };
+}
+
+// ---- Sending ----------------------------------------------------------------
 
 const align4 = (n) => (n + 3) & ~3;
 
@@ -264,29 +323,8 @@ export async function transfer(link, files, opts = {}) {
     prepared.push({ name: files[i].name, bytes, crc: crc32(bytes) });
   }
 
-  // HELLO: opening the port may have reset the board, so ask again until it
-  // answers. After four tries, keep quiet for 6 s: a board left half way
-  // through a file (bytes mode) takes our HELLOs as file bytes until it gives
-  // up on that file (5 s without bytes).
   onStatus("Waiting for the board…");
-  const start = Date.now();
-  const askAt = [0, 1500, 3000, 4500, 11000, 12500, 14000, 15500, 17000, 18500];
-  let hello = null, asked = 0;
-  while (!hello) {
-    const t = Date.now() - start;
-    if (t >= helloTimeout) break;
-    if (asked < askAt.length && t >= askAt[asked]) { await link.sendLine("CYDA HELLO"); asked++; continue; }
-    const nextAsk = asked < askAt.length ? askAt[asked] : helloTimeout;
-    const line = await link.readLine(Math.max(20, Math.min(nextAsk, helloTimeout) - t));
-    if (line === null) { if (link.closed) break; continue; }
-    if (line.startsWith("CYDA HELLO ")) hello = line;
-    else if (!line.startsWith("CYDA ")) onLog(line);
-  }
-  if (!hello) throw new TransferError("no-answer", "No answer - on the board, open Settings > USB Transfer (CYD Classic Arcade v0.16.0 or newer).");
-  const parseHello = (h) => {
-    const [, , version, free, count] = h.split(" ");
-    return { version, free: Number(free) || 0, files: Number(count) || 0 };
-  };
+  const hello = await waitHello(link, helloTimeout, onLog);
   const onBoard = opts.onBoard || (() => {});
   let board = parseHello(hello);
   onBoard(board);
