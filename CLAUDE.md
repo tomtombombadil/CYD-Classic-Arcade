@@ -1093,6 +1093,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   `.pio/build` in the Actions cache (fresh when sdkconfig / platformio.ini
   / a CMake file / a dependency pin changes), so a push recompiles only
   what changed. Never go back to compiling emu/ per test program.
+- Exception (Tom, 2026-10-20, the new-games batch: Bubbles, Galaxian,
+  Amidar, Missile Command, Battlezone, Zaxxon - "Don't bother updating the
+  online web flasher until you're done"): that batch is built on the
+  branch `work/newgames` and goes to main (and so the flasher) once, when
+  every game is done. Spy Hunter and Rolling Thunder are dropped (Tom,
+  2026-10-20: too big for the 4 MB ESP32 boards - Spy Hunter's 68000 music
+  board, Rolling Thunder's 1.2 MB of ROM).
 - Every push to main: CI builds every env with `custom_firmware_name`,
   merges each into one image at 0x0 (esptool merge_bin) and publishes
   `web/index.html` + `tools/make_site.py`'s manifests on GitHub Pages:
