@@ -55,6 +55,9 @@ void port_write(const char* data, size_t len) { uart_write_bytes(kPort, data, le
 usb_import::Session s_session;
 std::atomic<bool> s_changed{false};
 std::atomic<bool> s_busy{false};
+std::atomic<bool> s_stop{false};
+std::atomic<bool> s_parked{false};
+TaskHandle_t s_task = nullptr;
 
 uint32_t now_ms() { return uint32_t(esp_timer_get_time() / 1000); }
 
@@ -77,6 +80,12 @@ void task(void*)
 {
     static uint8_t buf[512];
     for (;;) {
+        // stop() waits for this, then deletes the task (deleted while
+        // suspended, its stack is freed at once - not later by the idle task)
+        if (s_stop) {
+            s_parked = true;
+            vTaskSuspend(nullptr);
+        }
         const int n = port_read(buf, sizeof buf, pdMS_TO_TICKS(50));
         // A stored zip only shows in the directory once it's whole, so the
         // menu may read the store between these pieces.
@@ -114,7 +123,35 @@ void start()
         return;
     }
     s_session.init(flash_store::store(), send, games, nullptr, CYD_ARCADE_VERSION);
-    xTaskCreatePinnedToCore(task, "usb", 6144, nullptr, 4, nullptr, 0);
+    s_stop = false;
+    s_parked = false;
+    if (xTaskCreatePinnedToCore(task, "usb", 6144, nullptr, 4, &s_task, 0) != pdPASS) {
+        s_task = nullptr;
+#if BOARD_USB_SERIAL_JTAG
+        esp_log_set_vprintf(s_uart_log);
+        usb_serial_jtag_driver_uninstall();
+#else
+        uart_driver_delete(kPort);
+#endif
+        ESP_LOGE(kTag, "no room for the usb task: no ROM loading over USB");
+    }
+}
+
+bool stop()
+{
+    if (!s_task || s_busy) return false;
+    s_stop = true;
+    while (!s_parked) vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelete(s_task);
+    s_task = nullptr;
+#if BOARD_USB_SERIAL_JTAG
+    esp_log_set_vprintf(s_uart_log);
+    usb_serial_jtag_driver_uninstall();
+#else
+    uart_driver_delete(kPort);
+#endif
+    s_busy = false;
+    return true;
 }
 
 bool take_changed() { return s_changed.exchange(false); }

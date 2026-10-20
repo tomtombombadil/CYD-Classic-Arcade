@@ -79,24 +79,40 @@ Robotron / Defender 51.9) or one of Qix's 32 KB halves.
 
 ## 3. What always runs (the baseline)
 
-| Part | RAM | Source |
-|---|---|---|
-| Static .data + .bss | 121 KB | build |
-| Bluetooth controller + BTstack + Bluepad32 (heap) | "Mem Bluetooth started" step | board |
-| A controller connected | "Mem controller connected" step | board |
-| main task (app_main, then BTstack's run loop) stack | 8 KB (used: "Stacks" line) | code / board |
-| ui task stack (menu, game runner) | 12 KB (used: "Stacks") | code / board |
-| audio task stack | 3 KB | code |
-| Sound DMA (DAC: 4 x 1 KB) | 4 KB | code |
-| Display (LovyanGFX, no frame buffer) + touch | "Mem after screen + touch" step | board |
-| ROM catalog | "Mem after ROM catalog" step | board |
-| ESP-IDF system tasks (IPC x2, esp_timer, idle x2), NVS | "Mem at start" / "after NVS" | board |
+Measured on Tom's 3.5" ST7796 running v0.15.7 (2026-10-20, Settings > Log
+photos; one Q36 controller; Galaga started and left). Heap = internal RAM
+the allocator manages, in KB **(board)**.
+
+| Step | Free | Biggest block | Cost |
+|---|---|---|---|
+| Heap in all | 190.5 | | |
+| At app_main (ESP-IDF's own tasks and drivers before us) | 164.7 | 108.0 | 25.8 |
+| After NVS | 163.9 | 108.0 | 0.8 |
+| ui task (12 KB stack + TCB) | 151.6 | 108.0 | 12.3 |
+| Bluetooth started (controller, BTstack, Bluepad32) | 123.6 | 108.0 | 28.0 |
+| A controller connected | 118.5 | 108.0 | 5.1 |
+| Screen + touch, ROM catalog | 118.5 | 108.0 | 0 |
+| USB ROM loader (task 6 KB + UART driver, 4 KB RX) | 106.8 | 104.0 | 11.7 |
+| Sound (audio task 3 KB + DAC DMA) | 98.9 | 96.0 | 7.9 |
+| draw task (5 KB stack) | ~93.5 | | ~5.4 |
+| Kept back for the system (`kSystemReserve`) | | | 12 |
+| **Game area** | **81** (one block) | | |
+
+Stack use, worst seen (Galaga, then the menu) **(board)**: main / BTstack
+3.5 of 8 KB, ui 5.6 of 12, usb 0.7 of 6, draw 1.0 of 5, audio 0.7 of 3.
+Only one game measured so far, so stacks stay as they are until every
+game's "Stacks" line has been seen.
+
+With the 81 KB area every game's minimum (section 1, 320x480) fits but
+Qix's 88.2 KB. Galaga used 65 of 81 KB (machine 23, ROM 21 KB in RAM, 16
+from flash) and ran 60.9 fps, 60 pictures a second, with 9.5 KB free
+outside the area.
 
 ## 4. What is optional (only while needed)
 
 | Part | RAM | Needed when |
 |---|---|---|
-| USB ROM loader: usb task 6 KB + UART driver (4 KB receive buffer) | ~10.5 KB | the web page sends ROMs - the menu only, never in a game |
+| USB ROM loader: usb task 6 KB + UART driver (4 KB receive buffer) | 11.7 KB (board) | the web page sends ROMs - the menu only: stopped for the length of a game since v0.15.8 (`serial_link::stop()`), started again when it ends |
 | draw task (core 0) stack | 5 KB | a game that draws from a snapshot |
 | PWM sound buffer | 4 KB | Sound Output = PWM only (v0.15.5: taken on demand) |
 | SD import buffers | while copying | start-up only |
@@ -104,17 +120,14 @@ Robotron / Defender 51.9) or one of Qix's 32 KB halves.
 
 ## 5. The plan
 
-1. **Measure** (v0.15.6): one start on an ESP32 board and one game
-   start / end fill in sections 2-3 from the Log.
-2. **Budget**: free RAM when a game starts = heap - baseline. With the
-   optional parts stopped for a game, the game area on an ESP32 board is
-   that minus a small margin for Bluetooth's own allocations while
-   playing (measured: a controller connecting, the "Stacks" line).
-3. **Fit every game**: the area must hold each game's minimum (section 1),
-   and its biggest single block. Where it can't (Qix's 88 KB, the 52 KB
-   machines if Bluetooth splits the big region), cut the baseline by the
-   measured amounts - task stacks to what they use, the USB loader and the
-   draw task out of a game's way - or shrink the machines (Qix's video RAM
-   halves, the Williams 48 KB RAM) until the numbers add up. Each game's
-   need is checked against the area before it starts, and the menu says
+1. **Measure**: done on the 3.5" (section 3).
+2. **Budget** (3.5"): area = free at the menu - draw task - 12 KB reserve =
+   81 KB; with the USB loader stopped during a game (v0.15.8) ~92 KB.
+3. **Fit every game**: ~92 KB holds every game's minimum, Qix's 88.2 KB
+   included (its two 32 KB halves fit the one block); the rest of the
+   area takes ROM regions. Next, as numbers come in: every game's
+   "Stacks" line, then stacks cut to what they use plus a margin (ui 12
+   -> 8 KB would give 4 KB more); the other boards' "Mem" lines (the
+   2.8" has no SD card, panels differ in buffer sizes); a check of each
+   game's need against the area before it starts, so the menu can say
    plainly which games a board can't hold.

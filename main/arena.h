@@ -26,6 +26,9 @@ bool reserve(uint32_t keep_free);
 // v0.15.1 on the 3.2": a 37 KB area, Galaga "doesn't fit") isn't kept
 // until the next reboot. Returns the size before.
 uint32_t renew(uint32_t keep_free);
+// Gives the (empty) area back to the heap, for a part that runs only
+// between games (the USB loader) to start before the area is reserved again.
+void release();
 
 void* alloc(size_t n);      // 8-byte aligned; null when there's no room
 void  free(void* p);        // gives the room back only for the newest block

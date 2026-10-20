@@ -54,11 +54,16 @@ bool reserve(uint32_t keep_free)
     return s_count > 0;
 }
 
+void release()
+{
+    for (int i = 0; i < s_count; ++i) heap_caps_free(s_chunk[i].base);
+    s_count = 0;
+}
+
 uint32_t renew(uint32_t keep_free)
 {
     const uint32_t before = size();
-    for (int i = 0; i < s_count; ++i) heap_caps_free(s_chunk[i].base);
-    s_count = 0;
+    release();
     reserve(keep_free);
     return before;
 }

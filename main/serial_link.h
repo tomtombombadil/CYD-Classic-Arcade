@@ -7,6 +7,12 @@ namespace serial_link {
 // Starts the reader task (core 0).
 void start();
 
+// Stops it and frees its task and the port driver (~11.7 KB on the 3.5",
+// docs/MEMORY.md) for the length of a game: ROMs load only from the menu.
+// False (and still running) while a file is coming in, or if it wasn't
+// running.
+bool stop();
+
 // True once after the page finished a load (the menu rescans its games).
 bool take_changed();
 

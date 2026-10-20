@@ -43,6 +43,7 @@
 #include "line_diff.h"
 #include "memlog.h"
 #include "screen.h"
+#include "serial_link.h"
 #include "settings.h"
 #include "touch.h"
 #include "ui.h"
@@ -186,6 +187,21 @@ void run(int index, AudioRing& ring)
     // core 0, then as many ROM regions as fit (the rest stream into flash).
     // When the game ends the area is emptied in one go, so the next game
     // starts from the same memory, whatever ran before (Tom, v0.14.6).
+    // The USB loader runs only between games (ROMs load from the menu): its
+    // task and port driver, ~11.7 KB on the 3.5", go to the game area for
+    // the game and come back when it ends, before the area is reserved
+    // again (docs/MEMORY.md)
+    struct LoaderBack {
+        bool stopped;
+        ~LoaderBack()
+        {
+            if (!stopped) return;
+            arena::reset();
+            arena::release();
+            serial_link::start();
+            arena::reserve(kSystemReserve);
+        }
+    } loader_back{serial_link::stop()};
     const uint32_t before_kb = arena::renew(kSystemReserve) / 1024;
     const uint32_t area_kb = arena::size() / 1024;
     devlog::add("%s: start; game area %s, was %u KB; RAM outside %u KB free, block %u KB", g.id, area_text(),

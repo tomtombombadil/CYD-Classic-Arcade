@@ -364,6 +364,15 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   used; the log line at each game start gives machine / area / ROM in RAM
   vs flash. Emulator code allocates only through emu::alloc (Qix's two 32
   KB video halves, Shot<>); nothing in emu/ may use new / malloc directly.
+  v0.15.7-v0.15.8 (Tom's 3.5" Log, v0.15.7: the baseline in
+  docs/MEMORY.md section 3 - an 81 KB area, every game but Qix's 88.2 KB
+  fits): parts used only now and then hold no RAM between uses - the
+  Controller Test's 14 KB strips borrow the area, the SD import's 4 KB
+  buffer the heap at start-up, and the USB ROM loader (11.7 KB: task +
+  UART driver) is stopped for the length of a game (`serial_link::stop()`,
+  not while a file is coming in) and started again after it, with the
+  area given back (`arena::release()`) and reserved again around it -
+  ~92 KB for games.
 - ROMs live in flash, not RAM (Tom, 2026-10-17, asked why zips are "in
   memory all the time"): the zips are copied from the SD card / USB into
   the `roms` flash partition (storage, read in place, no RAM); only the
