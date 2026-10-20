@@ -269,7 +269,8 @@
 
   <h2 id="log-h">The board's log</h2>
   <p>Something went wrong on the board? Its log says what happened: each start, the games played and their speed, controllers, crashes. With Settings &gt; USB Transfer open on the board, this saves the whole log on this computer as a text file to send to the developer.</p>
-  <div class="buttons"><button type="button" class="go" id="get-log">Download Log</button></div>
+  <div class="buttons"><button type="button" class="go" id="get-log">Download Log</button>
+    <a class="pick" id="save-log" hidden>Save Log File</a></div>
   <p class="status" id="log-status" role="status" aria-live="polite"></p>
 
   <h2>Good to know</h2>
@@ -565,6 +566,7 @@ function logStatus(text, kind = "") {
   $("log-status").textContent = text;
   $("log-status").className = "status" + (kind ? " " + kind : "");
 }
+let logsSaved = 0;          // files this page has saved by itself
 $("get-log").disabled = !hasSerial;
 if (!hasSerial) logStatus("Reading the log needs Chrome or Edge on a computer.");
 
@@ -580,14 +582,23 @@ $("get-log").addEventListener("click", async () => {
     const name = (r.text.match(/^Board: (.*)$/m) || [])[1] || "board";
     const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
     const file = `cyd-arcade-log-${name.replace(/[^A-Za-z0-9.]+/g, "_").replace(/^_|_$/g, "")}-${stamp}.txt`;
-    const a = document.createElement("a");
+    // Chrome saves a page's first file by itself but blocks later ones that
+    // no click started (until the page is reloaded - Tom, v0.18.1: "it
+    // doesn't work a second time"), so from the second log on the page
+    // offers a Save Log File button, which always works.
+    const a = $("save-log");
+    if (a.href) URL.revokeObjectURL(a.href);
     a.href = URL.createObjectURL(new Blob([r.text.replace(/\n/g, "\r\n")], { type: "text/plain" }));
     a.download = file;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    a.hidden = false;
     const lines = r.text.split("\n").length - 1;
-    logStatus(`Saved ${file} (${plural(lines, "line", "lines")}, CYD Classic Arcade ${board ? board.version : r.version}). ` +
-              "Email it to cyd.classic.games.logs@gmail.com.", "ok");
+    const what = `${file} (${plural(lines, "line", "lines")}, CYD Classic Arcade ${board ? board.version : r.version})`;
+    if (!logsSaved++) {
+      a.click();
+      logStatus(`Saved ${what}. Email it to cyd.classic.games.logs@gmail.com.`, "ok");
+    } else {
+      logStatus(`Read ${what}: click Save Log File to save it, then email it to cyd.classic.games.logs@gmail.com.`, "ok");
+    }
   } catch (e) {
     logStatus(e.code ? e.message : "The connection to the board was lost (" + e.message + "). Plug it back in and try again.", "bad");
   } finally {

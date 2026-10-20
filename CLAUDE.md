@@ -457,7 +457,13 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   (`loader.js readLog`, sharing `waitHello` with `transfer`) saves it as
   `cyd-arcade-log-<board>-<date>.txt` (CRLF, for Notepad). The board has
   one log (4 KB in RTC memory): there are no other log files. Tested in
-  core_tests and loader_test (fake_board answers LOG).
+  core_tests and loader_test (fake_board answers LOG). Saving (Tom, v0.18.2: "doesn't work a second time without refreshing
+  the whole page"): Chrome saves a page's first file by itself but blocks
+  later downloads no click started (silently, an icon in the address bar)
+  until a reload - so only the first log is saved at once; after that the
+  page shows "Read <file>: click Save Log File" and a Save Log File button
+  (a click always may download). Checked in headless Chromium with a fake
+  Web Serial board: three reads in a row, then the button.
 - Log lines (v0.18.2; Tom's 4.0" log: the end-of-game speed line stopped
   at "picture 5.0 (worst 14.9"): `devlog::kLineMax` 256 (was 112); the
   ring keeps lines at their own length, the readers (Log, Send Log, LOG)
