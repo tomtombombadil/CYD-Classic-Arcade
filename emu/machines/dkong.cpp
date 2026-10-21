@@ -20,7 +20,24 @@
 // (256-byte page = P2 bits 0-2) or, with P2 bit 6 set, the tune latch
 // inverted (low 4 bits). P1 = the DAC. P2 bit 4 = status to the main CPU
 // (IN2 bit 6, inverted), bit 7 = DAC full level / fade.
+//
+// The Junior board (Donkey Kong Jr., init_board() with its sound board):
+//   0000-5FFF  program ROM: 5B 5C 5E, each 8 KB, their 2 KB pieces spread
+//              over the map (kJrRomMap below)
+//   7C80-7C87  write: latch 4H, bit 0 of the data to bit n: 0 = tile bank
+//              (tile codes + 256), 1 = the 8035's P2 bit 6 (inverted)
+//   7D00-7D07  latch 6H as above, but its bits mean: 0 walk / climb
+//              trigger, 1 jump, 2 climb (noise), 3 / 6 to the 8035's P2
+//              bits 5 / 4 (inverted), 4 / 5 its T1 / T0 (inverted), 7 the
+//              walk sound's other setting
+//   7D80-7D87  write: latch 5H: 0 the 8035's INT, 1 the falling sound,
+//              2-7 as Donkey Kong's 7D82-7D87
+//   IN2 bit 6  not connected (reads 1)
+// Its 8035: 4 KB program (3H); MOVX reads the tune latch (bits 0-4, not
+// inverted); P1 = the DAC, P2 bit 7 = the DAC full level / fade (as Donkey Kong).
 #include "dkong.h"
+
+#include "../sound/dkongjr_sound.h"
 
 #include <cstring>
 
@@ -73,6 +90,15 @@ constexpr int kWatchdogFrames = 256;
 // channel reads it into a latch, the other writes it out).
 constexpr int kDmaCyclesPerByte = 8;
 
+// The Junior's program ROMs: where each 2 KB of the map (0000, 0800, ...
+// 5800) is in the region, which holds 5B, 5C, 5E (8 KB each) as loaded.
+// 5B = 0000-0FFF + 3000-3FFF; 5C = 2000, 4800, 1000, 5800; 5E = 4000,
+// 2800, 5000, 1800 (2 KB each, in the chip's order).
+constexpr uint16_t kJrRomMap[12] = {
+    0x0000, 0x0800, 0x3000, 0x5800, 0x2000, 0x4800,
+    0x1000, 0x1800, 0x4000, 0x2800, 0x5000, 0x3800,
+};
+
 } // namespace
 
 const romset::Set kRomSet = {
@@ -80,30 +106,37 @@ const romset::Set kRomSet = {
     kVariants, 2,
 };
 
-void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes)
+void Machine::init_board(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes,
+                         dkongjr_sound::Board* jr_sound, uint16_t* jr_tiles)
 {
     roms_ = roms;
     audio_rate_ = audio_rate;
+    jr_ = jr_sound;
+    tile_hi_ = jr_tiles;
 
     cpu_.ctx = this;
     cpu_.mem_read = mem_read;
     cpu_.mem_write = mem_write;
     cpu_.port_in = port_read;
     cpu_.port_out = port_write;
-    cpu_.map_read(0x0000, 0x4000, roms.cpu);
+    if (jr_)
+        for (int i = 0; i < 12; ++i) cpu_.map_read(uint16_t(i * 0x800), 0x800, roms.cpu + kJrRomMap[i]);
+    else
+        cpu_.map_read(0x0000, 0x4000, roms.cpu);
     cpu_.map_ram(0x6000, 0xc00, ram_);
     cpu_.map_ram(0x7000, 0x400, sprite_ram_);
     cpu_.map_ram(0x7400, 0x400, vram_);
 
     snd_.ctx = this;
     snd_.rom = roms.sound;
-    snd_.rom_mask = 0x7ff;
+    snd_.rom_mask = jr_ ? 0xfff : 0x7ff;
     snd_.ext_read = snd_ext_read;
     snd_.port_in = snd_port_in;
     snd_.port_out = snd_port_out;
     snd_.test_in = snd_test;
 
-    board_.init(audio_rate);
+    if (jr_) jr_->init(audio_rate);
+    else board_.init(audio_rate);
 
     // 256 pens: colour (0-63) x 4 + pixel value. Pixel value 0 is black on
     // the real board (the PROMs' outputs are switched off).
@@ -138,18 +171,23 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes
 void Machine::decode_gfx()
 {
     // Tiles: 8 bytes each (one a row, bit 7 = left), plane 1 (the high bit
-    // of the pixel value) 0x800 on.
-    const uint8_t* t = roms_.tiles;
-    for (int code = 0; code < 256; ++code)
-        for (int px = 0; px < 8; ++px) {
-            uint16_t bits = 0;
-            for (int py = 0; py < 8; ++py) {
-                const int b = 7 - px;
-                const int v = (((t[0x800 + code * 8 + py] >> b) & 1) << 1) | ((t[code * 8 + py] >> b) & 1);
-                bits |= uint16_t(v << (2 * py));
+    // of the pixel value) 0x800 on (the Junior: 0x1000 on, its second bank
+    // of 256 tiles 0x800 into each plane).
+    const int plane1 = jr_ ? 0x1000 : 0x800;
+    for (int bank = 0; bank < (tile_hi_ ? 2 : 1); ++bank) {
+        const uint8_t* t = roms_.tiles + bank * 0x800;
+        uint16_t* cols = bank ? tile_hi_ : tile_cols_;
+        for (int code = 0; code < 256; ++code)
+            for (int px = 0; px < 8; ++px) {
+                uint16_t bits = 0;
+                for (int py = 0; py < 8; ++py) {
+                    const int b = 7 - px;
+                    const int v = (((t[plane1 + code * 8 + py] >> b) & 1) << 1) | ((t[code * 8 + py] >> b) & 1);
+                    bits |= uint16_t(v << (2 * py));
+                }
+                cols[code * 8 + px] = bits;
             }
-            tile_cols_[code * 8 + px] = bits;
-        }
+    }
     // Sprites: 16 bytes each (one a row) for the left 8 pixels, the right 8
     // 0x800 on; plane 1 0x1000 on.
     const uint8_t* s = roms_.sprites;
@@ -171,9 +209,11 @@ void Machine::reset()
     cpu_.reset();
     snd_.reset();
     snd_.irq(false);
-    board_.reset();
+    if (jr_) jr_->reset();
+    else board_.reset();
     tune_ = 0;
     sound_bits_ = 0;
+    latch_4h_ = latch_5h_ = 0;
     nmi_mask_ = flip_ = drq_ = false;
     sprite_bank_ = palette_bank_ = 0;
     for (int c = 0; c < 4; ++c) dma_addr_[c] = dma_count_reg_[c] = 0;
@@ -193,7 +233,7 @@ uint8_t Machine::in2()
     uint8_t v = 0;
     if (buttons_ & kStart1) v |= 0x04;
     if (buttons_ & kStart2) v |= 0x08;
-    if (!(snd_.p2 & 0x10))  v |= 0x40;
+    if (jr_ || !(snd_.p2 & 0x10)) v |= 0x40;     // the Junior: not connected
     if (buttons_ & kCoin)   v |= 0x80;
     return v;
 }
@@ -255,13 +295,33 @@ void Machine::mem_write(void* ctx, uint16_t addr, uint8_t v)
         m.sound_to(m.now());
         m.audio_to(m.snd_done_);
         m.sound_bits_ = bits;
-        m.board_.write_latch(bits);
+        if (m.jr_) m.jr_->write_latch(bits);
+        else m.board_.write_latch(bits);
         break;
     }
     case 0x7d80:
         m.sound_to(m.now());
         m.snd_.irq(v != 0);
         break;
+    case 0x7c80: case 0x7c81: case 0x7c82: case 0x7c83:
+    case 0x7c84: case 0x7c85: case 0x7c86: case 0x7c87: {
+        if (!m.jr_) break;                  // Donkey Kong: Radar Scope's grid colour
+        const uint8_t bit = uint8_t(1 << (addr & 7));
+        const uint8_t bits = (v & 1) ? uint8_t(m.latch_4h_ | bit) : uint8_t(m.latch_4h_ & ~bit);
+        if ((bits ^ m.latch_4h_) & 0x02) m.sound_to(m.now());   // the 8035 reads bit 1
+        m.latch_4h_ = bits;
+        break;
+    }
+    case 0x7d81: {
+        if (!m.jr_) break;
+        const uint8_t bits = (v & 1) ? uint8_t(m.latch_5h_ | 0x02) : uint8_t(m.latch_5h_ & ~0x02);
+        if (bits == m.latch_5h_) break;
+        m.sound_to(m.now());
+        m.audio_to(m.snd_done_);
+        m.latch_5h_ = bits;
+        m.jr_->set_fall(bits & 0x02);
+        break;
+    }
     case 0x7d82: m.flip_ = v & 1; break;
     case 0x7d83: m.sprite_bank_ = v & 1; break;
     case 0x7d84: m.nmi_mask_ = v & 1; break;
@@ -308,6 +368,7 @@ void Machine::dma()
 uint8_t Machine::snd_ext_read(void* ctx, uint8_t addr)
 {
     const Machine& m = *static_cast<const Machine*>(ctx);
+    if (m.jr_) return uint8_t(m.tune_ & 0x1f);
     if (m.snd_.p2 & 0x40) return uint8_t(~m.tune_ & 0x0f);
     return m.roms_.sound[0x800 + (m.snd_.p2 & 7) * 256 + addr];
 }
@@ -315,6 +376,15 @@ uint8_t Machine::snd_ext_read(void* ctx, uint8_t addr)
 uint8_t Machine::snd_port_in(void* ctx, uint8_t port)
 {
     const Machine& m = *static_cast<const Machine*>(ctx);
+    if (m.jr_) {
+        // P2 bits 6 / 5 / 4: latch 4H bit 1, 6H bits 3 and 6, all inverted.
+        if (port != i8035::kP2) return 0xff;
+        uint8_t v = uint8_t(m.snd_.p2 & 0x8f);
+        if (!(m.latch_4h_ & 0x02))   v |= 0x40;
+        if (!(m.sound_bits_ & 0x08)) v |= 0x20;
+        if (!(m.sound_bits_ & 0x40)) v |= 0x10;
+        return v;
+    }
     switch (port) {
     case i8035::kBus: return snd_ext_read(ctx, 0);
     case i8035::kP2:  return uint8_t((m.snd_.p2 & ~0x20) | ((m.sound_bits_ & 0x08) ? 0 : 0x20));
@@ -332,7 +402,8 @@ void Machine::snd_port_out(void* ctx, uint8_t port, uint8_t v)
         ++m.dac_writes_;
     } else if (port == i8035::kP2) {
         m.audio_to(m.snd_done_ + m.snd_.elapsed());
-        m.board_.set_dac_full(v & 0x80);
+        if (m.jr_) m.jr_->set_dac_full(v & 0x80);
+        else m.board_.set_dac_full(v & 0x80);
     }
 }
 
@@ -360,7 +431,8 @@ void Machine::audio_to(int snd_cycle)
         dac_acc_ += (to - audio_pos_) * dac_;
         audio_pos_ = to;
         if (to == end) {
-            audio_[audio_done_++] = board_.sample(float(dac_acc_) / kSoundCyclesPerFrame);
+            const float dac = float(dac_acc_) / kSoundCyclesPerFrame;
+            audio_[audio_done_++] = jr_ ? jr_->sample(dac) : board_.sample(dac);
             dac_acc_ = 0;
         }
     }
@@ -419,6 +491,7 @@ void Machine::snapshot()
     std::memcpy(vs.vram, vram_, sizeof vs.vram);
     vs.palette_bank = palette_bank_;
     vs.flip = flip_;
+    vs.gfx_bank = uint8_t(latch_4h_ & 1);
     uint8_t per_line[256] = {};
     const uint8_t* s = sprite_ram_ + (sprite_bank_ ? 0x200 : 0);
     int count = 0;
@@ -453,8 +526,9 @@ void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
     const int col = hx >> 3, px = hx & 7;
     const uint8_t* colours = roms_.proms + 0x200 + col;
     const int bank = vs.palette_bank * 16;
+    const uint16_t* tiles = vs.gfx_bank ? tile_hi_ : tile_cols_;
     for (int row = 2; row < 30; ++row) {
-        const uint16_t bits = tile_cols_[vs.vram[row * 32 + col] * 8 + px];
+        const uint16_t bits = tiles[vs.vram[row * 32 + col] * 8 + px];
         const uint16_t* pens = pen_ + ((colours[(row >> 2) * 32] & 0x0f) + bank) * 4;
         uint16_t* o = out + (row - 2) * 8;
         for (int k = 0; k < 8; ++k) o[k] = pens[(bits >> (2 * k)) & 3];

@@ -50,6 +50,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Galaxian | `galaxian` | Galaxian (Namco set 1) | - |
 | Amidar | `amidar` | Amidar (Konami) | - |
 | Dig Dug II | `digdug2` (or `digdug2o`) | Dig Dug II (New Ver.) / (Old Ver.) | `digdug2` for `digdug2o` |
+| Donkey Kong Jr. | `dkongjr` | Donkey Kong Junior (US set F-2) | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -144,6 +145,14 @@ Notes:
   `d21_3.1d` be7ec80b, `d21_1.1b` 5c77c0d4 and sprite colours `d2x-7.5k`
   1525a4d1) works too; a split `digdug2o.zip` needs `digdug2.zip` beside
   it. The I/O chips' programs (56XX, 58XX) aren't needed: modelled.
+- **Donkey Kong Jr.:** MAME's `dkongjr` (US set F-2; older names
+  `dkj.5b` `dkj.5c` `dkj.5e` - 8 KB each, CRCs dea28158 6fb5faf6 d042b6a8 -,
+  sound `c_3h.bin` 715da5f8, tiles `dkj.3n` `dkj.3p`, sprites `v_7c.bin` ...
+  `v_7f.bin`, PROMs `c-2e.bpr` `c-2f.bpr` `v-2n.bpr`). The program chips
+  are read whole; the board spreads their 2 KB pieces over 0000-5FFF.
+  `dkongjr2` (the same code on 3 other chips), the Japanese sets
+  (`dkongjrj`, `dkongjnrj`), the E kit and the bootlegs have other program
+  ROMs and aren't read.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

@@ -80,9 +80,9 @@ QUICK=0
 EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp \
      $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp $ROOT/emu/rom/romset.cpp \
      $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp $ROOT/emu/sound/invaders_sound.cpp \
-     $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp $ROOT/emu/sound/namco54.cpp \
+     $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp $ROOT/emu/sound/dkongjr_sound.cpp $ROOT/emu/sound/namco54.cpp \
      $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/sn76489.cpp $ROOT/emu/machines/pacman.cpp \
-     $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp $ROOT/emu/machines/dkong.cpp \
+     $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp $ROOT/emu/machines/dkong.cpp $ROOT/emu/machines/dkongjr.cpp \
      $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp $ROOT/emu/cpu/m6809.cpp \
      $ROOT/emu/cpu/m6800.cpp \
      $ROOT/emu/machines/namco_galaga_common.cpp $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp \
@@ -230,6 +230,12 @@ g++ $FLAGS $SAN -o "$OUT/mappy_tests_san" "$ROOT/tools/host_tests/mappy_tests.cp
 "$OUT/mappy_tests"
 "$OUT/mappy_tests_san"
 
+echo "== Donkey Kong Jr. tests (program map, tile banks, 8035 wiring, sound models)"
+g++ $FLAGS -O2 -o "$OUT/dkongjr_tests" "$ROOT/tools/host_tests/dkongjr_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/dkongjr_tests_san" "$ROOT/tools/host_tests/dkongjr_tests.cpp" "$LIB_SAN"
+"$OUT/dkongjr_tests"
+"$OUT/dkongjr_tests_san"
+
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" "$LIB_O2" > /dev/null
 python3 "$ROOT/tools/host_tests/make_fake_romset.py" "$OUT/fake"
@@ -237,7 +243,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars missile bzone zaxxon galaxian amidar digdug2; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars missile bzone zaxxon galaxian amidar digdug2 dkongjr; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

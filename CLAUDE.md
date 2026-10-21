@@ -973,7 +973,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   (the old note "no sound command whatever the switch" came from runs
   under 7 minutes); Amidar IN2 bit 1 (clear = on; the demo play's tunes
   and sounds, ~50 s into the attract cycle). No switch, attract silent on the cabinet: Galaxian, Pac-Man,
-  Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong, Mr. Do!, Burger Time,
+  Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong (and Jr.), Mr. Do!, Burger Time,
   Asteroids, Tempest, Dig Dug II, Missile Command (MAME's DIP lists have none for these
   sets; Missile Command's attract measured silent, peak 0 over 10,000
   frames),
@@ -1305,6 +1305,57 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   commands (MAME: 50 us), the "0 0 1" on the start-up screen (unknown
   whether it is a result of the checks), Old Ver.'s lookup PROM (MAME
   calls it possibly a bad dump).
+- Donkey Kong Jr. (`emu/machines/dkongjr.*`, set `dkongjr` = US set F-2;
+  Tom's zip has the old names `dkj.5b` / `.5c` / `.5e`, `c_3h.bin`, ...,
+  same CRCs; portrait 224x256, 4-way, A / B jump, Select coin, Start 1P,
+  L 2P). Donkey Kong's board, not a copy: `dkongjr::Machine` is
+  `dkong::Machine` with the Junior's wiring switched on
+  (`init_board()`: its sound model + room for the second tile bank;
+  everything else is the same code, branches on `jr_`). Donkey Kong's
+  pictures and sound checked unchanged frame for frame (`--hash`, 6,000
+  played frames of `dkongo`). What differs, all emulated: the program -
+  three 8 KB chips loaded whole, their 2 KB pieces mapped where the board
+  puts them (`kJrRomMap`: 5B = 0000 0800 3000 3800, 5C = 2000 4800 1000
+  5800, 5E = 4000 2800 5000 1800); latch 4H (7C80-7C87: bit 0 the tile
+  bank - codes + 256 -, bit 1 to the 8035's P2 bit 6); latch 5H (7D80
+  the 8035's INT as on DK, 7D81 the falling sound, 7D82-7D87 as DK); IN2
+  bit 6 not connected (1); the 8035's 4 KB program (3H), MOVX = the tune
+  latch's bits 0-4 (not inverted, no data ROM), P2 inputs bit 6 / 5 / 4 =
+  4H bit 1 / 6H bit 3 / 6H bit 6, inverted (the port reads latch AND
+  inputs); T0 / T1 as DK; DSW0 as DK's but the bonus 10,000 - 25,000.
+  P2 bit 7 = the DAC's full level (set) / fade (clear), as our DK: MAME's
+  discrete wiring reads the other way, but then the intro tune and the
+  play music (the program holds the bit set) were silent - checked in a
+  played run. Modelled (`emu/sound/dkongjr_sound.*`, part values and the
+  74LS624 VCOs' breadboard measurements from MAME's discrete description,
+  our own solution of the circuits): the one-shots (74LS123, 0.25 R C (1 +
+  700 / R): walk 56 ms, jump / climb 0.26 s) fire on a latch bit's 1 -> 0
+  write and retrigger (the game pulses the bits ~3 frames); walk (6H bit
+  0; bit 7 the variant) = a NAND of the one-shot and (3.1 kHz VCO xor
+  counter 6L bit 3) - or counter bit 6 with bit 7 set -, 6L clocked by a
+  VCO at 14.45 / 59.4 kHz as its bit 11 / 12 picks; jump (bit 1) = a
+  313-1378 Hz VCO whose control voltage the one-shot (47k) and counter bit
+  11 (10k) set through 47 uF, under the RC envelope (10 uF via 120 + 10k
+  into 100k, a diode to -0.6 V, a transistor shorting it while the tone is
+  high); climb (bit 2) = a 16-bit noise register at 710 Hz under the same
+  envelope (4.7k), high-passed 20k / 0.47 uF and low-passed 120 ohm / 1
+  uF; fall (5H bit 1) = 570 Hz while set; the DAC 0-5 V, fade 10k x 10
+  uF, Sallen-Key 1.9 kHz; the resistor mixer (DAC 47k, walk 100k, jump
+  47k, climb 20k, fall 150k), its 10 nF, the 1k / 4.7 uF coupling. Levels
+  for a small speaker (by the resistors the climb noise would be 2.3x the
+  music): intro tune ~16,500, play music ~6,000, walk ~10,000, jump /
+  climb ~14,000, fall ~8,000; soft knee 16,000 -> 22,000. Unsure: the
+  effects' character (no recording compared), the trigger edge (falling,
+  by MAME's inverted inputs), jump / climb leave a quiet ~1 s tail at -0.6
+  V (as the circuit does). Attract mode silent (no demo sounds switch in
+  MAME's DIP list, measured 0). `boot_frames` 30 (the attract page is up
+  at frame 6). PC (in play, best of 3): emu 0.056 ms (Pac-Man 0.027, DK
+  0.070 in the same run), render 0.062 (Pac-Man 0.050); `--panel`: ~1,600
+  pixels a picture at 240x320, 2,800 at 320x480, 0 wrong. Memory: machine
+  26,136 bytes (xtensa; DK's 21,800 + 4 KB second tile bank + 240 B sound
+  model), snapshot 1.8 KB, ROM 44.8 KB (biggest 8 KB).
+  `tools/host_tests/dkongjr_tests.cpp`: the map, tile banks, the 8035
+  wiring, the sounds on hand-made programs.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

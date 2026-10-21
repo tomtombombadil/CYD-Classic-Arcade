@@ -23,7 +23,7 @@
 //                         start1 start2 left right fire left2 right2 fire2;
 //                         rallyx: up down left right smoke coin coin2 start1
 //                         start2 service;
-//                         dkong: up down left right jump coin start1 start2;
+//                         dkong, dkongjr: up down left right jump coin start1 start2;
 //                         tempest: fire zap left right coin coin2 start1
 //                         start2 test step;
 //                         galaga, digdug: up down left right fire coin coin2
