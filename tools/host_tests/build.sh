@@ -63,6 +63,12 @@
 #  19. Namco's Mappy board (the 56XX / 58XX I/O chip models, both 6809s'
 #      wiring on hand-made programs, the picture on synthetic graphics, idle
 #      skipping against runs without it), -O2 and with the sanitizers
+#  20. Elevator Action: the 68705P3 core (ALU against a model, every mode,
+#      branch, the stack, interrupts, timer, ports), the Taito SJ board on
+#      hand-made Z80 / 6805 programs (the MCU's latches and bus requests,
+#      the graphics port, sound command / NMI / status, inputs), the picture
+#      against a per-pixel model, idle skipping against runs without it,
+#      -O2 and with the sanitizers
 # and the ROM store / USB protocol (core/), with the web page's loader
 # (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
@@ -98,7 +104,8 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/starwars_mathbox.cpp $ROOT/emu/machines/starwars.cpp $ROOT/emu/machines/missile.cpp \
      $ROOT/emu/sound/zaxxon_sound.cpp $ROOT/emu/machines/zaxxon.cpp \
      $ROOT/emu/machines/galaxian_video.cpp $ROOT/emu/sound/galaxian_sound.cpp $ROOT/emu/machines/galaxian.cpp $ROOT/emu/machines/amidar.cpp \
-     $ROOT/emu/machines/mappy.cpp"
+     $ROOT/emu/machines/mappy.cpp \
+     $ROOT/emu/cpu/m68705.cpp $ROOT/emu/machines/elevator.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -236,6 +243,12 @@ g++ $FLAGS $SAN -o "$OUT/dkongjr_tests_san" "$ROOT/tools/host_tests/dkongjr_test
 "$OUT/dkongjr_tests"
 "$OUT/dkongjr_tests_san"
 
+echo "== Elevator Action tests (68705 core, the Taito SJ board, picture model, idle skipping)"
+g++ $FLAGS -O2 -o "$OUT/elevator_tests" "$ROOT/tools/host_tests/elevator_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/elevator_tests_san" "$ROOT/tools/host_tests/elevator_tests.cpp" "$LIB_SAN"
+"$OUT/elevator_tests"
+"$OUT/elevator_tests_san"
+
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" "$LIB_O2" > /dev/null
 python3 "$ROOT/tools/host_tests/make_fake_romset.py" "$OUT/fake"
@@ -243,7 +256,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars missile bzone zaxxon galaxian amidar digdug2 dkongjr; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars missile bzone zaxxon galaxian amidar digdug2 dkongjr elevator; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

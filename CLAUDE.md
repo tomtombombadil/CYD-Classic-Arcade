@@ -1356,6 +1356,75 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   model), snapshot 1.8 KB, ROM 44.8 KB (biggest 8 KB).
   `tools/host_tests/dkongjr_tests.cpp`: the map, tile banks, the 8035
   wiring, the sounds on hand-made programs.
+- Elevator Action (`emu/machines/elevator.*`, game id `elevator`; MAME's
+  `elevator` (BA3, 4 boards, 2764s) or `elevatora` (EA, 5 boards, 2732s -
+  Tom's zip: `ea-ic69.bin` ... `ea-ic8.bin`, `ba3.11`, `eb16.22`, the same
+  CRCs) as romset variants; the MCU dump `ba3.11` is needed; the bootleg
+  `elevatorb` isn't read; landscape 256x224 = lines 16-239 of 264, 384 x
+  264 pixel clocks at 6 MHz = 59.19 Hz). Taito's SJ board. Emulated: the
+  Z80 at 4 MHz (IM 1, the VBLANK IRQ at line 240 held until taken - a
+  frame runs VBLANK to VBLANK, so the picture is the RAM as VBLANK
+  starts), RAM, the character RAM (9000-BFFF, write only, two banks of 256
+  characters / 64 sprites, 3 bit planes 0x800 apart, bit 0 = the left
+  pixel) that the program fills from the 32 KB graphics ROMs through the
+  D404 port (D509 / D50A pointer, counting up), three 32 x 32 playfields
+  with a horizontal scroll each (MAME's measured offsets 3 / 1 / -1 and 8
+  / 10 / 12) and a vertical scroll per column, 24 sprites (slots 10-17
+  absent; drawn 1E ... 0 then 1F on top; x 3-254 shown, wrapping), the
+  palette RAM (9 bits, inverted, 1k / 470 / 270 ohm), the plane priority
+  PROM pixel by pixel (the mask of blank planes picks the plane; when the
+  PROM row is a plain order, as all of this game's are, the planes are
+  laid on each other 8 pixels at a time - same pixels), the plane enables,
+  the sprite bank, the DIPs (A by set_dips, B / C on AY 0's ports: 1 coin
+  1 credit, MAME's defaults), the watchdog (128 VBLANKs, resets the board),
+  the sound board (Z80 3 MHz, IRQ at 36.62 Hz held until taken, NMI =
+  command waiting AND AY 3 port B bit 0 low, OR semaphore 2; the command
+  latch, its flags, AY 2 port A = IN4's high nibble), four AY-3-8910s at
+  1.5 MHz (`emu/sound/ay8910.*`; AY 0 on the main board plays the music)
+  and the DAC (AY 1 port A) with its volume ladder (AY 1 port B,
+  inverted, 680k ... 4.7k). The 68705P3 MCU (`emu/cpu/m68705.*`, our own
+  6805 core: every documented opcode with the HMOS cycle table, 11-bit
+  addresses, SP 60-7F, ports with DDRs (C four bits), the timer with its
+  7-bit prescaler, /INT edge-latched, BIL / BIH; undocumented opcodes =
+  counted 2-cycle no-ops) at 3 MHz / 4 on taitosj's security interface:
+  Z80 8800 = data (write: ZREADY + the MCU's /INT; read: ZACCEPT), 8801 =
+  status; MCU port A = the bus (Z80 byte AND the byte read from the Z80's
+  memory AND its outputs), port B = 68LRD / 68LWR strobes, BUSRQ, 68WRITE
+  / 68READ with the address counter (low byte counts), LAL / UAL; port C =
+  ZREADY, ZACCEPT, BUSAK. The program checksums its EPROM at power-on,
+  answers every command (~3 a frame, a rolling code) and would take the
+  Z80's bus to corrupt RAM if the protocol failed - with ours it never
+  does (0 bus grants in 8,000 played frames). Sync: one 12 MHz tick count
+  (main 3, sound 4, MCU 16, AY 8 ticks a cycle); the main CPU leads, the
+  MCU catches up at every 88xx access and after each slice; while the MCU
+  sits in an idle loop only the Z80 or its timer can end (the main loop at
+  0180, waits on its latches) the Z80 runs to the timer's interrupt, else
+  the two step an instruction at a time; a bus request stops the Z80 at
+  once (BUSAK at once) and it loses the time. Modelled / assumed: the AYs'
+  mix by MAME's routes (AY 0's channels x 0.15 each, AYs 1-3 with outputs
+  tied - taken as the average - x 0.5 / 0.5 / 1.0, the DAC x 0.15), a 20
+  Hz output coupling, gain for ~20,000 peaks (a soft knee above 16,000;
+  play peaks 13,700-19,100), AY 3's RC filter switch (port A bits 0-1)
+  not modelled (MAME doesn't either); unmapped reads 0 (as MAME's map,
+  which the game runs on); collision registers read 0 (the program never
+  reads D400-D403); flip screen (cocktail) not drawn. No demo sounds
+  switch (attract silent). Controls: 8-way stick, A = shoot (button 1), B
+  = jump (button 2), Select coin, Start 1P, L 2P. boot_frames 41 (white
+  until the title page). Idle skipping, exact (per-frame picture, audio
+  and all three CPUs' registers / the MCU's RAM the same with and without
+  it over 8,000 frames incl. play; `elevator_tests` too): the MCU's loop
+  at 0180 (27 cycles a pass, a random-number counter at $23 - run in
+  closed form to the timer's next interrupt) and branch-to-self waits on
+  its latches; the main CPU's frame wait at 73F2 and the sound CPU's main
+  loop at 0164 - after one pass run, every register they set is as each
+  pass leaves it, so the rest are time and R (main ~49.5K, sound ~39K
+  cycles a frame skipped). PC (same run, best of 3): emu ~0.050 ms
+  (Pac-Man 0.028-0.032), render ~0.105 ms (Pac-Man ~0.050); callgrind:
+  emulation ~0.66M host instructions a frame, the four AYs ~0.3M of it;
+  render ~1.4M (three playfields decoded per line). `--panel` 240x320 /
+  320x480: 0 wrong (~1,900 / 3,400 pixels a picture). Memory (xtensa):
+  machine 21.6 KB (the VideoState 15.6 KB - character RAM 12 KB), the
+  snapshot 15.6 KB, ROM 74.3 KB (biggest 4 KB; 8 KB in `elevator`).
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

@@ -28,6 +28,7 @@
 #include "machines/amidar.h"
 #include "machines/galaxian.h"
 #include "machines/mappy.h"
+#include "machines/elevator.h"
 
 #include <cstring>
 #include <new>
@@ -743,6 +744,46 @@ const ButtonName kAmidarButtons[] = {
     {"start1", amidar::kStart1}, {"start2", amidar::kStart2}, {"service", amidar::kService},
 };
 
+// ---- Elevator Action ----------------------------------------------------------
+
+class Elevator : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        using namespace elevator;
+        m_.init({r[kRegionCpu], r[kRegionSound], r[kRegionMcu], r[kRegionGfx], r[kRegionProm]}, rate, swap);
+    }
+    // No demo sounds switch (MAME's DIP list has none; the attract mode is
+    // silent).
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    elevator::Machine m_;
+    Shot<elevator::Machine> shot_;
+};
+
+// The 8-way stick; A shoots, B jumps (the cabinet's two buttons, by
+// position). Select = coin, Start = 1 player, L = 2 players (they take
+// turns).
+const Control kElevatorControls[] = {
+    {kPadUp, elevator::kUp}, {kPadDown, elevator::kDown}, {kPadLeft, elevator::kLeft},
+    {kPadRight, elevator::kRight}, {kPadA, elevator::kFire}, {kPadB, elevator::kJump},
+    {kPadSelect, elevator::kCoin}, {kPadStart, elevator::kStart1}, {kPadL, elevator::kStart2},
+};
+
+const ButtonName kElevatorButtons[] = {
+    {"up", elevator::kUp}, {"down", elevator::kDown}, {"left", elevator::kLeft}, {"right", elevator::kRight},
+    {"fire", elevator::kFire}, {"jump", elevator::kJump}, {"coin", elevator::kCoin}, {"coin2", elevator::kCoin2},
+    {"start1", elevator::kStart1}, {"start2", elevator::kStart2}, {"service", elevator::kService},
+    {"tilt", elevator::kTilt},
+};
+
 // ---- Williams: Robotron: 2084, Defender --------------------------------------
 
 template <williams::Board B> class Williams : public Machine {
@@ -982,6 +1023,10 @@ const Info kGames[] = {
      Orientation::Portrait, dkongjr::kCpuClock, dkongjr::kCyclesPerFrame, kDkongControls,
      COUNT(kDkongControls), kDkongButtons, COUNT(kDkongButtons), nullptr, 0, make<Dkongjr>, true, false,
      "Nintendo", 1982, 30},
+    {"elevator", "Elevator Action", &elevator::kRomSet, elevator::kScreenW, elevator::kScreenH,
+     Orientation::Landscape, elevator::kCpuClock, elevator::kCyclesPerFrame, kElevatorControls,
+     COUNT(kElevatorControls), kElevatorButtons, COUNT(kElevatorButtons), nullptr, 0, make<Elevator>, false,
+     false, "Taito", 1983, 41},
 
 };
 
