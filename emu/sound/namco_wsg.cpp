@@ -50,6 +50,12 @@ void Wsg::set_volume(int v, uint8_t vol)
     if (v >= 0 && v < voices_) voice_[v].volume = vol & 15;
 }
 
+void Wsg::set_position(int v, uint8_t index)
+{
+    if (v >= 0 && v < voices_)
+        voice_[v].phase = (voice_[v].phase & ((1u << 27) - 1)) | (uint32_t(index & 0x1f) << 27);
+}
+
 // Register file (nibbles): 00-04 / 06-09 / 0B-0E voice accumulators (the
 // chip's own, writes ignored), 05 / 0A / 0F waveforms, 10-14 voice 0
 // frequency (low nibble first; voice 0 alone has the lowest nibble),

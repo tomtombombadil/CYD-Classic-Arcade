@@ -45,6 +45,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Q*bert | 19.5 | - | 14.7 / 16.1 | **34.2 / 35.6** | 1.4 | 68.0 | 8 |
 | Donkey Kong | 21.3 | - | 14.7 / 16.1 | **36.0 / 37.4** | 1.8 | 32.8 | 4 |
 | Galaga | 23.8 | - | 15.7 / 17.1 | **39.5 / 40.9** | 3.6 | 37.0 | 4 |
+| Dig Dug II | 23.8 | - | 15.7 / 17.1 | **39.5 / 40.9** | 4.6 | 76.8 | 16 |
 | Asteroids | 25.5 | - | 15.8 / 17.7 | **41.3 / 43.2** | 20.0 | 8.0 | 2 |
 | Battlezone | 27.7 | - | 15.2 / 17.7 | **42.9 / 45.4** | 20.0 | 16.0 | 2 |
 | Tempest | 29.2 | - | 15.8 / 17.7 | **45.0 / 46.9** | 20.0 | 24.0 | 4 |
@@ -82,6 +83,16 @@ model 200 B, an AY 84 B. Buffers as Donkey Kong's (224 x 256): strip 3,840
 8 x 4) + sound 2,048, each with its 8-byte head. Snapshot = the
 VideoState, 2,182 B (tiles 1 KB, object RAM 128 B, the frame's stars ~1
 KB). ROM: Galaxian 10 + 4 KB + 32 B, Amidar 16 + 8 + 4 KB + 32 B.
+
+Dig Dug II (2026-10-21, xtensa-esp-elf-g++ `sizeof` of the games.cpp
+wrapper): 24,408 bytes - mappy::Machine 24,392: video RAM 4 KB, RAM 6 KB,
+shared RAM 1 KB, the VideoState 4,740 B (video RAM + a 64-entry sprite
+list), characters decoded by column 4 KB, pens 2.6 KB (sprite lookup room
+for The Tower of Druaga's 64 colours), two 6809s 556 B each, the WSG 188
+B, the I/O chips 40 B each. Buffers as Pac-Man's (224 x 288). Snapshot =
+the VideoState, 4,740 B. ROM 76.8 KB in 7 regions (program 32, sound CPU
+8, characters 4, sprites 2 x 16, PROMs 0.5 + 0.25): the renderer reads
+the sprite ROMs every line, from flash when they don't fit.
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
 Robotron / Defender 51.9) or one of Qix's 32 KB halves.

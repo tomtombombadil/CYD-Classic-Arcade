@@ -1,6 +1,7 @@
 // Namco custom I/O chips of the Galaga / Dig Dug CPU board, written for this
 // project (MIT): the 06XX bus interface and behaviour models of the 51XX
-// (controls, coins, credits) and 53XX (DIP switch reader). The 51XX and
+// (controls, coins, credits) and 53XX (DIP switch reader); and the 56XX /
+// 58XX of the Super Pac-Man / Mappy boards (see Chip5x). The 51XX and
 // 53XX are Fujitsu MB884x microcontrollers whose programs (51xx.bin,
 // 53xx.bin) aren't in the usual ROM sets, so what they do is modelled from
 // their known behaviour instead of running them. Hardware facts from public
@@ -121,6 +122,77 @@ public:
 private:
     uint8_t dips_[2] = {};
     uint8_t count_ = 0;
+};
+
+
+// --- 56XX / 58XX ---------------------------------------------------------------
+
+// The I/O chips of Namco's Super Pac-Man / Mappy boards (Mappy, Dig Dug II,
+// Motos, The Tower of Druaga ...): MB8843 microcontrollers like the 51XX,
+// their programs not dumped either, so modelled from their known behaviour.
+// Each chip shares 16 nibbles of RAM with the CPU through the 16XX (the CPU
+// reads F0 | nibble). The CPU writes a command into nibble 8 (arguments in
+// 9-15); once a frame, a moment after VBLANK, the chip carries it out
+// (run()) and leaves its results in nibbles 0-7. Four 4-bit input ports
+// (A = pins 38-41, B = 22-25, C = 26-29, D = 30-33) are read active low and
+// stored inverted; output pin 13 can select which of two input sets a port
+// sees (a DIP switch multiplexer).
+//
+// Commands (56XX / 58XX, where they differ):
+//   1        the four ports into nibbles 0-3 (56XX) or 4-7 (58XX)
+//   2        coinage from 9-12: coins per credit and credits per coin for
+//            coin slots 1 and 2
+//   4 / 3    coin and start handling ("coin mode"): port A = coins (bit 0
+//            coin 1, 1 coin 2, 3 service credit), port D = buttons (bit 2
+//            start 1, 3 start 2; starts take credits only while nibble 9 is
+//            0); credits in BCD in nibbles 0-1 (58XX: 2-3), the credits
+//            just added in 2 (58XX: 0) and just taken in 3 (58XX: 1), port
+//            B in 4, port C in 6, port D's bits 0 / 2 held + just pressed
+//            in 5 and bits 1 / 3 in 7
+//   9 / 4    the four ports with pin 13 low into 0 2 4 6, high into 1 3 5 7
+//   8 (56XX) start-up check: the sum of nibbles 9-15 into 0-1
+//   7 (56XX) start-up check (Libble Rabble): E into 2, 6 into 7
+//   5 (58XX) start-up check: 7 nibbles of XORs of 9-15 picked by a 7-bit
+//            LFSR, into 1-7 (0 into 0)
+// While the chip's reset line is held it does nothing; a reset clears its
+// coin state (1 coin 1 credit, no credits).
+class Chip5x {
+public:
+    enum class Type : uint8_t { k56xx, k58xx };
+
+    void init(Type t) { type_ = t; clear(); }
+    void clear();                                   // power-on: RAM and coin state
+    // The ports as the pins see them (active low), for pin 13 low / high.
+    void set_ports(int pin13, uint8_t a, uint8_t b, uint8_t c, uint8_t d)
+    {
+        in_[pin13 & 1][0] = a & 15;
+        in_[pin13 & 1][1] = b & 15;
+        in_[pin13 & 1][2] = c & 15;
+        in_[pin13 & 1][3] = d & 15;
+    }
+    uint8_t read(uint8_t offset) const { return uint8_t(0xf0 | ram_[offset & 15]); }
+    void    write(uint8_t offset, uint8_t data) { ram_[offset & 15] = data & 15; }
+    void    set_reset(bool held);
+    bool    in_reset() const { return reset_; }
+    void    run();                                  // carries out the command in nibble 8
+
+    int credits() const { return credits_; }
+    const uint8_t* ram() const { return ram_; }
+
+private:
+    void coins(int swap);
+    uint8_t port(int pin13, int p) const { return uint8_t(~in_[pin13][p] & 15); }
+
+    Type    type_ = Type::k58xx;
+    uint8_t ram_[16] = {};
+    uint8_t in_[2][4] = {{15, 15, 15, 15}, {15, 15, 15, 15}};
+    bool    reset_ = true;
+    uint8_t pin13_ = 0;                             // output pin 13 (bit 0 of output port A)
+    uint8_t last_coins_ = 0, last_buttons_ = 0;     // pressed = 1
+    uint8_t coins_[2] = {};
+    uint8_t coins_per_credit_[2] = {1, 1};
+    uint8_t credits_per_coin_[2] = {1, 1};
+    int     credits_ = 0;
 };
 
 } // namespace namco_io

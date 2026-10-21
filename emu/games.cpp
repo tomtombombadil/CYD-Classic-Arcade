@@ -26,6 +26,7 @@
 #include "machines/zaxxon.h"
 #include "machines/amidar.h"
 #include "machines/galaxian.h"
+#include "machines/mappy.h"
 
 #include <cstring>
 #include <new>
@@ -662,6 +663,42 @@ const ButtonName kGalaxianButtons[] = {
     {"start2", galaxian::kStart2}, {"service", galaxian::kService}, {"test", galaxian::kTest},
 };
 
+// ---- Dig Dug II (Namco's Mappy board) ----------------------------------------
+
+class Digdug2 : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init(mappy::digdug2::kBoard, r, rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    mappy::Machine m_;
+    Shot<mappy::Machine> shot_;
+};
+
+// The 4-way stick, A = pump (button 1, the main one), B = jackhammer (button
+// 2). Select = coin, Start = 1 player, L = 2 players (they take turns).
+const Control kDigdug2Controls[] = {
+    {kPadUp, mappy::kUp}, {kPadDown, mappy::kDown}, {kPadLeft, mappy::kLeft},
+    {kPadRight, mappy::kRight}, {kPadA, mappy::kButton1}, {kPadB, mappy::kButton2},
+    {kPadSelect, mappy::kCoin}, {kPadStart, mappy::kStart1}, {kPadL, mappy::kStart2},
+};
+
+const ButtonName kDigdug2Buttons[] = {
+    {"up", mappy::kUp}, {"down", mappy::kDown}, {"left", mappy::kLeft}, {"right", mappy::kRight},
+    {"pump", mappy::kButton1}, {"hammer", mappy::kButton2}, {"coin", mappy::kCoin},
+    {"coin2", mappy::kCoin2}, {"start1", mappy::kStart1}, {"start2", mappy::kStart2},
+    {"service", mappy::kService}, {"test", mappy::kTest},
+};
+
 // ---- Amidar -------------------------------------------------------------------
 
 class Amidar : public Machine {
@@ -932,6 +969,9 @@ const Info kGames[] = {
     {"amidar", "Amidar", &amidar::kRomSet, amidar::kScreenW, amidar::kScreenH, Orientation::Portrait,
      amidar::kCpuClock, amidar::kCyclesPerFrame, kAmidarControls, COUNT(kAmidarControls), kAmidarButtons,
      COUNT(kAmidarButtons), nullptr, 0, make<Amidar>, true, false, "Konami", 1981, 193},
+    {"digdug2", "Dig Dug II", &mappy::digdug2::kRomSet, mappy::kScreenW, mappy::kScreenH, Orientation::Portrait,
+     mappy::kCpuClock, mappy::kCyclesPerFrame, kDigdug2Controls, COUNT(kDigdug2Controls), kDigdug2Buttons,
+     COUNT(kDigdug2Buttons), nullptr, 0, make<Digdug2>, true, false, "Namco", 1985, 286},
 
 };
 

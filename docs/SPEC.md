@@ -36,6 +36,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Zaxxon | Z80 3.04 MHz | 8255 switching discrete sound circuits (our own models), skewed scrolling background from tile map ROMs, 32 x 32 sprites | 224x256 portrait | done: the main loop's idle passes skipped (exact); background tiles decoded as drawn into an 8 KB cache |
 | Galaxian | Z80 3.072 MHz | tiles with a scroll and colour per column, 8 sprites, bullets, the LFSR star field; analog sound (our models of its circuits) | 224x256 portrait | done: ~1.3x Pac-Man's host instructions a frame (the game keeps its CPU busy) |
 | Amidar | Z80 3.072 MHz | Galaxian's video (no stars or bullets, a background colour); Z80 sound CPU + 2 AY-3-8910 + RC filters | 224x256 portrait | done: the sound CPU's timer waits skipped (exact), ~1.6x Pac-Man's host instructions a frame |
+| Dig Dug II | 2x 6809 1.536 MHz (main + sound, shared RAM) | Namco's Mappy board: 15XX 8-voice wavetable sound, 56XX / 58XX I/O chips (modelled), scrolling tile map with fixed side columns, 64 4-bit sprites (16 / 32 square) | 224x288 portrait | done: both CPUs' frame waits skipped (exact), ~1.45x Pac-Man's host instructions a frame emulated, about Pac-Man's to draw |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
 | Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
@@ -46,7 +47,7 @@ There is no recorded sound in these ROMs to "pull out". Each machine made
 its sound one of three ways, and we do what the machine did:
 
 1. **Sound chips driven by the game program** - Pac-Man, Ms. Pac-Man,
-   Galaga, Dig Dug (Namco wavetable: the waveforms are in a 256-byte PROM
+   Galaga, Dig Dug, Dig Dug II (Namco wavetable: the waveforms are in a 256-byte PROM
    in the ROM set, the game program writes pitch and volume 60 times a
    second); Mr. Do! (two SN76489s: square waves and noise); Burger Time
    (two AY-3-8910s, programmed by a sound 6502); Amidar (two

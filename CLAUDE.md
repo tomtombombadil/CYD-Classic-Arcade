@@ -301,7 +301,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   measurement.
 - Two cores (v0.14.6, the next step after the speed page; Galaga's busy
   waves on the 4.0"): the tile games (Pac-Man, Ms. Pac-Man, Galaga, Dig
-  Dug, Donkey Kong, Rally-X, Q*bert, Galaxian, Amidar) copy their
+  Dug, Donkey Kong, Rally-X, Q*bert, Galaxian, Amidar, Dig Dug II) copy their
   VideoState after a frame
   (`Machine::snapshot()`, a `Shot<>` in games.cpp, ~2-5 KB allocated at the
   first one) and a "draw" task on core 0 (priority 1, as BTstack's loop;
@@ -974,7 +974,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   under 7 minutes); Amidar IN2 bit 1 (clear = on; the demo play's tunes
   and sounds, ~50 s into the attract cycle). No switch, attract silent on the cabinet: Galaxian, Pac-Man,
   Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong, Mr. Do!, Burger Time,
-  Asteroids, Tempest, Missile Command (MAME's DIP lists have none for these
+  Asteroids, Tempest, Dig Dug II, Missile Command (MAME's DIP lists have none for these
   sets; Missile Command's attract measured silent, peak 0 over 10,000
   frames),
   Battlezone (no switch either; its program sets the sound-on bit of the
@@ -1251,6 +1251,60 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   same run as above): emu 0.068 ms (Pac-Man 0.035; callgrind 579K host
   instructions a frame vs 352K), render 0.040. `--panel`: ~2,600 pixels a
   picture at 240x320, 4,700 at 320x480, 0 wrong.
+- Dig Dug II (`emu/machines/mappy.*`, set `digdug2` = New Ver., Tom's;
+  `digdug2o` (Old Ver.: other program ROMs and sprite lookup PROM) as a
+  romset variant; portrait 224x288 = the board's 288 x 224 turned like
+  Pac-Man's (MAME's ROT90), 60.606 Hz). Namco's Mappy board, written as a
+  reusable machine: a game is a `mappy::Board` (set, main ROM base, which
+  I/O chip is where, watchdog, sprite colours, DSW1 default) - Mappy, Motos
+  and The Tower of Druaga could follow. Emulated: two 6809s at 1.536 MHz
+  (main + sound CPU, 264 lines of 96 cycles), run in 2-line slices, main
+  first; the 1 KB shared RAM (main 4000, mirrored 4400; sound CPU 0000,
+  mirrored to 1FFF); the LS259 latch both CPUs write (A1-A3 = bit, A0 =
+  data: sound / main IRQ enable - off clears a pending IRQ -, flip, sound
+  on, I/O chips run, sound CPU runs - its reset restarts it from its
+  vector); both IRQs at VBLANK (line 224), held until acknowledged; the
+  scroll (writes to 3800-3FFF, address bits 3-10); the tile map: 36 board
+  columns, 2-33 a 32 x 60 map scrolled down by the scroll, 0-1 / 34-35
+  fixed (score / round; MAME's address formula for them); 8 x 8 2-bit
+  characters (ROM inverted), colour lookup PROM into the palette's upper
+  16, attribute bit 6 = in front of sprites (its lookup-15 pens let them
+  through); 64 sprites of 16 x 16 4-bit pixels (2 x 16 KB ROMs, planes 0-1
+  / 2-3), 16 or 32 wide / tall, flips, X bit 8, the one-line delay, lookup
+  15 = transparent, later ones on top; the palette through Pac-Man's
+  resistor weights; the 15XX (8 voices of the shared `namco_wsg`, 24 kHz -
+  the board's own sample rate, so the counter is exact; its registers are
+  the shared RAM's first 64 bytes, applied after each slice; register 2
+  sets the waveform position, `Wsg::set_position`); Dig Dug II has no
+  watchdog (MAME's count 0). Modelled (`namco_io::Chip5x`, no dumps of the
+  MB8843 programs): the 56XX / 58XX - 16 nibbles shared with the CPU,
+  commands run 1 line after VBLANK: ports, coinage, coin mode (credits
+  BCD, coins / service / starts on their edges, starts only while nibble
+  9 = 0), DIP reads through the pin-13 multiplexer, the start-up checks
+  (58XX's LFSR XORs, 56XX's sum) - checked against the answers Mappy,
+  Grobda, Phozon and Super Pac-Man expect (`mappy_tests`). Dig Dug II's
+  chip 0 (58XX) = coins, stick, button 1 (pump) and starts; chip 1 (56XX)
+  = DSW1 / DSW0 (bit 0 = button 2, the jackhammer). Controls (MAME's
+  ports): 4-way stick, A = pump, B = jackhammer, Select coin, Start 1P, L
+  2P. No demo sounds switch; attract silent (6,000 frames measured).
+  boot_frames 286 (RAM / ROM checks show "0 0 1", a settings page flashes
+  4 frames at 274, the title at 286). Idle skipping, exact (`--hash` the
+  same over 9,000 frames with two games; `mappy_tests` too): a CPU in
+  "LDA addr ; BEQ back" (extended or direct) on a RAM byte that is 0 with
+  no interrupt it would take skips the passes that end before the slice
+  does (A = 0, flags as LDA left them) - the main CPU's frame wait (80C1)
+  and the sound CPU's (E381), ~60 % of the cycles. Drawing: per display
+  line (a board column), tile runs unrolled 8 at a time, sprite columns
+  decoded 8 lines at once (one 64-bit read a plane pair). PC (callgrind,
+  2,000 frames incl. play): emulation 507K host instructions a frame
+  (Pac-Man 349K - the 6809s' real work), drawing 781K (Pac-Man 786K);
+  wall time emu ~0.04-0.05 ms, render ~0.05 ms (Pac-Man ~0.03 / 0.05).
+  `--panel` 240x320 / 320x480: 0 wrong. Sound peaks ~20,300 (WSG gain 26).
+  Memory: wrapper 24.4 KB (xtensa), snapshot 4.7 KB, ROM 76.8 KB (7
+  regions, biggest 16 KB). Unsure: the 1-line delay of the I/O chips'
+  commands (MAME: 50 us), the "0 0 1" on the start-up screen (unknown
+  whether it is a result of the checks), Old Ver.'s lookup PROM (MAME
+  calls it possibly a bad dump).
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

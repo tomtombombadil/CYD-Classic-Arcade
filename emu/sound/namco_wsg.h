@@ -31,6 +31,9 @@ public:
     void set_frequency(int v, uint32_t freq);
     void set_waveform(int v, uint8_t wave);       // 0-7
     void set_volume(int v, uint8_t vol);          // 0-15
+    // Sets the sample index (the accumulator's top 5 bits), keeping the
+    // fraction: the 15XX's register 2 (Grobda plays speech through it).
+    void set_position(int v, uint8_t index);
     void set_enabled(bool on) { enabled_ = on; }  // sound enable latch: off = silence
     // Output scale; the default keeps all voices at full volume inside 16 bits.
     void set_gain(int gain) { gain_ = gain; }
