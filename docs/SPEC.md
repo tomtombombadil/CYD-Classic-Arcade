@@ -40,6 +40,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Donkey Kong Jr. | Z80 3.072 MHz | Donkey Kong's board: i8035 sound CPU + DAC, two tile banks, its own analog effects (walk, jump, climb, fall - our models), program chips spread over the map in 2 KB pieces | 224x256 portrait | done: dkong::Machine with the Junior board switched on; ~2x Pac-Man's emulation time (as Donkey Kong) |
 | Elevator Action | Z80 4 MHz + 68705P3 protection MCU (our own 6805 core) | Taito SJ: three scrolling playfields + 24 sprites from character RAM the program fills through a graphics ROM port, a priority PROM, palette RAM; Z80 sound CPU + 3 AY-3-8910 + DAC, a fourth AY on the main board | 256x224 landscape | done: the three CPUs' idle loops skipped (exact), ~1.4x Pac-Man's host instructions a frame (4 AYs); machine 21.6 KB + 74 KB of ROM |
 | Xevious | 3x Z80 3.072 MHz (the Galaga board) | Namco 50xx / 51xx (modelled), 54xx (our noise model), wavetable sound; two scrolling 64x32 tile layers, 3-bit sprites, the terrain map ROMs the game reads through BS / BB | 224x288 portrait | done: three waits skipped (exact), ~86K CPU cycles a frame in play (~2x Pac-Man's emulation time; the game keeps its CPUs busy) |
+| Gyruss | Z80 3.072 MHz + Konami-1 (6809 with scrambled opcodes) 1.536 MHz | tiles (2 bits, colour PROMs, some in front of the sprites), 48 sprites of 8x16 rewritten by the sub CPU as the beam goes down; Z80 sound CPU + 5 AY-3-8910 (two through switched RC filters) + i8039 with a DAC | 224x256 portrait | done: the idle loops of all four CPUs skipped (exact); still ~3x Pac-Man's host instructions a frame in play (~2.3x in the attract mode), ~4.5x its PC time - likely too slow for full speed on the ESP32 boards |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
 | Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
@@ -58,6 +59,8 @@ its sound one of three ways, and we do what the machine did:
    AY-3-8910s, programmed by a sound Z80, through RC filters it switches);
    Elevator Action (four AY-3-8910s - one played by the main CPU, three
    by a sound Z80 - and a DAC on one AY's port);
+   Gyruss (five AY-3-8910s and a sound Z80, plus an i8039 playing effects
+   through a DAC - its program from the set, exact);
    Spy Hunter (AY-8910s). We emulate the chip; the sound is exact.
 2. **A sound CPU with its own program and a DAC** - Donkey Kong's music
    (i8035), Q\*bert's effects (6502), Defender / Stargate (all of it,

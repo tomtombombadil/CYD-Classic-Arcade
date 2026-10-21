@@ -30,6 +30,7 @@
 #include "machines/mappy.h"
 #include "machines/elevator.h"
 #include "machines/xevious.h"
+#include "machines/gyruss.h"
 
 #include <cstring>
 #include <new>
@@ -785,6 +786,46 @@ const ButtonName kElevatorButtons[] = {
     {"tilt", elevator::kTilt},
 };
 
+// ---- Gyruss --------------------------------------------------------------------
+
+class Gyruss : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        m_.init({r[gyruss::kRegionCpu], r[gyruss::kRegionSub], r[gyruss::kRegionSound], r[gyruss::kRegionI8039],
+                 r[gyruss::kRegionSprites], r[gyruss::kRegionTiles], r[gyruss::kRegionProms]},
+                rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    // DSW2's Demo Sounds and DSW3's Demo Music (both on by default).
+    bool set_demo_sounds(bool on) override { m_.set_demo_sounds(on); return true; }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    gyruss::Machine m_;
+    Shot<gyruss::Machine> shot_;
+};
+
+// The 8-way stick as on the cabinet (it moves the ship round the circle)
+// and the one button: A fires (B too). Select = coin, Start = 1 player, L =
+// 2 players (they take turns).
+const Control kGyrussControls[] = {
+    {kPadUp, gyruss::kUp}, {kPadDown, gyruss::kDown}, {kPadLeft, gyruss::kLeft},
+    {kPadRight, gyruss::kRight}, {kPadA, gyruss::kFire}, {kPadB, gyruss::kFire},
+    {kPadSelect, gyruss::kCoin}, {kPadStart, gyruss::kStart1}, {kPadL, gyruss::kStart2},
+};
+
+const ButtonName kGyrussButtons[] = {
+    {"up", gyruss::kUp}, {"down", gyruss::kDown}, {"left", gyruss::kLeft}, {"right", gyruss::kRight},
+    {"fire", gyruss::kFire}, {"coin", gyruss::kCoin}, {"coin2", gyruss::kCoin2},
+    {"start1", gyruss::kStart1}, {"start2", gyruss::kStart2}, {"service", gyruss::kService},
+};
+
 // ---- Williams: Robotron: 2084, Defender --------------------------------------
 
 template <williams::Board B> class Williams : public Machine {
@@ -1071,6 +1112,9 @@ const Info kGames[] = {
      xevious::kCpuClock, xevious::kCyclesPerFrame, kXeviousControls, COUNT(kXeviousControls), kXeviousButtons,
      COUNT(kXeviousButtons), nullptr, 0, make<Xevious>, false, false, "Namco", 1982, 720},
 
+    {"gyruss", "Gyruss", &gyruss::kRomSet, gyruss::kScreenW, gyruss::kScreenH, Orientation::Portrait,
+     gyruss::kCpuClock, gyruss::kCyclesPerFrame, kGyrussControls, COUNT(kGyrussControls), kGyrussButtons,
+     COUNT(kGyrussButtons), nullptr, 0, make<Gyruss>, false, false, "Konami", 1983, 170},
 };
 
 const int kGameCount = COUNT(kGames);

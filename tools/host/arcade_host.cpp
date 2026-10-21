@@ -64,6 +64,8 @@
 //                         coin2 start1 start2 service tilt;
 //                         xevious: up down left right zapper blaster coin
 //                         coin2 start1 start2 service test;
+//                         gyruss: up down left right fire coin coin2 start1
+//                         start2 service;
 //                         any game: lx=N / ly=N, the left stick's X / Y
 //                         -512..511 (down positive), e.g.
 //                         "1200+60:lx=-300+fire")

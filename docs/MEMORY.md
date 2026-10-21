@@ -39,6 +39,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Pac-Man | 14.4 | - | 15.7 / 17.1 | **30.1 / 31.5** | 2.0 | 24.8 | 4 |
 | Galaxian | 14.4 | - | 14.7 / 16.1 | **29.1 / 30.5** | 2.1 | 14.0 | 2 |
 | Amidar | 17.1 | - | 14.7 / 16.1 | **31.8 / 33.2** | 2.1 | 28.0 | 4 |
+| Gyruss | 37.6 | - | 14.7 / 16.1 | **52.3 / 53.7** | 4.3 | 92.5 | 8 |
 | Burger Time | 17.6 | - | 14.2 / 15.6 | **31.9 / 33.3** | - | 52.0 | 4 |
 | Missile Command | 18.3 | - | 14.4 / 16.0 | **32.8 / 34.3** | 15.5 | 12.0 | 2 |
 | Rally-X | 18.6 | - | 15.0 / 16.8 | **33.7 / 35.5** | 2.6 | 21.1 | 4 |
@@ -96,6 +97,20 @@ B, the I/O chips 40 B each. Buffers as Pac-Man's (224 x 288). Snapshot =
 the VideoState, 4,740 B. ROM 76.8 KB in 7 regions (program 32, sound CPU
 8, characters 4, sprites 2 x 16, PROMs 0.5 + 0.25): the renderer reads
 the sprite ROMs every line, from flash when they don't fit.
+Gyruss (2026-10-21, xtensa-esp32-elf-g++ `sizeof`): gyruss::Machine
+38,480 bytes, the games.cpp wrapper ~38,488: RAM 11 KB (colour / video 2 KB,
+work RAM 4 KB, shared 2 KB, sub CPU 2 KB, sound 1 KB), the sub program
+decrypted for its opcode fetches 8 KB (Konami-1), the tiles decoded by
+column 8 KB, the VideoState 4,420 B (tiles 2 KB, up to 192 sprite pieces
+of 8 B, bands), the frame's sprite pieces being built 1.7 KB, two Z80s 576
+B each, the 6809 816 B (its opcode page table added 256 B), the i8039 192
+B, five AYs 104 B each (an AY was 84 B before its quick path: Amidar and
+Burger Time grew by 40 B). Buffers as Amidar's (224 x 256). Snapshot =
+the VideoState, 4,420 B. ROM 92.5 KB in 7 regions (main 24, sub 8, sound
+16, i8039 4, sprites 32, tiles 8, PROMs 0.5): with the machine, buffers
+and snapshot in a ~92 KB area about a third fits in RAM, the rest is read
+from the scratch flash (the renderer reads the sprite ROMs every line;
+the tiles come from the decoded table).
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
 Robotron / Defender 51.9) or one of Qix's 32 KB halves.
