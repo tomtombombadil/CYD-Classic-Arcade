@@ -39,14 +39,16 @@ void Chip51::write(uint8_t data)
         case 4: coins_per_credit_[0] = data; break;
         case 3: credits_per_coin_[0] = data; break;
         case 2: coins_per_credit_[1] = data; break;
-        default: credits_per_coin_[1] = data; break;
+        case 1: credits_per_coin_[1] = data; break;
+        default: break;         // Xevious' first two
         }
         return;
     }
     switch (data) {
     case 1:                     // coinage follows; the credits start over
-        coinage_left_ = 4;
+        coinage_left_ = xevious_ ? 6 : 4;
         credits_ = 0;
+        if (xevious_) remap_ = true;
         break;
     case 2: mode_ = 1; count_ = 0; break;
     case 3: remap_ = false; break;
@@ -245,6 +247,122 @@ void Chip5x::run()
         break;
     default:                                        // 0: nothing
         break;
+    }
+}
+
+// --- 50XX --------------------------------------------------------------------
+
+namespace {
+
+const uint16_t kAmount8[16] = {5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 500};
+const uint16_t kAmountB[16] = {10, 20, 30, 40, 50, 60, 80, 100, 120, 140, 160, 180, 200, 400, 600, 1000};
+const uint16_t kAmountE[16] = {15, 30, 45, 60, 75, 90, 120, 150, 180, 210, 240, 270, 300, 600, 900, 1500};
+
+uint32_t from_bcd(uint32_t v)
+{
+    uint32_t r = 0, m = 1;
+    for (; v; v >>= 4, m *= 10) r += (v & 15) * m;
+    return r;
+}
+
+constexpr uint32_t kMaxScore = 9999999;
+
+} // namespace
+
+void Chip50::reset()
+{
+    score_[0] = score_[1] = 0;
+    first_ = interval_ = high_ = 0;
+    high_set_ = false;
+    next_bonus_[0] = next_bonus_[1] = 0;
+    flags_[0] = flags_[1] = 0;
+    player_ = 0;
+    subtract_ = false;
+    params_left_ = 0;
+    count_ = 0;
+}
+
+void Chip50::add(uint32_t amount)
+{
+    uint32_t& s = score_[player_];
+    const uint32_t old = s;
+    if (subtract_) {
+        s = amount > s ? 0 : s - amount;
+        return;
+    }
+    s = s + amount > kMaxScore ? kMaxScore : s + amount;
+    uint8_t& f = flags_[player_];
+    if (first_ && old < first_ && s >= first_) f |= 0x40;
+    if (interval_) {
+        uint32_t& next = next_bonus_[player_];
+        if (next == 0) next = first_ + interval_;
+        if (s >= next) {
+            f |= 0x20;
+            while (next <= s) next += interval_;
+        }
+    }
+    if (high_set_ && s > high_) {
+        high_ = s;
+        f |= 0x80;
+    }
+}
+
+void Chip50::write(uint8_t data)
+{
+    if (params_left_) {
+        param_ = (param_ << 8) | data;
+        if (--params_left_ == 0) {
+            const uint32_t v = from_bcd(param_);
+            switch (param_cmd_) {
+            case 2: first_ = v; break;
+            case 3: interval_ = v; break;
+            default: high_ = v; high_set_ = true; break;
+            }
+        }
+        return;
+    }
+    const int hi = data >> 4, lo = data & 15;
+    switch (hi) {
+    case 0x0: break;
+    case 0x1:
+        score_[0] = score_[1] = 0;
+        flags_[0] = flags_[1] = 0;
+        next_bonus_[0] = next_bonus_[1] = 0;
+        break;
+    case 0x2: case 0x3: case 0x5:
+        param_cmd_ = uint8_t(hi);
+        params_left_ = 3;
+        param_ = 0;
+        break;
+    case 0x4: break;                            // unknown
+    case 0x6: player_ = (data & 0x08) ? 1 : 0; break;
+    case 0x7: subtract_ = lo != 0; break;
+    default: {
+        const int group = (hi - 8) / 3, scale = (hi - 8) % 3;     // 8 9 A / B C D / E F
+        const uint16_t* table = group == 0 ? kAmount8 : group == 1 ? kAmountB : kAmountE;
+        add(uint32_t(table[lo]) * (scale == 0 ? 1 : scale == 1 ? 10 : 100));
+        break;
+    }
+    }
+}
+
+uint8_t Chip50::read()
+{
+    const uint32_t s = score_[player_];
+    const int slot = count_;
+    count_ = uint8_t((count_ + 1) & 3);
+    // Digits of the 7-digit score, most significant first.
+    uint32_t bcd = 0;
+    for (uint32_t v = s, sh = 0; sh < 28; v /= 10, sh += 4) bcd |= (v % 10) << sh;
+    switch (slot) {
+    case 0: {
+        const uint8_t f = flags_[player_];
+        flags_[player_] = 0;
+        return uint8_t(f | ((bcd >> 24) & 0x0f));
+    }
+    case 1: return uint8_t(bcd >> 16);
+    case 2: return uint8_t(bcd >> 8);
+    default: return uint8_t(bcd);
     }
 }
 

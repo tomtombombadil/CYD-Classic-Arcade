@@ -69,6 +69,10 @@
 #      the graphics port, sound command / NMI / status, inputs), the picture
 #      against a per-pixel model, idle skipping against runs without it,
 #      -O2 and with the sanitizers
+#  21. Xevious: the 50XX model, the 51XX's Xevious mode, the board's RAM map,
+#      DIP switches, Blaster and map ROM lookup, the video on synthetic
+#      graphics, idle skipping against runs without it, -O2 and with the
+#      sanitizers
 # and the ROM store / USB protocol (core/), with the web page's loader
 # (web/roms/loader.js, in Node when present) against a fake board.
 # --quick skips the full ZEXDOC / ZEXALL / 8080EXM runs.
@@ -105,7 +109,8 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/sound/zaxxon_sound.cpp $ROOT/emu/machines/zaxxon.cpp \
      $ROOT/emu/machines/galaxian_video.cpp $ROOT/emu/sound/galaxian_sound.cpp $ROOT/emu/machines/galaxian.cpp $ROOT/emu/machines/amidar.cpp \
      $ROOT/emu/machines/mappy.cpp \
-     $ROOT/emu/cpu/m68705.cpp $ROOT/emu/machines/elevator.cpp"
+     $ROOT/emu/cpu/m68705.cpp $ROOT/emu/machines/elevator.cpp \
+     $ROOT/emu/machines/xevious.cpp"
 FLAGS="-std=c++17 -Wall -Wextra -Werror"
 SAN="-O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
 
@@ -249,6 +254,12 @@ g++ $FLAGS $SAN -o "$OUT/elevator_tests_san" "$ROOT/tools/host_tests/elevator_te
 "$OUT/elevator_tests"
 "$OUT/elevator_tests_san"
 
+echo "== Xevious tests (50XX, 51XX mode, RAM map, DIPs, map ROMs, video, idle skipping)"
+g++ $FLAGS -O2 -o "$OUT/xevious_tests" "$ROOT/tools/host_tests/xevious_tests.cpp" "$LIB_O2"
+g++ $FLAGS $SAN -o "$OUT/xevious_tests_san" "$ROOT/tools/host_tests/xevious_tests.cpp" "$LIB_SAN"
+"$OUT/xevious_tests"
+"$OUT/xevious_tests_san"
+
 echo "== host runner on a synthetic ROM set (no game code)"
 "$ROOT/tools/host/build.sh" "$OUT" "$LIB_O2" > /dev/null
 python3 "$ROOT/tools/host_tests/make_fake_romset.py" "$OUT/fake"
@@ -256,7 +267,7 @@ rm -rf "$OUT/fake_out" && mkdir -p "$OUT/fake_out"
 "$OUT/arcade_host" pacman "$OUT/fake" --frames 240 --png-every 30 --out "$OUT/fake_out" \
     --wav "$OUT/fake_out/run.wav" --input "60+60:left,150+40:right" | tail -1
 python3 "$ROOT/tools/host_tests/check_fake_run.py" "$OUT/fake_out"
-for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars missile bzone zaxxon galaxian amidar digdug2 dkongjr elevator; do
+for game in pacman invaders rallyx dkong galaga digdug mspacman mrdo btime qbert asteroid tempest robotron defender qix starwars missile bzone zaxxon galaxian amidar digdug2 dkongjr elevator xevious; do
     "$OUT/arcade_host" $game "$OUT/fixtures" > /dev/null 2>&1 && { echo "runner accepted a folder without $game ROMs"; exit 1; }
 done
 echo "missing ROMs reported: ok"

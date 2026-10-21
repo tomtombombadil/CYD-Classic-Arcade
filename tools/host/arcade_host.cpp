@@ -3,7 +3,8 @@
 //   arcade_host <game> <zip | rom file | dir>... [options]
 //     games: the table in emu/games.cpp (pacman, invaders, rallyx, dkong,
 //     galaga, digdug, mspacman, mrdo, btime, qbert, asteroid, tempest,
-//     robotron, defender, qix, starwars, missile, bzone, zaxxon, ...)
+//     robotron, defender, qix, starwars, missile, bzone, zaxxon, xevious,
+//     ...)
 //     --frames N          frames to run (default 600)
 //     --png-every K       write every K-th frame as PNG (0 = none; default 0)
 //     --out DIR           folder for the PNGs (default ".")
@@ -61,6 +62,8 @@
 //                         coin2 start1 start2 service test;
 //                         elevator: up down left right fire jump coin
 //                         coin2 start1 start2 service tilt;
+//                         xevious: up down left right zapper blaster coin
+//                         coin2 start1 start2 service test;
 //                         any game: lx=N / ly=N, the left stick's X / Y
 //                         -512..511 (down positive), e.g.
 //                         "1200+60:lx=-300+fire")

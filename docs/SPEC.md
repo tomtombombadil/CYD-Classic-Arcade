@@ -39,6 +39,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Dig Dug II | 2x 6809 1.536 MHz (main + sound, shared RAM) | Namco's Mappy board: 15XX 8-voice wavetable sound, 56XX / 58XX I/O chips (modelled), scrolling tile map with fixed side columns, 64 4-bit sprites (16 / 32 square) | 224x288 portrait | done: both CPUs' frame waits skipped (exact), ~1.45x Pac-Man's host instructions a frame emulated, about Pac-Man's to draw |
 | Donkey Kong Jr. | Z80 3.072 MHz | Donkey Kong's board: i8035 sound CPU + DAC, two tile banks, its own analog effects (walk, jump, climb, fall - our models), program chips spread over the map in 2 KB pieces | 224x256 portrait | done: dkong::Machine with the Junior board switched on; ~2x Pac-Man's emulation time (as Donkey Kong) |
 | Elevator Action | Z80 4 MHz + 68705P3 protection MCU (our own 6805 core) | Taito SJ: three scrolling playfields + 24 sprites from character RAM the program fills through a graphics ROM port, a priority PROM, palette RAM; Z80 sound CPU + 3 AY-3-8910 + DAC, a fourth AY on the main board | 256x224 landscape | done: the three CPUs' idle loops skipped (exact), ~1.4x Pac-Man's host instructions a frame (4 AYs); machine 21.6 KB + 74 KB of ROM |
+| Xevious | 3x Z80 3.072 MHz (the Galaga board) | Namco 50xx / 51xx (modelled), 54xx (our noise model), wavetable sound; two scrolling 64x32 tile layers, 3-bit sprites, the terrain map ROMs the game reads through BS / BB | 224x288 portrait | done: three waits skipped (exact), ~86K CPU cycles a frame in play (~2x Pac-Man's emulation time; the game keeps its CPUs busy) |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
 | Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
@@ -50,6 +51,7 @@ its sound one of three ways, and we do what the machine did:
 
 1. **Sound chips driven by the game program** - Pac-Man, Ms. Pac-Man,
    Galaga, Dig Dug, Dig Dug II (Namco wavetable: the waveforms are in a 256-byte PROM
+   Galaga, Dig Dug, Xevious (Namco wavetable: the waveforms are in a 256-byte PROM
    in the ROM set, the game program writes pitch and volume 60 times a
    second); Mr. Do! (two SN76489s: square waves and noise); Burger Time
    (two AY-3-8910s, programmed by a sound 6502); Amidar (two
