@@ -49,6 +49,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Zaxxon | `zaxxon` (or `zaxxon2`) | Zaxxon (set 1, rev D) / (set 2, unknown rev) | `zaxxon` for `zaxxon2` |
 | Galaxian | `galaxian` | Galaxian (Namco set 1) | - |
 | Amidar | `amidar` | Amidar (Konami) | - |
+| Dig Dug II | `digdug2` (or `digdug2o`) | Dig Dug II (New Ver.) / (Old Ver.) | `digdug2` for `digdug2o` |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -134,6 +135,15 @@ Notes:
   `.2h`, sound `amidar.5c` `.5d`, graphics `amidar.5f` `.5h`, the colour
   PROM `amidar.clr`). The Stern and bootleg sets (`amidaru`, `amidaro`,
   `amidarb`, ...) have other program ROMs and aren't read.
+- **Dig Dug II:** the New Ver. (MAME's `digdug2`: program `d23_3.1d`
+  cc155338, `d23_1.1b` 40e46af8; sound CPU `d21_4.1k` 737443b1;
+  characters `d21_5.3b` afcb4509; sprites `d21_6.3m` df1f4ad8, `d21_7.3n`
+  ccadb3ea; PROMs `d21-5.5b` 9b169db5 (palette), `d21-6.4c` 55a88695
+  (character colours), `d21-7.5k` 9c55feda (sprite colours), `d21-3.3m`
+  e0074ee2 (waveforms)) - Tom's set. The Old Ver. (`digdug2o`: program
+  `d21_3.1d` be7ec80b, `d21_1.1b` 5c77c0d4 and sprite colours `d2x-7.5k`
+  1525a4d1) works too; a split `digdug2o.zip` needs `digdug2.zip` beside
+  it. The I/O chips' programs (56XX, 58XX) aren't needed: modelled.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

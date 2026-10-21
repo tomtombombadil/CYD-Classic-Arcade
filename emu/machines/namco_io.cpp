@@ -109,4 +109,143 @@ uint8_t Chip51::read()
     return uint8_t((credits_ / 10) * 16 + credits_ % 10);
 }
 
+
+// --- 56XX / 58XX ---------------------------------------------------------------
+
+void Chip5x::clear()
+{
+    for (uint8_t& n : ram_) n = 0;
+    last_coins_ = last_buttons_ = 0;
+    pin13_ = 0;
+    reset_ = true;
+    set_reset(true);
+}
+
+void Chip5x::set_reset(bool held)
+{
+    reset_ = held;
+    if (!held) return;
+    credits_ = 0;
+    coins_[0] = coins_[1] = 0;
+    coins_per_credit_[0] = coins_per_credit_[1] = 1;
+    credits_per_coin_[0] = credits_per_coin_[1] = 1;
+}
+
+void Chip5x::coins(int swap)
+{
+    int add = 0, take = 0;
+    const uint8_t c = port(pin13_, 0);
+    const uint8_t c_new = uint8_t(c & ~last_coins_);
+    last_coins_ = c;
+    for (int s = 0; s < 2; ++s) {
+        if (!(c_new & (1 << s))) continue;
+        const int per = coins_per_credit_[s] & 7;
+        if (++coins_[s] >= per) {
+            add = credits_per_coin_[s] - (coins_per_credit_[s] >> 3);
+            coins_[s] = uint8_t(coins_[s] - per);
+        } else if (coins_per_credit_[s] & 8) {
+            add = 1;
+        }
+    }
+    if (c_new & 0x08) add = 1;                      // service credit
+
+    const uint8_t b = port(pin13_, 3);
+    const uint8_t b_new = uint8_t(b & ~last_buttons_);
+    last_buttons_ = b;
+    if (ram_[9] == 0) {                             // the game takes starts now
+        if (b_new & 0x04) { if (credits_ >= 1) take = 1; }
+        else if (b_new & 0x08) { if (credits_ >= 2) take = 2; }
+    }
+    credits_ += add - take;
+
+    ram_[0 ^ swap] = uint8_t((credits_ / 10) & 15);
+    ram_[1 ^ swap] = uint8_t(credits_ % 10);
+    if (add) ram_[2 ^ swap] = uint8_t(add & 15);    // the game clears these two
+    if (take) ram_[3 ^ swap] = uint8_t(take);
+    ram_[4] = port(pin13_, 1);
+    ram_[5] = uint8_t(((b & 5) << 1) | (b_new & 5));
+    ram_[6] = port(pin13_, 2);
+    ram_[7] = uint8_t((b & 0x0a) | ((b_new & 0x0a) >> 1));
+}
+
+void Chip5x::run()
+{
+    if (reset_) return;
+    const bool c58 = type_ == Type::k58xx;
+    switch (ram_[8]) {
+    case 1: {                                       // the ports
+        const int at = c58 ? 4 : 0;
+        for (int p = 0; p < 4; ++p) ram_[at + p] = port(pin13_, p);
+        pin13_ = ram_[9] & 1;                       // output port A = nibble 9
+        break;
+    }
+    case 2:                                         // coinage
+        coins_per_credit_[0] = ram_[9];
+        credits_per_coin_[0] = ram_[10];
+        coins_per_credit_[1] = ram_[11];
+        credits_per_coin_[1] = ram_[12];
+        break;
+    case 3:
+        if (c58) coins(2);
+        break;
+    case 4:
+        if (!c58) {
+            coins(0);
+        } else {
+            for (int p = 0; p < 4; ++p) {
+                ram_[2 * p] = port(0, p);
+                ram_[2 * p + 1] = port(1, p);
+            }
+            pin13_ = 1;
+        }
+        break;
+    case 5:
+        if (c58) {
+            // Start-up check: each result nibble is the XOR of the inverted
+            // argument nibbles whose LFSR bit is set (taps 0x90, seed 0x22
+            // stepped by the first two arguments).
+            auto next = [](int n) { return ((n & 1) ? n ^ 0x90 : n) >> 1; };
+            static const uint8_t kOrder[7] = {11, 10, 9, 15, 14, 13, 12};
+            int seed = 0x22;
+            for (int i = (ram_[9] * 16 + ram_[10]) & 0x7f; i > 0; --i) seed = next(seed);
+            for (int i = 1; i < 8; ++i) {
+                int n = 0, r = seed;
+                for (int k = 0; k < 7; ++k) {
+                    if (r & 1) n ^= ~ram_[kOrder[k]];
+                    r = next(r);
+                    if (k == 0) seed = r;
+                }
+                ram_[i] = uint8_t(~n & 15);
+            }
+            ram_[0] = ram_[9] == 15 ? 15 : 0;
+        }
+        break;
+    case 7:
+        if (!c58) {
+            ram_[2] = 0x0e;
+            ram_[7] = 0x06;
+        }
+        break;
+    case 8:
+        if (!c58) {
+            int sum = 0;
+            for (int i = 9; i < 16; ++i) sum += ram_[i];
+            ram_[0] = uint8_t((sum >> 4) & 15);
+            ram_[1] = uint8_t(sum & 15);
+        }
+        break;
+    case 9:
+        if (!c58) {
+            for (int p = 0; p < 4; ++p) {
+                ram_[2 * p] = port(0, p);
+                ram_[2 * p + 1] = port(1, p);
+            }
+            pin13_ = 1;
+        }
+        break;
+    default:                                        // 0: nothing
+        break;
+    }
+}
+
 } // namespace namco_io

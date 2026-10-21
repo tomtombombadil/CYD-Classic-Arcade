@@ -57,6 +57,8 @@
 //                         galaxian: left right fire coin coin2
 //                         start1 start2 service test; amidar: up down left
 //                         right jump coin coin2 start1 start2 service;
+//                         digdug2: up down left right pump hammer coin
+//                         coin2 start1 start2 service test;
 //                         any game: lx=N / ly=N, the left stick's X / Y
 //                         -512..511 (down positive), e.g.
 //                         "1200+60:lx=-300+fire")
