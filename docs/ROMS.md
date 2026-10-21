@@ -49,6 +49,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Zaxxon | `zaxxon` (or `zaxxon2`) | Zaxxon (set 1, rev D) / (set 2, unknown rev) | `zaxxon` for `zaxxon2` |
 | Galaxian | `galaxian` | Galaxian (Namco set 1) | - |
 | Amidar | `amidar` | Amidar (Konami) | - |
+| Elevator Action | `elevator` (or `elevatora`) | Elevator Action (BA3, 4 PCB version, 1.1) / (EA, 5 PCB version, 1.1) | `elevator` for `elevatora` |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -134,6 +135,22 @@ Notes:
   `.2h`, sound `amidar.5c` `.5d`, graphics `amidar.5f` `.5h`, the colour
   PROM `amidar.clr`). The Stern and bootleg sets (`amidaru`, `amidaro`,
   `amidarb`, ...) have other program ROMs and aren't read.
+- **Elevator Action:** MAME's `elevator` (the 4-board set on 2764s:
+  `ba3__01.2764.ic1` ... `ba3__04-1.2764.ic6`, graphics `ba3__05.2764.ic4`
+  ... `ba3__08.2764.ic10`) or `elevatora` (the 5-board set on 2732s:
+  program `ea_12.2732.ic69` ... `ea_19.2732.ic54` CRCs 24e277ef 13702e39
+  46f52646 e22fe57e c10691d7 8913b293 1cabda08 f4647b4f, graphics
+  `ea_20.2732.ic1` ... `ea_27.2732.ic8` CRCs bbbb3fba 639cc2fd 61317eea
+  55446482 77895c0f 9a1b6901 839112ec db7ff692). Both have the sound ROMs
+  `ea_9.2732.ic70` (6d5f57cb) and `ea_10.2732.ic71` (f0a769a1), the
+  68705P3 MCU's program `ba3__11.mc68705p3` (9ce75afc, 2 KB - it is needed:
+  the game talks to the MCU every frame) and the priority PROM `eb16.ic22`
+  (b833b5ea). Older collections hold the 5-board set as `elevator.zip` with
+  the files `ea-ic69.bin` ... `ea-ic54.bin`, `ea-ic70.bin`,
+  `ea-ic71.bin`, `ea-ic1.bin` ... `ea-ic8.bin`, `ba3.11`, `eb16.22` (Tom's
+  set): the same CRCs. The PAL dump (`ww15.pal16l8.ic24.jed.bin`) isn't
+  needed. The bootleg `elevatorb` (protection patched out, no MCU) isn't
+  read.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

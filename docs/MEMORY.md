@@ -55,6 +55,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Defender | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 30.0 | 4 |
 | Star Wars | 52.6 | - | 15.8 / 17.7 | **68.4 / 70.2** | 27.6 | 72.0 | 16 |
 | Zaxxon | 20.8 | - | 14.7 / 16.1 | **35.5 / 36.9** | 1.2 | 104.5 | 8 |
+| Elevator Action | 21.6 | - | 14.4 / 16.0 | **36.0 / 37.6** | 15.6 | 74.3 | 4 (8 in `elevator`) |
 | Qix | 8.1 | 64.0 (2 x 32) | 14.7 / 16.1 | **86.8 / 88.2** | - | 32.0 | 2 |
 
 Missile Command (2026-10-20, Xtensa sizeof 18,752 bytes): the machine is
@@ -95,6 +96,19 @@ ROM (104.5 KB in 6 regions: program 20, characters 4, background tiles
 24, sprites 24, tile map 32, PROMs 0.5) can't all be in RAM: what doesn't
 fit is read from the scratch flash (the renderer reads the tile map,
 background and sprite ROMs every line).
+
+Elevator Action (2026-10-21, xtensa-esp-elf-g++ `sizeof`, -mdynconfig
+xtensa_esp32.so): the games.cpp wrapper 22,152 bytes (elevator::Machine
+22,136: the live VideoState 15,978 - character RAM 12 KB, the three
+playfields 3 KB, sprites 256 B, palette 128 B + its 64 RGB565 pens -, two
+Z80s 576 B each, the 68705 164 B, four AYs 84 B each, RAM 2 + 1 + 1 KB);
+shown 274 x 240 on the 240x320 panels and 366 x 320 on the 320x480 ones
+(strip 4,384 / 5,856, x map 548 / 732, line 512, segment hashes 224 x 8
+x 4 = 7,168, sound 2,048, with the heads 14,700 / 16,356 bytes); the
+snapshot is the VideoState (15,978 + 8). ROM 74.3 KB in 5 regions
+(program 32, sound 8, MCU 2, graphics 32, PROM 0.25): with the snapshot
+taken, one 32 KB region goes to the scratch flash (the graphics ROMs are
+read only through the D404 port, when the program copies them).
 
 ## 2. The ESP32 boards' RAM
 
