@@ -33,7 +33,7 @@ enum Port : uint8_t { kBus = 0, kP1 = 1, kP2 = 2 };
 
 class Cpu {
 public:
-    static constexpr int kRamSize = 64;     // 8035 / 8048 (8039 / 8049: 128)
+    static constexpr int kRamSize = 128;    // room for an 8039 / 8049's 128 bytes
 
     Cpu();
 
@@ -74,6 +74,7 @@ public:
     uint8_t  bus = 0xff;            // BUS port latch (OUTL / ANL / ORL BUS)
     uint8_t  timer = 0;
     uint8_t  ram[kRamSize] = {};
+    uint8_t  ram_mask = 0x3f;           // @R0 / @R1: 0x3f = 8035 / 8048, 0x7f = 8039 / 8049
     bool     f1 = false;
     bool     xirq_enabled = false, tirq_enabled = false;
     bool     in_irq = false;            // in an interrupt routine, until RETR

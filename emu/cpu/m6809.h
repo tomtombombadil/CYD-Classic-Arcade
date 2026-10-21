@@ -13,7 +13,11 @@
 //
 // Memory goes through a table of 1 KB pages: a page with a pointer is read
 // or written directly; a null page calls mem_read / mem_write (memory-mapped
-// I/O). The 6809 has no I/O ports.
+// I/O). The 6809 has no I/O ports. Opcode fetches (the opcode byte, and the
+// one after a 10 / 11 prefix - not operands) go through a third table,
+// op_page, which map_read() keeps equal to read_page; map_opcodes() points
+// pages elsewhere, or (null) at op_read - e.g. Konami-1's opcode decryption
+// (gyruss.cpp). Same cost as a plain fetch for every other machine.
 #pragma once
 
 #include <cstdint>
@@ -48,14 +52,18 @@ public:
     // --- wiring -----------------------------------------------------------
     const uint8_t* read_page[kPages];   // null = mem_read
     uint8_t*       write_page[kPages];  // null = mem_write
+    const uint8_t* op_page[kPages];     // opcode fetches; null = op_read
     void*    ctx       = nullptr;       // handed to every callback
     read_fn  mem_read  = nullptr;       // unset callbacks read 0xFF / ignore
     write_fn mem_write = nullptr;
+    read_fn  op_read   = nullptr;       // null op_page: an opcode fetch (unset = mem_read)
 
     // Maps [start, start + len) (page aligned) to `p` for reads, writes or
     // both; null unmaps (back to the callbacks).
     void map_read(uint16_t start, uint32_t len, const uint8_t* p);
     void map_write(uint16_t start, uint32_t len, uint8_t* p);
+    // Opcode fetches only (after map_read, which sets them too).
+    void map_opcodes(uint16_t start, uint32_t len, const uint8_t* p);
     void map_ram(uint16_t start, uint32_t len, uint8_t* p)
     {
         map_read(start, len, p);
@@ -127,6 +135,12 @@ private:
     int  done_ = 0, target_ = 0;
 
     uint8_t  fetch() { return rd(pc++); }
+    uint8_t  fetch_op()
+    {
+        const uint16_t a = pc++;
+        const uint8_t* p = op_page[a >> kPageShift];
+        return p ? p[a & (kPageSize - 1)] : (op_read ? op_read : mem_read)(ctx, a);
+    }
     uint16_t fetch16()
     {
         const uint16_t v = rd16(pc);

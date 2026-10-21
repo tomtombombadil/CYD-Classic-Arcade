@@ -55,8 +55,22 @@ public:
     void    set_port_in(int port, uint8_t v) { port_in_[port & 1] = v; }
 
     // Runs `clocks` input clocks and adds each channel's output level x
-    // clocks to acc[0..2] (for averaging over an output sample).
-    void run(uint32_t clocks, uint32_t* acc);
+    // clocks to acc[0..2] (for averaging over an output sample). Inline
+    // while no output can change (the usual case for a run a sample).
+    void run(uint32_t clocks, uint32_t* acc)
+    {
+        if (clocks < budget_) {
+            budget_ -= clocks;
+            acc[0] += uint32_t(level_[0]) * clocks;
+            acc[1] += uint32_t(level_[1]) * clocks;
+            acc[2] += uint32_t(level_[2]) * clocks;
+            const uint32_t s = sub_ + clocks;
+            pend_ += s >> 3;
+            sub_ = s & 7;
+            return;
+        }
+        run_events(clocks, acc);
+    }
 
     // Brings the counters that can't be heard now (and so are carried
     // along lazily) up to date; run() and write() do it as needed. Tests
@@ -73,6 +87,10 @@ public:
 private:
     void update_levels();
     bool step_tone(int c, uint32_t period, uint32_t ticks);
+    void advance_tone(int c, uint32_t period, uint32_t ticks);     // the counter only
+    void settle();
+    void run_events(uint32_t clocks, uint32_t* acc);
+    uint32_t next_change() const;
     bool step_noise(uint32_t period, uint32_t ticks);
     bool step_env(uint32_t period, uint32_t ticks);
     uint32_t noise_period() const { return regs_[6] ? regs_[6] : 1; }
@@ -99,6 +117,12 @@ private:
     bool     env_hold_ = false, env_alt_ = false, env_holding_ = false;
     uint32_t sub_ = 0;              // input clocks into the current tick (0-7)
     int      level_[3] = {};
+    int      tone_hi_[3] = {};      // a live tone's level while its square wave is high
+    // run()'s quick path: input clocks before the next change of an output
+    // (0 = work it out), and the ticks run since without moving the live
+    // counters (no counter fired in them: settle() moves them).
+    uint32_t budget_ = 0;
+    uint32_t pend_ = 0;
     uint32_t lazy_ = 0;             // ticks the counters that can't be heard still have to move
     uint8_t  tone_live_ = 0;        // bit c: channel c's tone can change its output
     bool     noise_live_ = false, env_live_ = false;

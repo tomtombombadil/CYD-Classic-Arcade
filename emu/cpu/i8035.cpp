@@ -150,9 +150,10 @@ int Cpu::take_irq()
     return 2;
 }
 
-// Registers R0-R7 of the selected bank; @R0 / @R1 address the 64-byte RAM.
+// Registers R0-R7 of the selected bank; @R0 / @R1 address the RAM (64 or
+// 128 bytes, ram_mask).
 #define R(n) ram[((psw & BS) ? 24 : 0) + (n)]
-#define AT(n) ram[R(n) & (kRamSize - 1)]
+#define AT(n) ram[R(n) & ram_mask]
 
 EMU_HOT int Cpu::run(int cycles)
 {

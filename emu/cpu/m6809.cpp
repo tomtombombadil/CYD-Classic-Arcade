@@ -78,13 +78,22 @@ Cpu::Cpu()
     for (int i = 0; i < kPages; ++i) {
         read_page[i] = nullptr;
         write_page[i] = nullptr;
+        op_page[i] = nullptr;
     }
 }
 
 void Cpu::map_read(uint16_t start, uint32_t len, const uint8_t* p)
 {
-    for (uint32_t off = 0; off < len; off += kPageSize)
+    for (uint32_t off = 0; off < len; off += kPageSize) {
         read_page[(start + off) >> kPageShift] = p ? p + off : nullptr;
+        op_page[(start + off) >> kPageShift] = p ? p + off : nullptr;
+    }
+}
+
+void Cpu::map_opcodes(uint16_t start, uint32_t len, const uint8_t* p)
+{
+    for (uint32_t off = 0; off < len; off += kPageSize)
+        op_page[(start + off) >> kPageShift] = p ? p + off : nullptr;
 }
 
 void Cpu::map_write(uint16_t start, uint32_t len, uint8_t* p)
@@ -123,7 +132,7 @@ int Cpu::run(int cycles)
                 }
             }
         }
-        exec_inline(fetch());
+        exec_inline(fetch_op());
     }
     return done_;
 }
@@ -715,7 +724,7 @@ inline void Cpu::exec_inline(uint8_t op)
 // with the prefix's cycle added.
 void Cpu::page2()
 {
-    const uint8_t op = fetch();
+    const uint8_t op = fetch_op();
     if (op >= 0x20 && op <= 0x2f) {             // LBcc: 5, 6 when taken
         const uint16_t o = fetch16();
         done_ += 5;
@@ -789,7 +798,7 @@ void Cpu::page2()
 // Page 3 (prefix 11): SWI3, CMPU, CMPS.
 void Cpu::page3()
 {
-    const uint8_t op = fetch();
+    const uint8_t op = fetch_op();
     const int mode = (op >> 4) & 3;
     static constexpr uint8_t kCmp[4] = {5, 7, 7, 8};
     uint16_t* reg = nullptr;

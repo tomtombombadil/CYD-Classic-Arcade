@@ -1,8 +1,12 @@
 // AY-3-8910 - see ay8910.h.
 //
-// run() doesn't step tick by tick: it finds the ticks until the next
-// thing that changes the outputs (a tone flip, a noise step, an envelope
-// step), adds the levels over that stretch at once and jumps there.
+// run() doesn't step tick by tick: it finds the ticks until the next noise
+// or envelope step, adds the levels over that stretch at once and jumps
+// there. A tone's square wave in between is counted in closed form (its
+// time high from its counter and period), so tones cost nothing per flip.
+// And a run too short for any output to change (the usual case: a run per
+// output sample) only adds the levels; the ticks it ran are put on the
+// counters later, at once (settle()).
 #include "ay8910.h"
 
 namespace ay8910 {
@@ -46,6 +50,7 @@ void Chip::reset()
     env_hold_ = env_alt_ = env_holding_ = false;
     sub_ = 0;
     lazy_ = 0;
+    budget_ = pend_ = 0;
     update_levels();
 }
 
@@ -103,6 +108,7 @@ void Chip::update_levels()
     const uint8_t mix = regs_[7];
     const int noise = lfsr_ & 1;
     const int env = env_step_ ^ env_attack_;
+    budget_ = 0;
     tone_live_ = 0;
     noise_live_ = env_live_ = false;
     for (int c = 0; c < 3; ++c) {
@@ -112,6 +118,7 @@ void Chip::update_levels()
         const bool on = (((fast ? 1 : tone_out_[c]) | (mix >> c)) & (noise | (mix >> (3 + c))) & 1) != 0;
         const uint8_t a = regs_[8 + c];
         level_[c] = on ? kLevels[(a & 0x10) ? env : (a & 0x0f)] >> (fast ? 1 : 0) : 0;
+        tone_hi_[c] = ((noise | (mix >> (3 + c))) & 1) ? kLevels[(a & 0x10) ? env : (a & 0x0f)] : 0;
         // What can change this channel's output: its tone, the noise, the
         // envelope - only those need exact timing in run().
         if (!(a & 0x1f)) continue;
@@ -138,6 +145,8 @@ static inline uint32_t advance(uint32_t& cnt, uint32_t period, uint32_t ticks)
     cnt = t % period;
     return 1 + t / period;
 }
+
+void Chip::advance_tone(int c, uint32_t period, uint32_t ticks) { advance(tone_cnt_[c], period, ticks); }
 
 bool Chip::step_tone(int c, uint32_t period, uint32_t ticks)
 {
@@ -183,8 +192,47 @@ bool Chip::step_env(uint32_t period, uint32_t ticks)
     return true;
 }
 
+// The ticks run in the quick path, on the live counters (none fires in
+// them) - as run()'s loop would have moved them.
+void Chip::settle()
+{
+    if (!pend_) return;
+    const uint32_t t = pend_;
+    pend_ = 0;
+    for (int c = 0; c < 3; ++c)
+        if (tone_live_ & (1 << c)) advance_tone(c, tone_period(c), t);
+    if (noise_live_) step_noise(noise_period(), t);
+    if (env_live_) step_env(env_period(), t);
+    lazy_ += t;
+}
+
+// Input clocks until the next tone flip, noise step or envelope step that
+// can change an output.
+uint32_t Chip::next_change() const
+{
+    uint32_t d = 0xffffffu;                 // in ticks
+    for (int c = 0; c < 3; ++c) {
+        if (!(tone_live_ & (1 << c))) continue;
+        const uint32_t p = tone_period(c);
+        const uint32_t left = tone_cnt_[c] < p ? p - tone_cnt_[c] : 1;
+        if (left < d) d = left;
+    }
+    if (noise_live_) {
+        const uint32_t np = noise_period();
+        const uint32_t left = (noise_cnt_ < np ? np - noise_cnt_ : 1) + (noise_pre_ ? 0 : np);
+        if (left < d) d = left;
+    }
+    if (env_live_ && !env_holding_) {
+        const uint32_t ep = env_period();
+        const uint32_t left = env_cnt_ < ep ? ep - env_cnt_ : 1;
+        if (left < d) d = left;
+    }
+    return (d - 1) * 8 + (8 - sub_);
+}
+
 void Chip::sync()
 {
+    settle();
     if (!lazy_) return;
     for (int c = 0; c < 3; ++c)
         if (!(tone_live_ & (1 << c))) step_tone(c, tone_period(c), lazy_);
@@ -193,26 +241,21 @@ void Chip::sync()
     lazy_ = 0;
 }
 
-void Chip::run(uint32_t clocks, uint32_t* acc)
+// run() when an output can change in the run (else it only adds the levels).
+void Chip::run_events(uint32_t clocks, uint32_t* acc)
 {
+    settle();
     // Registers don't change during a run.
     const uint32_t tp[3] = {tone_period(0), tone_period(1), tone_period(2)};
     const uint32_t np = noise_period();
     const uint32_t ep = env_period();
     while (clocks) {
-        // Ticks until the next event that changes an output (a period
-        // lowered below its count fires on the next tick). Counters that
-        // can't change the outputs (a channel's tone switched off, a silent
+        // Ticks until the next noise or envelope step (a period lowered
+        // below its count fires on the next tick). Counters that can't
+        // change the outputs (a channel's tone switched off, a silent
         // channel, no channel on the noise or the envelope) are carried
         // along later, by sync().
         uint32_t d = 0xffffffu;
-        if (tone_live_) {
-            for (int c = 0; c < 3; ++c) {
-                if (!(tone_live_ & (1 << c))) continue;
-                const uint32_t left = tone_cnt_[c] < tp[c] ? tp[c] - tone_cnt_[c] : 1;
-                if (left < d) d = left;
-            }
-        }
         if (noise_live_) {
             // The register steps on every second firing of the counter.
             const uint32_t left = (noise_cnt_ < np ? np - noise_cnt_ : 1) + (noise_pre_ ? 0 : np);
@@ -225,25 +268,47 @@ void Chip::run(uint32_t clocks, uint32_t* acc)
 
         const uint32_t to_event = (d - 1) * 8 + (8 - sub_);
         const uint32_t take = clocks < to_event ? clocks : to_event;
-        acc[0] += uint32_t(level_[0]) * take;
-        acc[1] += uint32_t(level_[1]) * take;
-        acc[2] += uint32_t(level_[2]) * take;
+        const uint32_t ticks = (sub_ + take) >> 3;
+        for (int c = 0; c < 3; ++c) {
+            if (!(tone_live_ & (1 << c))) {
+                acc[c] += uint32_t(level_[c]) * take;
+                continue;
+            }
+            // The square wave over `take` clocks: it flips at clock f0 (the
+            // counter's next firing) and every 8 x period clocks after; m
+            // flips in all. Its level is tone_hi_ while high, 0 while low.
+            const uint32_t p = tp[c];
+            const uint32_t first = tone_cnt_[c] < p ? p - tone_cnt_[c] : 1;
+            const uint32_t f0 = (first - 1) * 8 + (8 - sub_);
+            const uint32_t o = tone_out_[c];
+            uint32_t high;
+            if (take < f0) {
+                high = o ? take : 0;
+            } else {
+                const uint32_t span = 8 * p;
+                const uint32_t m = 1 + (take - f0) / span;
+                const uint32_t last = take - f0 - (m - 1) * span;     // after the last flip
+                high = (o ? f0 : 0) + (o ? (m - 1) / 2 : m / 2) * span + (((o ^ m) & 1) ? last : 0);
+                tone_out_[c] = uint8_t(o ^ (m & 1));
+                level_[c] = tone_out_[c] ? tone_hi_[c] : 0;
+            }
+            acc[c] += uint32_t(tone_hi_[c]) * high;
+            if (ticks) advance_tone(c, p, ticks);
+        }
         clocks -= take;
-        sub_ += take;
-        const uint32_t ticks = sub_ >> 3;
-        sub_ &= 7;
+        sub_ = (sub_ + take) & 7;
         if (!ticks) break;                  // only when the clocks ran out
 
         bool changed = false;
-        if (tone_live_)
-            for (int c = 0; c < 3; ++c)
-                if (tone_live_ & (1 << c)) changed |= step_tone(c, tp[c], ticks);
         if (noise_live_) changed |= step_noise(np, ticks);
         if (env_live_) changed |= step_env(ep, ticks);
         lazy_ += ticks;
         if (lazy_ >= kSyncTicks) sync();    // moves only what isn't live
         if (changed) update_levels();
     }
+    // At most kSyncTicks ahead, so the counters carried along stay near.
+    const uint32_t next = next_change();
+    budget_ = next < kSyncTicks * 8 ? next : kSyncTicks * 8;
 }
 
 } // namespace ay8910
