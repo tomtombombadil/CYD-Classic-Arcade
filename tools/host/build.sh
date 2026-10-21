@@ -27,7 +27,8 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/sound/tms5220.cpp $ROOT/emu/machines/riot6532.cpp $ROOT/emu/machines/starwars_mathbox.cpp \
      $ROOT/emu/machines/starwars.cpp $ROOT/emu/machines/missile.cpp \
      $ROOT/emu/sound/zaxxon_sound.cpp $ROOT/emu/machines/zaxxon.cpp \
-     $ROOT/emu/machines/galaxian_video.cpp $ROOT/emu/sound/galaxian_sound.cpp $ROOT/emu/machines/galaxian.cpp $ROOT/emu/machines/amidar.cpp"
+     $ROOT/emu/machines/galaxian_video.cpp $ROOT/emu/sound/galaxian_sound.cpp $ROOT/emu/machines/galaxian.cpp $ROOT/emu/machines/amidar.cpp \
+     $ROOT/emu/machines/xevious.cpp"
 [ -n "$2" ] && EMU="$2"
 g++ -std=c++17 -O2 -Wall -Wextra -o "$OUT/arcade_host" \
     "$ROOT/tools/host/arcade_host.cpp" "$ROOT/tools/host/writers.cpp" $EMU

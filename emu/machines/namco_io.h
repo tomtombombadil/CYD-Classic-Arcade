@@ -84,6 +84,10 @@ public:
     }
     void    write(uint8_t data);
     uint8_t read();
+    // Xevious: command 1 is followed by 6 bytes (the last 4 the coinage)
+    // and turns the joystick remapping on - the game never sends command 4
+    // but reads directions (as old MAME's 51XX model did for it).
+    void    set_xevious(bool on) { xevious_ = on; }
 
     int credits() const { return credits_; }
     int mode() const { return mode_; }      // 0 switch, 1 credit, 2 credit (playing)
@@ -101,6 +105,7 @@ private:
     uint8_t last_fire_ = 0;                 // pressed = 1, per player bit
     uint8_t count_ = 0;                     // read position in the 3-byte cycle
     bool    remap_ = false;
+    bool    xevious_ = false;
     int     credits_ = 0;
 };
 
@@ -121,6 +126,47 @@ public:
 private:
     uint8_t dips_[2] = {};
     uint8_t count_ = 0;
+};
+
+// --- 50XX --------------------------------------------------------------------
+
+// The score keeper (an MB8842 with its own program, 50xx.bin, not in the
+// usual sets): Bosconian keeps its scores in it, Xevious only checks it
+// at power-on (protection). Modelled from the documented command set:
+//   0x nothing, 1x scores to 0, 2x / 3x / 5x + 3 BCD bytes (most
+//   significant first) = first bonus / bonus interval / high score,
+//   60 / 68 = player 1 / 2, 70 = adding, 71-7F = taking away,
+//   8x-Fx = add (or take away) an amount: 8x 5 10 15 20 25 30 40 50 60 70
+//   80 90 100 200 300 500, Bx 10 20 30 40 50 60 80 100 120 ... 200 400 600
+//   1000, Ex 15 30 45 ... 300 600 900 1500; 9x / Cx / Fx x10, Ax / Dx x100.
+// Reads give the selected player's score, 7 BCD digits in 4 bytes: the
+// first holds the flags (80 high score, 40 first bonus, 20 a further
+// bonus - set when the score passes them (the high score only once one
+// was given), cleared once read) and the top
+// digit; the reads start over at each 06XX control write that selects it.
+// Assumed (the program isn't known): the flags' exact timing, a score
+// taken below 0 stays 0.
+class Chip50 {
+public:
+    void reset();
+    void select() { count_ = 0; }           // a 06XX control write with this chip selected
+    void write(uint8_t data);
+    uint8_t read();
+
+    uint32_t score(int player) const { return score_[player & 1]; }   // binary
+
+private:
+    void add(uint32_t amount);
+
+    uint32_t score_[2] = {};
+    uint32_t first_ = 0, interval_ = 0, high_ = 0, next_bonus_[2] = {};
+    bool     high_set_ = false;             // a 5x command gave the high score
+    uint8_t  flags_[2] = {};
+    uint8_t  player_ = 0;
+    bool     subtract_ = false;
+    uint8_t  param_cmd_ = 0, params_left_ = 0;
+    uint32_t param_ = 0;
+    uint8_t  count_ = 0;
 };
 
 } // namespace namco_io

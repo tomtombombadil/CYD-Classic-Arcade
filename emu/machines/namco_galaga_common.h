@@ -121,7 +121,8 @@ public:
     const namco_io::Chip51& chip51() const { return chip51_; }
     const namco_wsg::Wsg&   wsg() const { return wsg_; }
     uint8_t latch() const { return latch_; }
-    // RAM as the CPUs see it at 8000-87FF / 8800-8BFF / 9000-93FF / 9800-9BFF.
+    // RAM as the CPUs see it (Galaga / Dig Dug: 8000-87FF / 8800-8BFF /
+    // 9000-93FF / 9800-9BFF; a game may map more, see map_shared_ram).
     uint8_t peek(uint16_t addr) const { return ram_ref(addr); }
 
     // For loops that do work when there is some (a speedup's check): true
@@ -164,6 +165,14 @@ protected:
     virtual void    frame_end() {}
     // Mixes the game's own sound into the WSG's output (n samples).
     virtual void    mix(int16_t* out, int n) { (void)out; (void)n; }
+    // The 06XX's control register was written (Xevious' 50XX restarts its
+    // answer there).
+    virtual void    control_written(uint8_t v) { (void)v; }
+
+    // Maps [start, start + len) (1 KB aligned) to `p` as RAM on all three
+    // CPUs, for peek() / steady() too - after board_init, for a board whose
+    // RAM sits elsewhere than Galaga's (Xevious).
+    void map_shared_ram(uint16_t start, uint32_t len, uint8_t* p);
 
     // The CPU's time in this frame (cycles from the frame's start), for
     // callbacks.
@@ -178,10 +187,7 @@ protected:
     uint8_t latch_ = 0;                 // 6820-6827
 
 private:
-    const uint8_t& ram_ref(uint16_t addr) const
-    {
-        return addr < 0x8800 ? vram_[addr & 0x7ff] : ram_[((addr >> 11) & 3) - 1][addr & 0x3ff];
-    }
+    const uint8_t& ram_ref(uint16_t addr) const { return ram_page_[addr >> 10][addr & 0x3ff]; }
 
     struct Port {
         Board* board;
@@ -200,6 +206,7 @@ private:
     bool    subs_held() const { return !(latch_ & 0x08); }
 
     z80::Cpu cpu_[kCpuCount];
+    const uint8_t* ram_page_[64] = {};  // the shared RAM per 1 KB page (peek / steady)
     Port     port_[kCpuCount] = {};
     int      pos_[kCpuCount] = {};      // each CPU's time in the frame
     uint64_t frame_base_ = 0;           // CPU cycles before this frame (06XX time base)

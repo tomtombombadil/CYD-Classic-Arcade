@@ -44,17 +44,18 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Rally-X | 18.6 | - | 15.0 / 16.8 | **33.7 / 35.5** | 2.6 | 21.1 | 4 |
 | Q*bert | 19.5 | - | 14.7 / 16.1 | **34.2 / 35.6** | 1.4 | 68.0 | 8 |
 | Donkey Kong | 21.3 | - | 14.7 / 16.1 | **36.0 / 37.4** | 1.8 | 32.8 | 4 |
-| Galaga | 23.8 | - | 15.7 / 17.1 | **39.5 / 40.9** | 3.6 | 37.0 | 4 |
+| Galaga | 24.1 | - | 15.7 / 17.1 | **39.8 / 41.2** | 3.6 | 37.0 | 4 |
 | Asteroids | 25.5 | - | 15.8 / 17.7 | **41.3 / 43.2** | 20.0 | 8.0 | 2 |
 | Battlezone | 27.7 | - | 15.2 / 17.7 | **42.9 / 45.4** | 20.0 | 16.0 | 2 |
 | Tempest | 29.2 | - | 15.8 / 17.7 | **45.0 / 46.9** | 20.0 | 24.0 | 4 |
-| Dig Dug | 31.9 | - | 15.7 / 17.1 | **47.6 / 49.0** | 1.8 | 55.0 | 4 |
+| Dig Dug | 32.2 | - | 15.7 / 17.1 | **47.9 / 49.3** | 1.8 | 55.0 | 4 |
 | Mr. Do! | 34.3 | - | 14.1 / 15.5 | **48.4 / 49.8** | - | 56.1 | 8 |
 | Ms. Pac-Man | 34.8 | - | 15.7 / 17.1 | **50.5 / 51.9** | 2.0 | 34.8 | 4 |
 | Robotron | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 52.0 | 4 |
 | Defender | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 30.0 | 4 |
 | Star Wars | 52.6 | - | 15.8 / 17.7 | **68.4 / 70.2** | 27.6 | 72.0 | 16 |
 | Zaxxon | 20.8 | - | 14.7 / 16.1 | **35.5 / 36.9** | 1.2 | 104.5 | 8 |
+| Xevious | 42.4 | - | 15.7 / 17.1 | **58.1 / 59.5** | 8.9 | 87.3 | 8 |
 | Qix | 8.1 | 64.0 (2 x 32) | 14.7 / 16.1 | **86.8 / 88.2** | - | 32.0 | 2 |
 
 Missile Command (2026-10-20, Xtensa sizeof 18,752 bytes): the machine is
@@ -95,6 +96,22 @@ ROM (104.5 KB in 6 regions: program 20, characters 4, background tiles
 24, sprites 24, tile map 32, PROMs 0.5) can't all be in RAM: what doesn't
 fit is read from the scratch flash (the renderer reads the tile map,
 background and sprite ROMs every line).
+
+Xevious (2026-10-21, xtensa-esp-elf-g++ 14.2 `sizeof`, -mdynconfig
+esp32): the games.cpp wrapper 43,416 bytes (xevious::Machine 43,400: the
+Galaga board's part ~7 KB - three Z80s, 5 KB of its RAM, the WSG -,
+Xevious' further RAM 12 KB (9000-97FF, A000-A7FF, the video RAM
+B000-CFFF), the VideoState copy taken at VBLANK 9,120 B (both layers' 8 KB
+of codes / attributes, 64 sprites, the per-column rows of characters that
+aren't blank), background tiles decoded by column 8 KB, characters by
+column 2 KB + 256 B, pens 2.2 KB). Buffers as Galaga's (224 x 288).
+Snapshot = the VideoState, 9,120 B. Its ROM (87.3 KB in 9 regions:
+program 16 + 8 + 4, characters 4, background tiles 8, sprites 28, the
+terrain map 16, PROMs 2.75 + 0.5) can't all be in RAM beside it: what
+doesn't fit is read from the scratch flash (the renderer reads the sprite
+ROMs, the game the map ROMs). The board's RAM page table for peek()
+(`namco_galaga::Board`, 64 pointers) added 256 bytes to Galaga and Dig Dug
+(v0.18.x: 23.8 / 31.9 KB).
 
 ## 2. The ESP32 boards' RAM
 

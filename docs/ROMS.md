@@ -49,6 +49,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Zaxxon | `zaxxon` (or `zaxxon2`) | Zaxxon (set 1, rev D) / (set 2, unknown rev) | `zaxxon` for `zaxxon2` |
 | Galaxian | `galaxian` | Galaxian (Namco set 1) | - |
 | Amidar | `amidar` | Amidar (Konami) | - |
+| Xevious | `xevious` | Xevious (Namco) | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -134,6 +135,14 @@ Notes:
   `.2h`, sound `amidar.5c` `.5d`, graphics `amidar.5f` `.5h`, the colour
   PROM `amidar.clr`). The Stern and bootleg sets (`amidaru`, `amidaro`,
   `amidarb`, ...) have other program ROMs and aren't read.
+- **Xevious:** the Namco set (MAME's `xevious`: `xvi_1.3p` ... `xvi_18.4r`,
+  the PROMs `xvi-1.5n` ... `xvi-10.6e` - older collections name them
+  `xvi_1bpr.5n` ... `xvi10bpr.6e`, same contents). The video board's PAL
+  (`xvi-3.1f`) and the custom chips' programs (`50xx.bin`, `51xx.bin`,
+  `54xx.bin`) aren't needed: the 50XX / 51XX are modelled, the explosions
+  (54XX) are our own noise model. The Atari sets (`xeviousa`, `xeviousb`,
+  `xeviousc`, `xeviousd`), Super Xevious and the bootlegs (`xevios`,
+  `battles`) have other program ROMs and aren't read.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

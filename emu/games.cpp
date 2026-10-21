@@ -26,6 +26,7 @@
 #include "machines/zaxxon.h"
 #include "machines/amidar.h"
 #include "machines/galaxian.h"
+#include "machines/xevious.h"
 
 #include <cstring>
 #include <new>
@@ -857,6 +858,45 @@ const ButtonName kStarwarsButtons[] = {
     {"test", starwars::kTest}, {"step", starwars::kDiagStep},
 };
 
+// ---- Xevious ----------------------------------------------------------------
+
+class Xevious : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        using namespace xevious;
+        m_.init({r[kRegionMain], r[kRegionSub], r[kRegionSound], r[kRegionChars], r[kRegionTiles],
+                 r[kRegionSprites], r[kRegionMap], r[kRegionProms], r[kRegionWave]},
+                rate, swap);
+    }
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    xevious::Machine m_;
+    Shot<xevious::Machine> shot_;
+};
+
+// The 8-way stick, A = the Zapper (air shot), B = the Blaster (bombs), by
+// position; Select = coin, Start = 1 player, L = 2 players.
+const Control kXeviousControls[] = {
+    {kPadUp, namco_galaga::kUp}, {kPadDown, namco_galaga::kDown}, {kPadLeft, namco_galaga::kLeft},
+    {kPadRight, namco_galaga::kRight}, {kPadA, namco_galaga::kFire}, {kPadB, xevious::kBlaster},
+    {kPadSelect, namco_galaga::kCoin}, {kPadStart, namco_galaga::kStart1}, {kPadL, namco_galaga::kStart2},
+};
+
+const ButtonName kXeviousButtons[] = {
+    {"up", namco_galaga::kUp}, {"down", namco_galaga::kDown}, {"left", namco_galaga::kLeft},
+    {"right", namco_galaga::kRight}, {"zapper", namco_galaga::kFire}, {"blaster", xevious::kBlaster},
+    {"coin", namco_galaga::kCoin}, {"coin2", namco_galaga::kCoin2}, {"start1", namco_galaga::kStart1},
+    {"start2", namco_galaga::kStart2}, {"service", namco_galaga::kService}, {"test", namco_galaga::kTest},
+};
+
 template <class M> Machine* make() { return new (std::nothrow) M; }
 
 #define COUNT(a) int(sizeof(a) / sizeof((a)[0]))
@@ -932,6 +972,9 @@ const Info kGames[] = {
     {"amidar", "Amidar", &amidar::kRomSet, amidar::kScreenW, amidar::kScreenH, Orientation::Portrait,
      amidar::kCpuClock, amidar::kCyclesPerFrame, kAmidarControls, COUNT(kAmidarControls), kAmidarButtons,
      COUNT(kAmidarButtons), nullptr, 0, make<Amidar>, true, false, "Konami", 1981, 193},
+    {"xevious", "Xevious", &xevious::kRomSet, xevious::kScreenW, xevious::kScreenH, Orientation::Portrait,
+     xevious::kCpuClock, xevious::kCyclesPerFrame, kXeviousControls, COUNT(kXeviousControls), kXeviousButtons,
+     COUNT(kXeviousButtons), nullptr, 0, make<Xevious>, false, false, "Namco", 1982, 720},
 
 };
 
