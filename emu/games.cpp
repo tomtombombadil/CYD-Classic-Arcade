@@ -10,6 +10,7 @@
 #include "machines/btime.h"
 #include "machines/digdug.h"
 #include "machines/dkong.h"
+#include "machines/dkongjr.h"
 #include "machines/galaga.h"
 #include "machines/invaders.h"
 #include "machines/missile.h"
@@ -202,9 +203,12 @@ const ButtonName kRallyxButtons[] = {
     {"service", rallyx::kService},
 };
 
-// ---- Donkey Kong ------------------------------------------------------------
+// ---- Donkey Kong, Donkey Kong Jr. -------------------------------------------
 
-class Dkong : public Machine {
+static_assert(int(dkongjr::kRegionCpu) == int(dkong::kRegionCpu) &&
+              int(dkongjr::kRegionProms) == int(dkong::kRegionProms), "the same regions");
+
+template <class M> class DkongBoard : public Machine {
 public:
     void init(const uint8_t* const* r, uint32_t rate, bool swap) override
     {
@@ -220,9 +224,11 @@ public:
     int  watchdog_resets() const override { return m_.watchdog_resets(); }
 
 private:
-    dkong::Machine m_;
-    Shot<dkong::Machine> shot_;
+    M m_;
+    Shot<M> shot_;
 };
+using Dkong = DkongBoard<dkong::Machine>;
+using Dkongjr = DkongBoard<dkongjr::Machine>;
 
 // The cabinet's 4-way stick and its one button: A (or B) jumps.
 const Control kDkongControls[] = {
@@ -932,6 +938,10 @@ const Info kGames[] = {
     {"amidar", "Amidar", &amidar::kRomSet, amidar::kScreenW, amidar::kScreenH, Orientation::Portrait,
      amidar::kCpuClock, amidar::kCyclesPerFrame, kAmidarControls, COUNT(kAmidarControls), kAmidarButtons,
      COUNT(kAmidarButtons), nullptr, 0, make<Amidar>, true, false, "Konami", 1981, 193},
+    {"dkongjr", "Donkey Kong Jr.", &dkongjr::kRomSet, dkongjr::kScreenW, dkongjr::kScreenH,
+     Orientation::Portrait, dkongjr::kCpuClock, dkongjr::kCyclesPerFrame, kDkongControls,
+     COUNT(kDkongControls), kDkongButtons, COUNT(kDkongButtons), nullptr, 0, make<Dkongjr>, true, false,
+     "Nintendo", 1982, 30},
 
 };
 

@@ -14,6 +14,10 @@
 // picture is shown 224 wide x 256 tall. render_line() makes one display
 // line from a snapshot taken at the start of the visible frame - no frame
 // buffer.
+//
+// Donkey Kong Jr. runs on the same board with a few changes (see
+// emu/machines/dkongjr.*): it is this class with the Junior board's
+// wiring switched on (init_board()), not a copy.
 #pragma once
 
 #include "../cpu/i8035.h"
@@ -22,6 +26,8 @@
 #include "../sound/dkong_sound.h"
 
 #include <cstdint>
+
+namespace dkongjr_sound { class Board; }
 
 namespace dkong {
 
@@ -89,6 +95,7 @@ struct VideoState {
     uint8_t sprite_count;
     uint8_t palette_bank;           // 0-3: colour + 16 x bank
     bool    flip;
+    uint8_t gfx_bank;               // Donkey Kong Jr.: tile codes + 256 x bank
 };
 
 class Machine {
@@ -96,7 +103,10 @@ public:
     // `audio_rate`: output sample rate of run_frame()'s audio.
     // `swap_rgb565_bytes`: store pixels byte-swapped (SPI LCDs take them
     // big-endian).
-    void init(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes = false);
+    void init(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes = false)
+    {
+        init_board(roms, audio_rate, swap_rgb565_bytes, nullptr, nullptr);
+    }
     void reset();
 
     void set_inputs(uint16_t buttons) { buttons_ = buttons; }
@@ -122,6 +132,15 @@ public:
     uint32_t    dma_count() const { return dma_count_; }
     uint32_t    dac_writes() const { return dac_writes_; }
 
+protected:
+    // The Junior board (Donkey Kong Jr.): `jr_sound` its sound board,
+    // `jr_tiles` room for its second tile bank (256 x 8 entries); both null
+    // = Donkey Kong. The Junior's regions: cpu 24 KB (5B 5C 5E as loaded;
+    // their 2 KB pieces are mapped where the board puts them), sound 4 KB,
+    // tiles 8 KB (plane 1 0x1000 on).
+    void init_board(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes,
+                    dkongjr_sound::Board* jr_sound, uint16_t* jr_tiles);
+
 private:
     static uint8_t mem_read(void* ctx, uint16_t addr);
     static void    mem_write(void* ctx, uint16_t addr, uint8_t v);
@@ -145,6 +164,8 @@ private:
     z80::Cpu   cpu_;
     i8035::Cpu snd_;
     dkong_sound::Board board_;
+    dkongjr_sound::Board* jr_ = nullptr;    // non-null: the Junior board
+    uint16_t* tile_hi_ = nullptr;           // Junior: tile bank 1, decoded
 
     uint8_t  ram_[0xc00] = {};      // 6000-6BFF
     uint8_t  sprite_ram_[0x400] = {};   // 7000-73FF (two banks of 0x200)
@@ -159,6 +180,10 @@ private:
     bool     flip_ = false;         // 7D82
     uint8_t  sprite_bank_ = 0;      // 7D83
     uint8_t  palette_bank_ = 0;     // 7D86 / 7D87
+    // Junior: latch 4H (7C80-7C87; bit 0 = the tile bank, bit 1 = the
+    // 8035's P2 bit 6, inverted) and latch 5H (7D80-7D87; bit 1 = the
+    // falling sound).
+    uint8_t  latch_4h_ = 0, latch_5h_ = 0;
     bool     drq_ = false;          // 7D85
 
     // The 8257 DMA controller: four channels' address and count registers

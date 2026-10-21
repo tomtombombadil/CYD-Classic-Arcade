@@ -9,9 +9,9 @@ mkdir -p "$OUT"
 EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT/emu/cpu/m6502.cpp \
      $ROOT/emu/cpu/i8088.cpp $ROOT/emu/rom/crc32.cpp $ROOT/emu/rom/zip.cpp $ROOT/emu/rom/romset.cpp \
      $ROOT/emu/util/inflate.cpp $ROOT/emu/sound/namco_wsg.cpp $ROOT/emu/sound/invaders_sound.cpp \
-     $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp $ROOT/emu/sound/namco54.cpp \
+     $ROOT/emu/sound/rallyx_bang.cpp $ROOT/emu/sound/dkong_sound.cpp $ROOT/emu/sound/dkongjr_sound.cpp $ROOT/emu/sound/namco54.cpp \
      $ROOT/emu/sound/samples.cpp $ROOT/emu/sound/sn76489.cpp $ROOT/emu/machines/pacman.cpp \
-     $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp $ROOT/emu/machines/dkong.cpp \
+     $ROOT/emu/machines/invaders.cpp $ROOT/emu/machines/rallyx.cpp $ROOT/emu/machines/dkong.cpp $ROOT/emu/machines/dkongjr.cpp \
      $ROOT/emu/machines/namco_io.cpp $ROOT/emu/machines/starfield05.cpp $ROOT/emu/cpu/m6809.cpp \
      $ROOT/emu/cpu/m6800.cpp \
      $ROOT/emu/machines/namco_galaga_common.cpp $ROOT/emu/machines/galaga.cpp $ROOT/emu/machines/digdug.cpp \

@@ -44,6 +44,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Rally-X | 18.6 | - | 15.0 / 16.8 | **33.7 / 35.5** | 2.6 | 21.1 | 4 |
 | Q*bert | 19.5 | - | 14.7 / 16.1 | **34.2 / 35.6** | 1.4 | 68.0 | 8 |
 | Donkey Kong | 21.3 | - | 14.7 / 16.1 | **36.0 / 37.4** | 1.8 | 32.8 | 4 |
+| Donkey Kong Jr. | 25.5 | - | 14.7 / 16.1 | **40.2 / 41.6** | 1.8 | 44.8 | 8 |
 | Galaga | 23.8 | - | 15.7 / 17.1 | **39.5 / 40.9** | 3.6 | 37.0 | 4 |
 | Asteroids | 25.5 | - | 15.8 / 17.7 | **41.3 / 43.2** | 20.0 | 8.0 | 2 |
 | Battlezone | 27.7 | - | 15.2 / 17.7 | **42.9 / 45.4** | 20.0 | 16.0 | 2 |
@@ -95,6 +96,14 @@ ROM (104.5 KB in 6 regions: program 20, characters 4, background tiles
 24, sprites 24, tile map 32, PROMs 0.5) can't all be in RAM: what doesn't
 fit is read from the scratch flash (the renderer reads the tile map,
 background and sprite ROMs every line).
+
+Donkey Kong Jr. (2026-10-21, xtensa-esp-elf-g++ 14.2 `sizeof`, -mdynconfig
+esp32): `dkongjr::Machine` 26,136 bytes = `dkong::Machine` 21,800 (Donkey
+Kong's own size; the Junior's wiring added two pointers, two latch bytes
+and a VideoState byte to it) + the second tile bank decoded (4,096) + its sound model
+(`dkongjr_sound::Board` 240). Buffers and snapshot (`VideoState` 1,796 B)
+as Donkey Kong's. ROM 44.8 KB in 5 regions: program 24 (three 8 KB chips),
+sound 4, tiles 8, sprites 8, PROMs 0.75.
 
 ## 2. The ESP32 boards' RAM
 
