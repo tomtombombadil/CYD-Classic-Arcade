@@ -220,7 +220,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   ends there, rallyx 770, galaga 870, digdug 700, robotron 760, defender
   1625 - its Williams logo, qix 190, starwars 90,
   bzone 70 - black until its first picture at 67, galaxian 216 - after
-  its cross-hatch test, amidar 193, the rest 30 for the
+  its cross-hatch test, amidar 193, gyruss 170 - after its grid test and
+  its stars' fade, the rest 30 for the
   first black / garbage frame). The runner runs them before the game loop
   with nothing drawn and the sound thrown away, as fast as the board goes
   (bar, back check and a vTaskDelay(1) for the watchdog only every 32
@@ -301,7 +302,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   measurement.
 - Two cores (v0.14.6, the next step after the speed page; Galaga's busy
   waves on the 4.0"): the tile games (Pac-Man, Ms. Pac-Man, Galaga, Dig
-  Dug, Donkey Kong, Rally-X, Q*bert, Galaxian, Amidar) copy their
+  Dug, Donkey Kong, Rally-X, Q*bert, Galaxian, Amidar, Gyruss) copy their
   VideoState after a frame
   (`Machine::snapshot()`, a `Shot<>` in games.cpp, ~2-5 KB allocated at the
   first one) and a "draw" task on core 0 (priority 1, as BTstack's loop;
@@ -972,7 +973,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   since the last time: about every 7 minutes, never the first time round
   (the old note "no sound command whatever the switch" came from runs
   under 7 minutes); Amidar IN2 bit 1 (clear = on; the demo play's tunes
-  and sounds, ~50 s into the attract cycle). No switch, attract silent on the cabinet: Galaxian, Pac-Man,
+  and sounds, ~50 s into the attract cycle); Gyruss DSW2 bit 7 (Demo
+  Sounds) and DSW3 bit 0 (Demo Music), both set by set_demo_sounds (0 =
+  on; the attract's play sounds and tunes - 6000 frames: peak 18,600 vs
+  0). No switch, attract silent on the cabinet: Galaxian, Pac-Man,
   Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong, Mr. Do!, Burger Time,
   Asteroids, Tempest, Missile Command (MAME's DIP lists have none for these
   sets; Missile Command's attract measured silent, peak 0 over 10,000
@@ -1251,6 +1255,89 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   same run as above): emu 0.068 ms (Pac-Man 0.035; callgrind 579K host
   instructions a frame vs 352K), render 0.040. `--panel`: ~2,600 pixels a
   picture at 240x320, 4,700 at 320x480, 0 wrong.
+- Gyruss (`emu/machines/gyruss.*`, set `gyruss` = Konami; Tom's zip is
+  exactly it; `gyrussce` (Centuri) has other main ROMs, not read).
+  Portrait 224x256: the board's 256-pixel lines 16-239 turned like
+  Galaxian's (display x = 239 - line, display y = pixel). 256 lines of 198
+  main cycles (396 pixel clocks at 6.144 MHz): 60.606 Hz. Emulated: the
+  main Z80 at 3.072 MHz (ROM 0000-5FFF, colour / video RAM 8000-87FF, RAM
+  9000-9FFF, A000-A7FF shared with the sub CPU's 6000-67FF, C000 DSW2 /
+  C080 SYSTEM + the sound IRQ write / C0A0 P1 / C0E0 DSW1 / C100 DSW3 + the
+  sound command, LS259 at C180: Q0 NMI enable - the NMI line stays high
+  until it's cleared, so a frame's NMI needs the handler to clear and set
+  it, as the game does), inputs active low, no watchdog (MAME has none);
+  the sub CPU, a Konami-1 at 1.536 MHz = our 6809 whose opcode fetches
+  (the opcode, and a 10 / 11 prefix's second byte - not operands or data)
+  go through `op_page` / `map_opcodes` / `op_read` (added to
+  `emu/cpu/m6809.*`: map_read keeps op_page = read_page, so the other
+  6809 games cost the same - Robotron, Defender, Qix, Star Wars `--hash`
+  identical over 5,000 frames each); the bytes XOR 22 / 82 / 28 / 88 by
+  address bits 1 and 3 (`konami1_decrypt`; from address 0), the program
+  decrypted once into an 8 KB copy for its fetches; scanline read at 0000,
+  IRQ enable at 2000 (level, dropped when cleared), RAM 4000-47FF with the
+  sprites at 4040-40FF; the main and sub CPUs take turns every 2 lines.
+  Video: 32x32 tiles of 8x8 2 bits (code bit 8 = colour RAM bit 5, colour
+  bits 0-3 through the tile colour PROM to palette 16-31, flips bits 6 /
+  7, bit 4 = in front of the sprites, whole tile), 48 sprites of 8x16 4
+  bits (x = byte 0, top line 241 - byte 3, code byte 1 bits 1-7 + byte 2
+  bit 5, bank byte 1 bit 0 = the second half of each 64-byte sprite,
+  colour byte 2 bits 0-3, flip x = byte 2 bit 6 CLEAR, flip y bit 7, pen
+  0 clear, slot 0 on top), the palette PROM through 1K / 470 / 220 (blue
+  470 / 220) into 470. The sub CPU rewrites sprite slots while the beam
+  is in the picture (MAME draws partial screens at each write): each
+  slot's value is kept with the lines it was shown on (a write at line L
+  closes the old value at L; VBLANK writes are the next frame's), up to
+  192 pieces a frame, built into the VideoState at VBLANK; the renderer
+  clips each piece to its lines. Tiles are decoded by column at init (8
+  KB), sprites drawn from the ROM. Flip screen (cocktail) not drawn.
+  Sound board, its programs exact: Z80 at 3.58 MHz (ROM 0000-3FFF, RAM
+  6000-63FF, 8000 the command; I/O 00 / 04 / 08 / 0C / 10 = AY 1-5
+  address, +1 read, +2 data, 14 = the i8039's interrupt, 18 = its
+  command), IRQ held until taken (stepped as Amidar's); five AY-3-8910 at
+  1.79 MHz; AY 3 port A = the timer (the CPU clock / 1024 into an LS90:
+  0 1 2 3 4 9 A B A D); AY 1 / 2 port B switch 0.047 (bit 0) / 0.22 uF
+  (bit 1) per channel into an RC low-pass with the chip's ~356 ohm + 1k
+  (MAME's figures); the i8039 (`emu/cpu/i8035`, now with `ram_mask` for
+  the 8039's 128 bytes - Donkey Kong `--hash` identical) at 8 MHz, 8,800
+  machine cycles a frame: every MOVX reads its command, P2 drops its
+  interrupt, P1 = the DAC; its DAC changes are queued with their times
+  (they don't make the AYs catch up), each AY is brought up to date only
+  for its own writes and at each output sample's end. Mix (mono = left +
+  right, MAME's resistor mixer: AY 1 2.2k a channel, AY 3 / AY 4 3.3k
+  each tied, right; AY 2, AY 5, the DAC 4.7k, left), an 8 kHz output RC
+  (200 ohm / 0.1 uF), a 20 Hz coupling (assumed), x 9 with a soft knee
+  above 16,000 (play peaks ~18,000-19,000). Assumed: the DAC's swing
+  against the AYs' (4 V against ~1 V an AY channel). The AY core
+  (`emu/sound/ay8910.*`) got faster for this, exact (Burger Time, Amidar
+  `--hash` identical): a tone's square wave between noise / envelope
+  steps is counted in closed form (its time high from the counter and
+  period), and a run in which no output can change only adds the levels,
+  inline, the ticks put on the counters later (`settle()`; at most 4096
+  ticks ahead). Idle skipping, exact (`gyruss_tests`; and 6,000 attract +
+  3 x 8,000 played frames of the real game compared frame by frame with
+  it off - picture, audio, the four CPUs' registers): the main CPU's task
+  wait at 05F4 (JP / LD A,(5865) / LD H,A / LD A,(9433) / LD L,A / LD
+  A,(HL) / RLCA / JP C, 65 cycles 8 fetches, its own RAM only) from any of
+  its instructions at a slice's start, A H L F set as a pass leaves them;
+  the sub CPU's BRA * at F0B6 to the slice's end while no interrupt can be
+  taken; the sound CPU's timer waits at 00FE / 0105 (through RST 10, 69
+  cycles 7 fetches; the IN stops the CPU, the passes that read the same
+  bit 2 skipped, A = the last read, F = AND 04's); the i8039's NOP / JMP
+  at 0019 and any DJNZ Rr to itself (its delay after each DAC write, which
+  stops it), the timer's prescaler counted. Left in play a frame: main ~26K
+  cycles, sub ~15K, sound ~16K, i8039 up to 8.8K (all real work). PC
+  (in play, fire held, the same runs): emu ~0.14 ms (Pac-Man ~0.03),
+  render ~0.045 (Pac-Man ~0.048); callgrind 1.09M host instructions a
+  frame emulated vs Pac-Man's 0.35M (3.1x; 0.81M = 2.3x in the attract
+  mode), rendering 0.55M vs 0.79M. **Probably too slow for full speed on
+  the ESP32 boards** (Pac-Man's emulation takes ~5.7 ms there: Gyruss's
+  ~3x is ~17 ms of a 16.5 ms frame) - the S3 may manage; not yet run on a
+  board. Controls: the 8-way stick as on the cabinet (it moves the ship
+  round the circle), A (or B) fire, Select coin, Start 1P, L 2P. Snapshot
+  for core 0: the VideoState, 4.4 KB. Memory: machine 37.6 KB (Xtensa),
+  ROM 92.5 KB (biggest 8 KB). `boot_frames` 170 (the grid test, then the
+  stars fade, the score lines at 170). `--panel` 240x320 / 320x480: 0
+  wrong.
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE

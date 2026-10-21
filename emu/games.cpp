@@ -975,7 +975,7 @@ const Info kGames[] = {
      COUNT(kAmidarButtons), nullptr, 0, make<Amidar>, true, false, "Konami", 1981, 193},
     {"gyruss", "Gyruss", &gyruss::kRomSet, gyruss::kScreenW, gyruss::kScreenH, Orientation::Portrait,
      gyruss::kCpuClock, gyruss::kCyclesPerFrame, kGyrussControls, COUNT(kGyrussControls), kGyrussButtons,
-     COUNT(kGyrussButtons), nullptr, 0, make<Gyruss>, false, false, "Konami", 1983, 30},
+     COUNT(kGyrussButtons), nullptr, 0, make<Gyruss>, false, false, "Konami", 1983, 170},
 
 };
 

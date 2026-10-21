@@ -49,6 +49,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Zaxxon | `zaxxon` (or `zaxxon2`) | Zaxxon (set 1, rev D) / (set 2, unknown rev) | `zaxxon` for `zaxxon2` |
 | Galaxian | `galaxian` | Galaxian (Namco set 1) | - |
 | Amidar | `amidar` | Amidar (Konami) | - |
+| Gyruss | `gyruss` | Gyruss (Konami) | - |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -134,6 +135,14 @@ Notes:
   `.2h`, sound `amidar.5c` `.5d`, graphics `amidar.5f` `.5h`, the colour
   PROM `amidar.clr`). The Stern and bootleg sets (`amidaru`, `amidaro`,
   `amidarb`, ...) have other program ROMs and aren't read.
+- **Gyruss:** the Konami set (MAME's `gyruss`, 15 files: main
+  `gyrussk.1` `.2` `.3` (c673b43d a4ec03e4 27454a98), sub CPU `gyrussk.9`
+  (822bf27e), sound `gyrussk.1a` `.2a` (f4ae1c17 ba498115), i8039
+  `gyrussk.3a` (3f9b5dea), characters `gyrussk.4` (27d8329b), sprites
+  `gyrussk.5` - `.8` (4f22411a c949db10 8e8d388c 47cd1fbc), PROMs
+  `gyrussk.pr1` `.pr2` `.pr3` (7ed057de de823a81 98782db3)). Tom's zip is
+  exactly this set. The Centuri set (`gyrussce`) has other main program
+  ROMs (`gya-1.11j` ...) and isn't read; it would be a romset variant.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.
