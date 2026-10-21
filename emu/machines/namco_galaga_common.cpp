@@ -43,9 +43,6 @@ int bit_at(const uint8_t* base, int bit) { return (base[bit >> 3] >> (7 - (bit &
 // bit of the pixel value) in the upper nibble.
 int pixel_at(const uint8_t* base, int bit) { return (bit_at(base, bit) << 1) | bit_at(base, bit + 4); }
 
-// What peek() sees where no RAM is mapped.
-const uint8_t kNoRam[1024] = {};
-
 } // namespace
 
 // --- the board -----------------------------------------------------------------
@@ -65,13 +62,6 @@ void Board::board_init(const BoardRoms& roms, uint32_t audio_rate, const Speedup
         if (s.pc_lo < speedup_lo_[s.cpu]) speedup_lo_[s.cpu] = s.pc_lo;
         if (s.pc_hi > speedup_hi_[s.cpu]) speedup_hi_[s.cpu] = s.pc_hi;
     }
-    // RAM 1-3's mirrors (A10 not decoded) for peek() and steady() only.
-    for (const uint8_t*& p : ram_page_) p = kNoRam;
-    ram_page_[0x20] = vram_;
-    ram_page_[0x21] = vram_ + 0x400;
-    ram_page_[0x22] = ram_page_[0x23] = ram_[0];
-    ram_page_[0x24] = ram_page_[0x25] = ram_[1];
-    ram_page_[0x26] = ram_page_[0x27] = ram_[2];
     for (int n = 0; n < kCpuCount; ++n) {
         z80::Cpu& c = cpu_[n];
         port_[n] = {this, n};
@@ -88,12 +78,6 @@ void Board::board_init(const BoardRoms& roms, uint32_t audio_rate, const Speedup
     std::memset(vram_, 0, sizeof vram_);        // power on
     std::memset(ram_, 0, sizeof ram_);
     board_reset();
-}
-
-void Board::map_shared_ram(uint16_t start, uint32_t len, uint8_t* p)
-{
-    for (z80::Cpu& c : cpu_) c.map_ram(start, len, p);
-    for (uint32_t off = 0; off < len; off += 0x400) ram_page_[(start + off) >> 10] = p + off;
 }
 
 void Board::board_reset()
@@ -176,7 +160,6 @@ void Board::write(int n, uint16_t a, uint8_t v)
     if ((a & 0xf800) == 0x7000) {
         if (a & 0x100) {
             bus06_.set_control(v, frame_base_ + uint64_t(now(n)));
-            control_written(v);
             // End the slice here so the first NMI isn't late.
             cpu_[n].stop();
             return;

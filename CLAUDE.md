@@ -1429,62 +1429,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   320x480: 0 wrong (~1,900 / 3,400 pixels a picture). Memory (xtensa):
   machine 21.6 KB (the VideoState 15.6 KB - character RAM 12 KB), the
   snapshot 15.6 KB, ROM 74.3 KB (biggest 4 KB; 8 KB in `elevator`).
-- Xevious (`emu/machines/xevious.*`, set `xevious` = the Namco version;
-  Tom's zip names the PROMs `xvi_1bpr.5n` ... `xvi10bpr.6e`, same CRCs;
-  portrait 224x288 = MAME's ROT90, 60.606 Hz). The Galaga board
-  (namco_galaga_common.*) with Xevious' map: RAM 7800-7FFF and 8000 / 9000
-  / A000 (2 KB each; A11 not decoded, so 8800 / 9800 / A800 mirror them -
-  `Board::map_shared_ram`; peek() now goes through a 1 KB page table,
-  Galaga's and Dig Dug's `--hash` unchanged over 8,000 frames), video RAM
-  B000-CFFF, scroll registers D000-D07F (A6-A4 = register, A0 = bit 8), the
-  terrain map ROMs at F000 (BS0 / BS1 written, BB0 / BB1 read: xvi_10 + a
-  nibble of xvi_9 = a 12-bit entry naming a 2 x 2 block of xvi_11 with x /
-  y flips - facts from MAME's xevious_bb_r; the game finds its ground
-  targets through it). Video: background 64 x 32 of 2-bit tiles (512, 128
-  colours through the 4H / 4F lookup PROMs, flips), characters 64 x 32
-  1-bit (colour straight from the attribute) on top, 64 sprites 16 x 16
-  3-bit between them (planes 0-1 from xvi_15 / 17 / 16, plane 2 from
-  xvi_18's low nibbles for codes 0-127, its high nibbles for 128-255, none
-  for 256-319; lookup bit 7 = opaque; off when colour bit 6), double width
-  / height and flips placed as MAME does (a flipped single-height sprite
-  sits 16 lines up - kept as MAME has it); layer offsets background x + 20
-  / y + 16, characters x + 32 / y + 18 (MAME's). Drawn a line at a time:
-  one tile column per layer (tiles and characters decoded by column at
-  init, 8 + 2 KB; an attribute lookup gives pens and flips), characters
-  only from the rows that aren't blank (VideoState::fg_rows), sprites
-  decoded from the ROM as drawn. No stars; flip screen (cocktail) not
-  drawn. Custom chips: the 51XX as Galaga's, but Xevious sends command 1
-  + 6 bytes (the last 4 the coinage) and reads the stick as directions
-  without sending command 4 (`Chip51::set_xevious`, as old MAME's model
-  did - without it the game stayed in switch mode, "CREDIT FF"); the 50XX
-  (`namco_io::Chip50`, our model of its documented score commands): the
-  game only checks it at power-on (scores to 0, +5 -> reads 00 00 00 05,
-  +90 -> ... 95; the boot screen then shows RAM OK / ROM OK); the 54XX =
-  Galaga's noise model (Xevious' parameter bytes ignored). Controls: 8-way
-  stick, A = Zapper (the 51XX's fire), B = Blaster (DSWB bit 0, read at
-  6800 with the DIPs, low = pressed), Select coin, Start 1P, L 2P;
-  set_dips = DSWA (default FF: 1 coin 1 credit, 20K / 60K / every 60K, 3
-  lives, upright), DSWB FF. No demo sounds switch in MAME's DIP list; the
-  attract mode is silent (measured). Sound: the WSG x 3/4 (its three
-  voices at full volume would peak ~30,600 - Xevious' music plays all
-  through) + the 54XX: play peaks ~21,400. boot_frames 720 (RAM / ROM
-  test, the DIP display, a grid, then the title). Idle skipping, all exact
-  passes (`--hash` the same with and without over 9,000 and 12,000 played
-  frames; xevious_tests compares every register incl. R): main 0437 (LD
-  HL,(8000) / DEC L / JR NZ, 32 T-states), sub 018D (LD A,(HL) / DEC A /
-  JR NZ with HL = 8002, 23), sound 0098 (JR $, 12) - as a sleep to the next
-  NMI that one wasn't exact (the slice end moved by part of a JR). In play
-  the CPUs still run ~42K + 27K + 17K cycles a frame (real work; Galaga
-  ~55K in all). PC in play (3 runs each, the same machine): emu ~0.067 ms
-  (Pac-Man ~0.029), render ~0.055 ms (Pac-Man ~0.049); callgrind ~0.73M
-  host instructions a frame rendering (Pac-Man ~0.78M), ~0.5M emulating.
-  `--panel` 240x320 / 320x480: 0 wrong; the background scrolls all the
-  time, so ~50 % of the panel changes every picture (as Rally-X). Memory
-  (docs/MEMORY.md): machine 42.4 KB (xtensa), snapshot 8.9 KB, ROM 87.3 KB
-  in 9 regions (biggest 8 KB), mostly in the scratch flash. Unsure: the
-  50XX's flags (unused by Xevious), the 54XX's sounds (Galaga's model;
-  Xevious sets other parameters), the 51XX's 6-byte coinage (old MAME's
-  kludge, works), the flipped single-height sprite's place.
+- Xevious: removed in v0.23.1 (Tom, 2026-10-21: "It's just not going to
+  work" - on the 4.0" S3 it drew 21 pictures a second: its background
+  scrolls all the time, ~98,000 pixels to send a picture). It ran on the
+  Galaga board with a 50XX model and the 51XX's Xevious mode (git history
+  has it, the v0.22.0 merge). Don't add it back.
 - Gyruss (`emu/machines/gyruss.*`, set `gyruss` = Konami; Tom's zip is
   exactly it; `gyrussce` (Centuri) has other main ROMs, not read).
   Portrait 224x256: the board's 256-pixel lines 16-239 turned like
