@@ -561,31 +561,27 @@ EMU_HOT int Cpu::run(int cycles)
     done_ = 0;
     target_ = cycles;
     while (done_ < target_) {
-        // One test for the usual case: no NMI, no interrupt that could be
-        // taken, not just after EI, not halted.
-        if (__builtin_expect(nmi_pending_ | (irq_line_ & (iff1 != 0)) | ei_delay_ | halted, 0)) {
-            if (nmi_pending_) {
-                nmi_pending_ = false;
-                halted = false;
-                iff1 = 0;
-                ++r;
-                push(pc.w);
-                pc.w = 0x66;
-                done_ += 11;
-                continue;
-            }
-            if (irq_line_ && iff1 && !ei_delay_) {
-                done_ += take_irq();
-                continue;
-            }
-            ei_delay_ = false;
-            if (halted) {
-                // Executes NOPs until an interrupt: burn the rest of the slice.
-                const int n = (target_ - done_ + 3) >> 2;
-                r = uint8_t(r + n);
-                done_ += n * 4;
-                break;
-            }
+        if (nmi_pending_) {
+            nmi_pending_ = false;
+            halted = false;
+            iff1 = 0;
+            ++r;
+            push(pc.w);
+            pc.w = 0x66;
+            done_ += 11;
+            continue;
+        }
+        if (irq_line_ && iff1 && !ei_delay_) {
+            done_ += take_irq();
+            continue;
+        }
+        ei_delay_ = false;
+        if (halted) {
+            // Executes NOPs until an interrupt: burn the rest of the slice.
+            const int n = (target_ - done_ + 3) >> 2;
+            r = uint8_t(r + n);
+            done_ += n * 4;
+            break;
         }
         ++r;
         done_ += exec<0>(fetch());   // inlined: no call per instruction
