@@ -260,6 +260,9 @@ void Machine::reset()
     set_filter(0, 0);
     set_filter(1, 0);
     carry_ = 0;
+    sub_due_ = 0;
+    sub_lag_ = false;
+    cpu_.map_ram(0xa000, 0x800, shared_);
 }
 
 uint8_t Machine::in(int port) const
@@ -293,7 +296,11 @@ uint8_t Machine::in(int port) const
 
 uint8_t Machine::mem_read(void* ctx, uint16_t addr)
 {
-    const Machine& m = *static_cast<Machine*>(ctx);
+    Machine& m = *static_cast<Machine*>(ctx);
+    if ((addr & 0xf800) == 0xa000) {                    // the shared RAM while the sub CPU is behind
+        m.sub_catch_up();
+        return m.shared_[addr & 0x7ff];
+    }
     if ((addr & 0xfe00) != 0xc000) return 0xff;        // 6000-7FFF: the empty socket; no chips elsewhere
     switch (addr & 0x1e0) {
     case 0x000: return m.in(2);
@@ -307,6 +314,11 @@ uint8_t Machine::mem_read(void* ctx, uint16_t addr)
 void Machine::mem_write(void* ctx, uint16_t addr, uint8_t v)
 {
     Machine& m = *static_cast<Machine*>(ctx);
+    if ((addr & 0xf800) == 0xa000) {
+        m.sub_catch_up();
+        m.shared_[addr & 0x7ff] = v;
+        return;
+    }
     if ((addr & 0xfe00) != 0xc000) return;
     switch (addr & 0x180) {
     case 0x080:                                         // C080: the sound CPU's IRQ
@@ -357,6 +369,31 @@ uint8_t Machine::sub_opcode(void* ctx, uint16_t addr)
 {
     Machine& m = *static_cast<Machine*>(ctx);
     return konami1_decrypt(addr, m.sub_.rd(addr));
+}
+
+// The sub CPU's turns come after the main CPU's (2 lines each) but are put
+// off until the main CPU touches the shared RAM (its pages are unmapped
+// while the sub CPU is behind), VBLANK or the frame's end: then the sub
+// CPU runs all of them in one go. The same instructions at the same times:
+// nothing it reads changed meanwhile (the main CPU didn't touch the shared
+// RAM, no interrupt came), and where a turn ends never matters to it (a
+// wait, BRA * or an idle skip only runs on to the later end).
+void Machine::sub_catch_up()
+{
+    if (sub_done_ < sub_due_) run_sub(sub_due_);
+    if (sub_lag_) {
+        sub_lag_ = false;
+        cpu_.map_ram(0xa000, 0x800, shared_);
+    }
+}
+
+void Machine::sub_behind(int due)
+{
+    sub_due_ = due;
+    if (sub_done_ < due && !sub_lag_) {
+        sub_lag_ = true;
+        cpu_.map_ram(0xa000, 0x800, nullptr);
+    }
 }
 
 void Machine::run_sub(int target)
@@ -417,10 +454,14 @@ void Machine::capture()
         if (e.top < kVblankLine && e.top + 16 > lo) pending_slot_[entries_++] = uint8_t(slot);
     }
     // Back to front: the highest slot first (slot 0 on top).
-    vs.count = 0;
-    for (int slot = kMaxSprites - 1; slot >= 0; --slot)
-        for (int i = 0; i < entries_; ++i)
-            if (pending_slot_[i] == slot) vs.spr[vs.count++] = pending_[i];
+    {
+        // (A counting sort: each slot's pieces keep their order.)
+        uint16_t at[kMaxSprites + 1] = {};
+        for (int i = 0; i < entries_; ++i) ++at[kMaxSprites - 1 - pending_slot_[i] + 1];
+        for (int k = 1; k <= kMaxSprites; ++k) at[k] = uint16_t(at[k] + at[k - 1]);
+        for (int i = 0; i < entries_; ++i) vs.spr[at[kMaxSprites - 1 - pending_slot_[i]]++] = pending_[i];
+        vs.count = entries_;
+    }
     entries_ = 0;
     std::memset(slot_from_, 0, sizeof slot_from_);
     // Bands of 8 pixels along the scanline (display lines).
@@ -542,7 +583,16 @@ void Machine::snd_port_write(void* ctx, uint16_t port, uint8_t v)
         case 0: m.ay_[chip].write_address(v); break;
         case 2: {
             const int at = m.sound_now();
-            m.sync_audio(at);
+            m.room_to(at);
+            if (chip < 2) {
+                // A new filter applies to the samples from here on: the ones
+                // so far are finished with the old one first.
+                const ay8910::Chip& a = m.ay_[chip];
+                const int r = a.selected();
+                const uint8_t bits = r == 15 ? ((a.reg(7) & 0x80) ? v : 0xff)
+                                   : r == 7 ? ((v & 0x80) ? a.reg(15) : 0xff) : m.filter_bits_[chip];
+                if (bits != m.filter_bits_[chip]) m.sync_audio(at);
+            }
             m.chip_to(chip, at);
             m.ay_[chip].write_data(v);
             if (chip < 2) m.set_filter(chip, m.ay_[chip].port_out(1));
@@ -572,7 +622,7 @@ void Machine::mcu_port_write(void* ctx, uint8_t port, uint8_t v)
             const int at = int(int64_t(m.mcu_now()) * m.snd_frame_ / kI8039PerFrame);
             if (m.dac_qn_ == kDacQueue) {           // full: the samples so far take theirs
                 m.audio_to(at);
-                m.dac_to(at < m.sample_end_ ? at : m.sample_end_);
+                m.dac_to(at);
             }
             m.dac_q_[m.dac_qn_++] = {at, v};
             // The effects wait between DAC writes in DJNZ loops: stop, so
@@ -623,11 +673,23 @@ void Machine::sync_audio(int snd_cycle)
     audio_to(snd_cycle);
 }
 
+// Before an AY runs to snd_cycle: room for its samples in rows_, else the
+// samples so far are finished first (the i8039 brought up to date for
+// their DAC).
+void Machine::room_to(int snd_cycle)
+{
+    const int last = audio_done_ + kRows - 1;
+    // (Past the frame's end, or no samples asked for: everything at once, as
+    // the i8039 then runs past the frame's end too.)
+    if (!audio_n_ || snd_cycle >= snd_frame_ || (last < audio_n_ && sample_end(last) <= snd_cycle))
+        sync_audio(snd_cycle);
+}
+
 // --- idle loops (see the top) -------------------------------------------------------------
 
 int Machine::main_idle(int room)
 {
-    if (!main_loop_ || nmi_now_) return 0;
+    if (!main_loop_ || nmi_now_ || uint16_t(cpu_.pc.w - 0x05f4) > 0x0601 - 0x05f4) return 0;
     bool in_loop = false;
     for (uint16_t pc : kMainLoopPcs) in_loop |= cpu_.pc.w == pc;
     if (!in_loop) return 0;
@@ -734,19 +796,23 @@ void Machine::set_filter(int chip, uint8_t bits)
     }
 }
 
-int16_t Machine::mix_sample(uint32_t clocks)
+int16_t Machine::mix_sample(const uint32_t* acc, uint32_t dac_acc, uint32_t clocks)
 {
-    const float scale = clocks ? 1.0f / float(clocks) : 0;
+    if (clocks != scale_clocks_) {          // a sample is 74 or 75 AY clocks: worked out once
+        scale_clocks_ = clocks;
+        scale_ = clocks ? 1.0f / float(clocks) : 0;
+    }
+    const float scale = scale_;
     float ch[6];
     for (int c = 0; c < 6; ++c) {
-        const float x = float(acc_[c]) * scale;
+        const float x = float(acc[c]) * scale;
         lp_y_[c] = lp_a_[c] > 0 ? lp_y_[c] + lp_a_[c] * (x - lp_y_[c]) : x;
         ch[c] = lp_y_[c];
     }
-    const float ay34 = float(acc_[6] + acc_[7] + acc_[8] + acc_[9] + acc_[10] + acc_[11]) * scale;
-    const float ay5 = float(acc_[12] + acc_[13] + acc_[14]) * scale;
+    const float ay34 = float(acc[6] + acc[7] + acc[8] + acc[9] + acc[10] + acc[11]) * scale;
+    const float ay5 = float(acc[12] + acc[13] + acc[14]) * scale;
     const float sum = kWAy1 * (ch[0] + ch[1] + ch[2]) + kWAy34 * ay34 + kWAy2 * (ch[3] + ch[4] + ch[5]) +
-                      kWAy5 * ay5 + kWDac * float(dac_acc_) * scale * 0.5f;
+                      kWAy5 * ay5 + kWDac * float(dac_acc) * scale * 0.5f;
     out_y_ += out_a_ * (sum - out_y_);
     const float out = dc_r_ * (dc_y_ + out_y_ - dc_x_);
     dc_x_ = out_y_;
@@ -759,52 +825,149 @@ int16_t Machine::mix_sample(uint32_t clocks)
 }
 
 // Sound cycles run the AYs at half the rate (the CPU's 3.58 MHz, the AYs'
-// 1.79 MHz from the same crystal). Each AY is brought up to date only for
-// its own writes and at the end of each output sample.
+// 1.79 MHz from the same crystal). An AY is brought up to date only for its
+// own writes and when samples are finished (audio_to): each output sample's
+// sums go to its row of rows_ (row r = sample audio_done_ + r), so the
+// others, the i8039 and the mix wait until kRows samples have piled up -
+// with the same runs (split at every sample's end and at the AY's own
+// writes), sums and mix as finishing every sample at once.
 void Machine::chip_to(int chip, int snd_cycle)
 {
-    const int from = ay_clock_[chip];
+    int from = ay_clock_[chip];
     if (snd_cycle <= from) return;
     const uint32_t b = uint32_t(snd_base_ & 1);
-    const uint32_t clocks = ((b + uint32_t(snd_cycle)) >> 1) - ((b + uint32_t(from)) >> 1);
-    if (clocks) ay_[chip].run(clocks, acc_ + 3 * chip);
+    if (!audio_n_) {                                    // no samples asked for: one run
+        const uint32_t clocks = ((b + uint32_t(snd_cycle)) >> 1) - ((b + uint32_t(from)) >> 1);
+        if (clocks) ay_[chip].run(clocks, rows_[0] + 3 * chip);
+        ay_clock_[chip] = snd_cycle;
+        return;
+    }
+    int j = ay_sample_[chip];                           // the sample `from` is in
+    if (j >= audio_n_) {                                // past the frame's last sample: not heard
+        const uint32_t clocks = ((b + uint32_t(snd_cycle)) >> 1) - ((b + uint32_t(from)) >> 1);
+        uint32_t lost[3] = {};
+        if (clocks) ay_[chip].run(clocks, lost);
+        ay_clock_[chip] = snd_cycle;
+        return;
+    }
+    const int row = j - audio_done_;
+    uint32_t clocks[kRows];
+    int n = 0;
+    for (;;) {
+        const int e = sample_end(j);
+        const int to = e < snd_cycle ? e : snd_cycle;
+        clocks[n++] = ((b + uint32_t(to)) >> 1) - ((b + uint32_t(from)) >> 1);
+        from = to;
+        if (to < e) break;
+        ++j;
+        if (to == snd_cycle) break;
+        if (j >= audio_n_) {                            // and on past the frame's end
+            ay_[chip].run_pieces(clocks, n, rows_[row] + 3 * chip, 16);
+            n = 0;
+            const uint32_t c = ((b + uint32_t(snd_cycle)) >> 1) - ((b + uint32_t(from)) >> 1);
+            uint32_t lost[3] = {};
+            if (c) ay_[chip].run(c, lost);
+            break;
+        }
+    }
+    if (n) ay_[chip].run_pieces(clocks, n, rows_[row] + 3 * chip, 16);
     ay_clock_[chip] = snd_cycle;
+    ay_sample_[chip] = j;
 }
 
+// The DAC up to snd_cycle: its queued changes in order, into the samples'
+// rows.
 void Machine::dac_to(int snd_cycle)
 {
-    int i = 0;
-    for (; i < dac_qn_ && dac_q_[i].at < snd_cycle; ++i) {
-        const int at = dac_q_[i].at > dac_clock_ ? dac_q_[i].at : dac_clock_;
-        dac_acc_ += uint32_t(dac_) * uint32_t(at - dac_clock_);
-        dac_clock_ = at;
-        dac_ = dac_q_[i].v;
+    if (snd_cycle > snd_frame_) snd_cycle = snd_frame_;
+    int q = 0;
+    while (dac_clock_ < snd_cycle) {
+        const int e = audio_n_ ? sample_end(dac_sample_) : snd_frame_;
+        const int to = e < snd_cycle ? e : snd_cycle;
+        uint32_t a = 0;
+        for (; q < dac_qn_ && dac_q_[q].at < to; ++q) {
+            const int at = dac_q_[q].at > dac_clock_ ? dac_q_[q].at : dac_clock_;
+            a += uint32_t(dac_) * uint32_t(at - dac_clock_);
+            dac_clock_ = at;
+            dac_ = dac_q_[q].v;
+        }
+        a += uint32_t(dac_) * uint32_t(to - dac_clock_);
+        dac_clock_ = to;
+        rows_[audio_n_ ? dac_sample_ - audio_done_ : 0][15] += a;
+        if (to == e && audio_n_) ++dac_sample_;
     }
-    if (i) {
-        for (int k = i; k < dac_qn_; ++k) dac_q_[k - i] = dac_q_[k];
-        dac_qn_ -= i;
-    }
-    if (snd_cycle > dac_clock_) {
-        dac_acc_ += uint32_t(dac_) * uint32_t(snd_cycle - dac_clock_);
-        dac_clock_ = snd_cycle;
+    // Changes before where the DAC already was (it ran there earlier): just their values.
+    for (; q < dac_qn_ && dac_q_[q].at < snd_cycle; ++q) dac_ = dac_q_[q].v;
+    if (q) {
+        for (int k = q; k < dac_qn_; ++k) dac_q_[k - q] = dac_q_[k];
+        dac_qn_ -= q;
     }
 }
 
+// Finishes the samples that end by snd_cycle, kRows at a time.
 void Machine::audio_to(int snd_cycle)
 {
-    while (audio_done_ < audio_n_ && sample_end_ <= snd_cycle) {
-        const int end = sample_end_;
-        for (int k = 0; k < 5; ++k) chip_to(k, end);
-        dac_to(end);
+    while (audio_done_ < audio_n_ && sample_end(audio_done_) <= snd_cycle) {
+        // The samples' ends and AY clocks.
+        int ends[kRows];
+        uint32_t clocks[kRows];
         const uint32_t b = uint32_t(snd_base_ & 1);
-        const uint32_t clocks = ((b + uint32_t(end)) >> 1) - ((b + uint32_t(sample_start_)) >> 1);
-        const int16_t s = mix_sample(clocks);
-        if (audio_) audio_[audio_done_] = s;
-        ++audio_done_;
-        sample_start_ = end;
-        sample_end_ = audio_done_ < audio_n_ ? (audio_done_ + 1) * snd_frame_ / audio_n_ : snd_frame_;
-        for (uint32_t& a : acc_) a = 0;
-        dac_acc_ = 0;
+        int n = 0;
+        for (int start = audio_done_ ? sample_end(audio_done_ - 1) : 0;;) {
+            const int e = sample_end(audio_done_ + n);
+            if (e > snd_cycle) break;
+            ends[n] = e;
+            clocks[n] = ((b + uint32_t(e)) >> 1) - ((b + uint32_t(start)) >> 1);
+            start = e;
+            if (++n == kRows || audio_done_ + n == audio_n_) break;
+        }
+        const int end = ends[n - 1];
+        for (int k = 0; k < 5; ++k) {
+            const int from = ay_clock_[k];
+            if (end <= from) continue;
+            if (ay_sample_[k] != audio_done_) {         // written in a later sample
+                chip_to(k, end);
+                continue;
+            }
+            // Its piece of the first sample, then whole samples.
+            uint32_t first = ((b + uint32_t(ends[0])) >> 1) - ((b + uint32_t(from)) >> 1);
+            ay_[k].run_pieces(&first, 1, rows_[0] + 3 * k, 16);
+            if (n > 1) ay_[k].run_pieces(clocks + 1, n - 1, rows_[1] + 3 * k, 16);
+            ay_clock_[k] = end;
+            ay_sample_[k] = audio_done_ + n;
+        }
+        if (dac_sample_ == audio_done_ && dac_clock_ < end) {
+            // The DAC as dac_to() does it, with the ends at hand.
+            int q = 0;
+            for (int i = 0; i < n; ++i) {
+                const int e = ends[i];
+                uint32_t a = 0;
+                for (; q < dac_qn_ && dac_q_[q].at < e; ++q) {
+                    const int at = dac_q_[q].at > dac_clock_ ? dac_q_[q].at : dac_clock_;
+                    a += uint32_t(dac_) * uint32_t(at - dac_clock_);
+                    dac_clock_ = at;
+                    dac_ = dac_q_[q].v;
+                }
+                a += uint32_t(dac_) * uint32_t(e - dac_clock_);
+                dac_clock_ = e;
+                rows_[i][15] += a;
+            }
+            dac_sample_ = audio_done_ + n;
+            if (q) {
+                for (int k = q; k < dac_qn_; ++k) dac_q_[k - q] = dac_q_[k];
+                dac_qn_ -= q;
+            }
+        } else {
+            dac_to(end);
+        }
+        for (int i = 0; i < n; ++i) {
+            const int16_t s = mix_sample(rows_[i], rows_[i][15], clocks[i]);
+            if (audio_) audio_[audio_done_ + i] = s;
+        }
+        // The rows of samples still going (AYs written later) move down.
+        std::memmove(rows_[0], rows_[n], sizeof rows_[0] * (kRows - n));
+        std::memset(rows_[kRows - n], 0, sizeof rows_[0] * n);
+        audio_done_ += n;
     }
 }
 
@@ -835,18 +998,22 @@ int Machine::run_frame(int16_t* audio, int cap)
     audio_ = audio && n > 0 ? audio : nullptr;
     audio_n_ = n > 0 ? n : 0;
     audio_done_ = 0;
-    sample_start_ = 0;
-    sample_end_ = audio_n_ ? snd_frame_ / audio_n_ : snd_frame_;
     for (int& c : ay_clock_) c = 0;
+    for (int& c : ay_sample_) c = 0;
     dac_clock_ = 0;
-    for (uint32_t& a : acc_) a = 0;
-    dac_acc_ = 0;
+    dac_sample_ = 0;
+    std::memset(rows_, 0, sizeof rows_);
 
     // The main and sub CPUs take turns (they share RAM).
     static_assert(kVblankLine % kSliceLines == 0 && kLinesPerFrame % kSliceLines == 0, "slices");
     int done = carry_;
     for (int line = 0; line < kLinesPerFrame; line += kSliceLines) {
-        if (line == kVblankLine) vblank();
+        // The sub CPU's turns so far are due before this slice (sub_catch_up).
+        sub_behind(line * kCyclesPerLine / 2);
+        if (line == kVblankLine) {
+            sub_catch_up();
+            vblank();
+        }
         const int end = (line + kSliceLines) * kCyclesPerLine;
         if (idle_skip_) done += main_idle(end - done);
         nmi_now_ = false;
@@ -854,8 +1021,9 @@ int Machine::run_frame(int16_t* audio, int cap)
             slice_start_ = done;
             done += cpu_.run(end - done);
         }
-        run_sub(end / 2);
     }
+    sub_behind(kCyclesPerFrame / 2);
+    sub_catch_up();
     carry_ = done - kCyclesPerFrame;
     sub_done_ -= kCyclesPerFrame / 2;
     slice_start_ = 0;

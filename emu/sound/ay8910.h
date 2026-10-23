@@ -47,6 +47,8 @@ public:
     // stores them.
     void    write(int r, uint8_t v);
     uint8_t reg(int r) const { return regs_[r & 15]; }
+    // The register a data write goes to (-1: the chip is deselected).
+    int     selected() const { return active_ ? latch_ : -1; }
 
     // The I/O ports (0 = A, 1 = B): what the pins show when the port is an
     // output (R7 bit 6 / 7), else 0xFF (pulled up); and the value read
@@ -70,6 +72,42 @@ public:
             return;
         }
         run_events(clocks, acc);
+    }
+
+    // run() for n pieces in a row: piece i is clocks[i] input clocks (0 =
+    // skipped, no run), its levels added to acc + i x stride. The same as n
+    // run() calls: the quick path's pieces between output changes at once.
+    void run_pieces(const uint32_t* clocks, int n, uint32_t* acc, int stride)
+    {
+        int i = 0;
+        while (i < n) {
+            // The pieces that fit in the budget: only the levels added (none
+            // if silent), the ticks to the counters later - all at once.
+            uint32_t total = 0;
+            int k = i;
+            while (k < n && total + clocks[k] < budget_) total += clocks[k++];
+            if (k > i) {
+                const uint32_t l0 = uint32_t(level_[0]), l1 = uint32_t(level_[1]), l2 = uint32_t(level_[2]);
+                if (l0 | l1 | l2) {
+                    uint32_t* a = acc + i * stride;
+                    for (int p = i; p < k; ++p, a += stride) {
+                        const uint32_t c = clocks[p];
+                        a[0] += l0 * c;
+                        a[1] += l1 * c;
+                        a[2] += l2 * c;
+                    }
+                }
+                budget_ -= total;
+                const uint32_t s = sub_ + total;
+                pend_ += s >> 3;
+                sub_ = s & 7;
+                i = k;
+                if (i == n) break;
+            }
+            // One that reaches an output change (0 clocks: no run).
+            if (clocks[i]) run_events(clocks[i], acc + i * stride);
+            ++i;
+        }
     }
 
     // Brings the counters that can't be heard now (and so are carried
