@@ -40,6 +40,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Galaxian | 14.4 | - | 14.7 / 16.1 | **29.1 / 30.5** | 2.1 | 14.0 | 2 |
 | Amidar | 17.1 | - | 14.7 / 16.1 | **31.8 / 33.2** | 2.1 | 28.0 | 4 |
 | Gyruss | 37.6 | - | 14.7 / 16.1 | **52.3 / 53.7** | 4.3 | 92.5 | 8 |
+| 1942 | 19.6 | - | 14.7 / 16.1 | **34.3 / 35.7** | 3.1 | 209.8 | 16 |
 | Burger Time | 17.6 | - | 14.2 / 15.6 | **31.9 / 33.3** | - | 52.0 | 4 |
 | Missile Command | 18.3 | - | 14.4 / 16.0 | **32.8 / 34.3** | 15.5 | 12.0 | 2 |
 | Rally-X | 18.6 | - | 15.0 / 16.8 | **33.7 / 35.5** | 2.6 | 21.1 | 4 |
@@ -110,6 +111,30 @@ the VideoState, 4,420 B. ROM 92.5 KB in 7 regions (main 24, sub 8, sound
 and snapshot in a ~92 KB area about a third fits in RAM, the rest is read
 from the scratch flash (the renderer reads the sprite ROMs every line;
 the tiles come from the decoded table).
+
+1942 (2026-10-23, xtensa-esp32-elf-g++ `sizeof`): c1942::Machine 20,048
+bytes (the games.cpp wrapper + 8): RAM 8 KB (work 4, characters 2, sound
+2), background 1 KB, sprites 128 B, the VideoState 3,204 B, the
+background column being drawn 3.5 KB (16 pixel columns x 224 lines of
+palette indices, decoded once per 16 display lines), pens and lookups 1.8
+KB, which pixel columns of each character draw 512 B, two Z80s 576 B
+each, two AYs 104 B each. Buffers as Amidar's (224 x 256). Snapshot = the
+VideoState, 3,204 B. ROM 209.8 KB in 10 regions (main 16 + 16, banks 16 +
+8 + 16, sound 16, characters 8, tiles 48, sprites 64, PROMs 1.75), more
+than RAM + the 128 KB scratch area hold on an ESP32 board: with a ~92 KB
+area, 92 - 35.7 - 3.1 = ~53 KB is left, less the 16 KB unpacking buffer
+(the biggest ROM going to flash) = ~37 KB for regions in RAM - bank 1,
+sound, characters and PROMs (33.8 KB); 176 KB go to flash. The scratch
+area takes 124 KB after its header (main 0 / 1, banks 0 / 2, tiles: 112
+KB); the sprites' 64 KB are put just below the area in the ROM store's
+free sectors (`core/scratch_layout.h`, `flash_store::scratch_below()`;
+the store erases them again before it stores a zip there,
+`rom_store::Store::forget_erased()`). Every other game fits the area as
+before (same places, same header - nothing rewritten). Cost to the user:
+nothing while the store has 64 KB free (Tom's ~970 KB); with less, 1942
+says "Not enough flash room for its ROMs". The S3 puts every region in
+PSRAM. The renderer reads the sprite ROMs every line and the tile ROMs
+when it decodes a background column (~17 a picture), from flash there.
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
 Robotron / Defender 51.9) or one of Qix's 32 KB halves.

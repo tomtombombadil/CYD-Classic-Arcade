@@ -70,6 +70,8 @@ bool Store::clear()
     return write_dir();
 }
 
+void Store::forget_erased() { erased_to_ = round_up_sector(dir_.next_free); }
+
 bool Store::valid_name(const char* name)
 {
     const size_t n = std::strlen(name);

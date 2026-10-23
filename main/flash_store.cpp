@@ -11,7 +11,7 @@ namespace flash_store {
 namespace {
 
 constexpr const char* kTag = "roms";
-constexpr uint32_t kScratch = 128 * 1024;   // a header sector + the biggest game's ROMs (Star Wars 72 KB)
+constexpr uint32_t kScratch = 128 * 1024;   // a header sector + Star Wars' 72 KB; 1942 borrows more below it
 
 class PartitionFlash : public rom_store::Flash {
 public:
@@ -76,19 +76,36 @@ bool open()
 
 uint32_t scratch_size() { return s_flash.part ? s_flash.part->size - s_flash.limit : 0; }
 
-const uint8_t* scratch_map(uint32_t offset) { return s_flash.mapped + s_flash.limit + offset; }
-
-bool scratch_erase(uint32_t offset, uint32_t len)
+uint32_t scratch_below()
 {
-    const uint32_t span = (len + rom_store::kSector - 1) / rom_store::kSector * rom_store::kSector;
-    if (offset % rom_store::kSector || offset + span > scratch_size()) return false;
-    return esp_partition_erase_range(s_flash.part, s_flash.limit + offset, span) == ESP_OK;
+    // The store's free room ends at the area; whole sectors only (the
+    // sector its files end in stays the store's)
+    return scratch_size() ? s_store.free_bytes() / rom_store::kSector * rom_store::kSector : 0;
 }
 
-bool scratch_write(uint32_t offset, const void* data, uint32_t len)
+namespace {
+
+bool in_scratch(int32_t offset, uint32_t len)
 {
-    if (offset + len > scratch_size()) return false;
-    return esp_partition_write(s_flash.part, s_flash.limit + offset, data, len) == ESP_OK;
+    return offset >= -int64_t(scratch_below()) && int64_t(offset) + len <= int64_t(scratch_size());
+}
+
+}  // namespace
+
+const uint8_t* scratch_map(int32_t offset) { return s_flash.mapped + (int64_t(s_flash.limit) + offset); }
+
+bool scratch_erase(int32_t offset, uint32_t len)
+{
+    const uint32_t span = (len + rom_store::kSector - 1) / rom_store::kSector * rom_store::kSector;
+    if (offset % int32_t(rom_store::kSector) || !in_scratch(offset, span)) return false;
+    return esp_partition_erase_range(s_flash.part, uint32_t(int64_t(s_flash.limit) + offset), span) == ESP_OK;
+}
+
+bool scratch_write(int32_t offset, const void* data, uint32_t len)
+{
+    if (!in_scratch(offset, len)) return false;
+    if (offset < 0) s_store.forget_erased();    // the store's free sectors hold ROMs now
+    return esp_partition_write(s_flash.part, uint32_t(int64_t(s_flash.limit) + offset), data, len) == ESP_OK;
 }
 
 rom_store::Flash& flash() { return s_flash; }
