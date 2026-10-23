@@ -44,8 +44,9 @@
 //   65 cycles and 8 opcode fetches a pass, reading only its own RAM. At a
 //   slice's start in the loop (any of its instructions) with the entry still
 //   set and no NMI just raised, nothing can change it before the slice ends:
-//   whole passes are skipped (time, R, and A H L F as a pass leaves them at
-//   that point), the CPU runs the rest.
+//   whole passes are skipped, then instruction by instruction to where the
+//   CPU would stop at the slice's end (time, R, PC, and A H L F as the loop
+//   leaves them there).
 // - Sub CPU, F0B6: BRA * (waits for the VBLANK IRQ), 3 cycles: skipped to
 //   the slice's end while no interrupt can be taken.
 // - Sound CPU, 00FE / 0105: LD A,0E / RST 10 (OUT (08),A / IN A,(09) / RET)
@@ -140,6 +141,7 @@ constexpr uint16_t kMainLoopAt = 0x05f4;
 constexpr int kMainPass = 65, kMainFetches = 8;
 // The addresses of the loop's instructions.
 constexpr uint16_t kMainLoopPcs[] = {0x05f4, 0x05f7, 0x05fa, 0x05fb, 0x05fe, 0x05ff, 0x0600, 0x0601};
+constexpr uint8_t kMainCycles[] = {10, 13, 4, 13, 4, 7, 4, 10};    // their T-states (65)
 constexpr uint16_t kSubLoopAt = 0xf0b6;                                 // BRA * (opcode scrambled)
 constexpr uint8_t kSndLoop[] = {0x3e, 0x0e, 0xd7, 0xe6, 0x04, 0x20, 0xf9,
                                 0x3e, 0x0e, 0xd7, 0xe6, 0x04, 0x28, 0xf9};   // at 00FE
@@ -740,26 +742,36 @@ bool Machine::needs_flush(int snd_cycle) const
 int Machine::main_idle(int room)
 {
     if (!main_loop_ || nmi_now_ || uint16_t(cpu_.pc.w - 0x05f4) > 0x0601 - 0x05f4) return 0;
-    bool in_loop = false;
-    for (uint16_t pc : kMainLoopPcs) in_loop |= cpu_.pc.w == pc;
-    if (!in_loop) return 0;
+    int at = -1;                                        // the instruction it is at
+    for (int k = 0; k < 8; ++k)
+        if (cpu_.pc.w == kMainLoopPcs[k]) at = k;
+    if (at < 0) return 0;
     const uint8_t hi = cpu_.rd(0x5865), lo = cpu_.rd(0x9433);
     const uint16_t entry = uint16_t((hi << 8) | lo);
     if ((entry & 0xf000) != 0x9000) return 0;
     const uint8_t e = cpu_.rd(entry);
     if (!(e & 0x80)) return 0;                          // leaves the loop
-    const int passes = (room - 1) / kMainPass;          // the CPU runs the rest
+    // Whole passes, then on instruction by instruction to the first one
+    // ending at or past the slice's end, as run() would stop - at least a
+    // whole pass, so every register the loop sets is as it leaves them.
+    const int passes = room / kMainPass;
     if (passes <= 0) return 0;
-    cpu_.r = uint8_t(cpu_.r + passes * kMainFetches);
-    // The registers as a pass leaves them at this point of the loop.
+    int t = passes * kMainPass, n = passes * kMainFetches;
+    while (t < room) {
+        t += kMainCycles[at];
+        at = (at + 1) & 7;
+        ++n;
+    }
+    cpu_.r = uint8_t(cpu_.r + n);
     const uint8_t rot = uint8_t((e << 1) | (e >> 7));
-    const uint16_t pc = cpu_.pc.w;
+    const uint16_t pc = kMainLoopPcs[at];
+    cpu_.pc.w = pc;
     cpu_.hl.b.h = hi;
     cpu_.hl.b.l = lo;
     cpu_.af.b.h = pc == 0x05fa || pc == 0x05fb ? hi : pc == 0x05fe || pc == 0x05ff ? lo : pc == 0x0600 ? e : rot;
     cpu_.af.b.l = uint8_t((cpu_.af.b.l & (z80::SF | z80::ZF | z80::PF)) | (rot & (z80::XF | z80::YF | z80::CF)));
-    skipped_[0] += uint64_t(passes) * kMainPass;
-    return passes * kMainPass;
+    skipped_[0] += uint64_t(t);
+    return t;
 }
 
 int Machine::sub_idle(int room)
