@@ -119,6 +119,17 @@ constexpr float kOutHz = 7958.0f;       // 200 ohm / 0.1 uF
 constexpr float kDcHz = 20.0f;          // output coupling (assumed)
 constexpr float kOutGain = 9.0f;          // play peaks ~20,000 (PC runs)
 
+// A filter state that has decayed below the smallest normal float is 0:
+// denormal arithmetic is very slow on many CPUs (here: the PC ran its mix
+// 4x slower on the silent channels' tails), and so small a value never
+// reaches an output sample (they are whole numbers: --hash the same).
+inline float flush_tiny(float v)
+{
+    uint32_t bits;
+    std::memcpy(&bits, &v, 4);
+    return (bits & 0x7f800000u) ? v : 0.0f;
+}
+
 // The idle loops (see above).
 constexpr uint8_t kMainLoop[] = {0xc3, 0xf7, 0x05, 0x3a, 0x65, 0x58, 0x67, 0x3a, 0x33, 0x94, 0x6f, 0x7e, 0x07,
                                  0xda, 0xf4, 0x05};                     // at 05F4
@@ -842,15 +853,15 @@ int16_t Machine::mix_sample(const uint32_t* acc, uint32_t dac_acc, uint32_t cloc
     float ch[6];
     for (int c = 0; c < 6; ++c) {
         const float x = float(acc[c]) * scale;
-        lp_y_[c] = lp_a_[c] > 0 ? lp_y_[c] + lp_a_[c] * (x - lp_y_[c]) : x;
+        lp_y_[c] = lp_a_[c] > 0 ? flush_tiny(lp_y_[c] + lp_a_[c] * (x - lp_y_[c])) : x;
         ch[c] = lp_y_[c];
     }
     const float ay34 = float(acc[6] + acc[7] + acc[8] + acc[9] + acc[10] + acc[11]) * scale;
     const float ay5 = float(acc[12] + acc[13] + acc[14]) * scale;
     const float sum = kWAy1 * (ch[0] + ch[1] + ch[2]) + kWAy34 * ay34 + kWAy2 * (ch[3] + ch[4] + ch[5]) +
                       kWAy5 * ay5 + kWDac * float(dac_acc) * scale * 0.5f;
-    out_y_ += out_a_ * (sum - out_y_);
-    const float out = dc_r_ * (dc_y_ + out_y_ - dc_x_);
+    out_y_ = flush_tiny(out_y_ + out_a_ * (sum - out_y_));
+    const float out = flush_tiny(dc_r_ * (dc_y_ + out_y_ - dc_x_));
     dc_x_ = out_y_;
     dc_y_ = out;
     // A soft knee above 16,000, so a pile-up of sounds never clips.
