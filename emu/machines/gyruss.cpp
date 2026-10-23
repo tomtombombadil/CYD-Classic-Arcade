@@ -52,7 +52,10 @@
 //   / AND 04 / JR NZ (JR Z) - waits for the timer's bit 2 to clear, then to
 //   set: 69 cycles and 7 fetches a pass. The IN stops the CPU; the passes
 //   whose reads would see the same bit 2 are skipped (time, R, A = the last
-//   of them's read, F = its AND's). Never while an IRQ waits.
+//   of them's read, F = its AND's), and when the pass that reads the change
+//   ends before the CPU's target, that one too: the CPU is left after the
+//   loop (A = the read AND 04, F, R, time as it leaves them). Never while an
+//   IRQ waits.
 // - i8039, 0019: NOP / JMP 0019 (waits for its interrupt), 3 cycles; and
 //   any DJNZ Rr to itself (the effects' delays after each DAC write, which
 //   stops the CPU), 2 cycles, all passes but the last. Skipped: time, the
@@ -142,6 +145,7 @@ constexpr uint8_t kSndLoop[] = {0x3e, 0x0e, 0xd7, 0xe6, 0x04, 0x20, 0xf9,
                                 0x3e, 0x0e, 0xd7, 0xe6, 0x04, 0x28, 0xf9};   // at 00FE
 constexpr uint8_t kSndRst[] = {0xd3, 0x08, 0xdb, 0x09, 0xc9};          // at 0010
 constexpr int kSndPass = 69, kSndFetches = 7;
+constexpr int kSndExit = 93, kSndExitFetches = 10;      // from after an IN to after the loop (see skip_timer_wait)
 constexpr uint8_t kMcuLoop[] = {0x00, 0x04, 0x19};                      // at 0019
 constexpr int kMcuPass = 3;
 
@@ -779,6 +783,23 @@ void Machine::skip_timer_wait(int target)
     do ++step; while (((kTimer[step % 10] ^ wait_stay_) & 0x04) == 0);
     const int left = int(step * 1024 - read);           // cycles until the bit changes (> 0)
     int passes = (left - 1) / kSndPass;                 // later reads still before the change
+    // The pass after them reads the change and leaves the loop: if that
+    // ends before the target, it is done here too (RET AND JR LD RST OUT
+    // to the read, then IN RET AND and the JR that falls through: 93 cycles,
+    // 10 fetches), the CPU left after the loop with A = the read AND 04.
+    const int exit_at = snd_done_ + passes * kSndPass + kSndExit;
+    if (exit_at <= target) {
+        skipped_[2] += uint64_t(exit_at - snd_done_);
+        snd_done_ = exit_at;
+        snd_.r = uint8_t(snd_.r + passes * kSndFetches + kSndExitFetches);
+        ay_[2].set_port_in(0, kTimer[((read + uint32_t(passes + 1) * kSndPass) % 10240) / 1024]);
+        const uint8_t a = uint8_t(ay_[2].read_data() & 0x04);
+        snd_.af.b.h = a;
+        snd_.af.b.l = a ? 0x10 : 0x54;                  // AND's flags: H, or Z H P
+        snd_.pc.w = wait_stay_ ? 0x0105 : 0x010c;       // after JR NZ / JR Z
+        snd_.sp.w = uint16_t(snd_.sp.w + 2);            // RST 10's return address taken by its RET
+        return;
+    }
     const int room = (target - snd_done_ - 1) / kSndPass;
     if (passes > room) passes = room;
     if (passes <= 0) return;
