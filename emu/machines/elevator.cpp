@@ -137,6 +137,10 @@ constexpr int kFudge2[3] = {8, 10, 12};
 
 // Sprites show in x 3-254, lines 16-239.
 constexpr int kSpriteMinX = 3, kSpriteMaxX = 254;
+// The sprites in the order drawn (later on top): 1E, 1D ... 0, then 1F
+// (1F comes first in the chain); slots 10-17 aren't there.
+constexpr uint8_t kSpriteOrder[24] = {0x1e, 0x1d, 0x1c, 0x1b, 0x1a, 0x19, 0x18, 0x0f, 0x0e, 0x0d, 0x0c, 0x0b,
+                                      0x0a, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00, 0x1f};
 
 // The DAC's volume ladder: 680k 330k 150k 82k 39k 20k 10k 4.7k from bits 0-7.
 constexpr float kLadder[8] = {1 / 680.0f, 1 / 330.0f, 1 / 150.0f, 1 / 82.0f, 1 / 39.0f, 1 / 20.0f, 1 / 10.0f, 1 / 4.7f};
@@ -148,28 +152,55 @@ constexpr float kLadder[8] = {1 / 680.0f, 1 / 330.0f, 1 / 150.0f, 1 / 82.0f, 1 /
 constexpr float kDcHz = 20.0f;
 constexpr float kOutGain = 28000.0f;
 
-// Spreads a byte's bits (bit 0 = the leftmost pixel) into the low bit of
-// eight bytes (byte 0 = the leftmost pixel, little-endian).
-struct Spread {
-    uint64_t v[256];
-    constexpr Spread() : v()
-    {
-        for (int b = 0; b < 256; ++b) {
-            uint64_t w = 0;
-            for (int i = 0; i < 8; ++i)
-                if (b & (1 << i)) w |= uint64_t(1) << (8 * i);
-            v[b] = w;
-        }
-    }
-};
-constexpr Spread kSpread{};
-
-// 1 in each byte that isn't zero (bytes below 0x80).
-inline uint64_t nonzero_bytes(uint64_t v)
+// The bytes of a word of pens (each below 0x80) that aren't 0, as 0xff.
+inline uint32_t byte_mask(uint32_t v)
 {
-    return ((v + 0x7f7f7f7f7f7f7f7full) >> 7) & 0x0101010101010101ull;
+    const uint32_t t = (v + 0x7f7f7f7fu) & 0x80808080u;
+    return t | (t - (t >> 7));
 }
 
+// 32 bits of the bit stream a, b (a first, bit 0 first) from bit `sh` (0-31)
+// of a on: a funnel shift, one SRC on the Xtensa.
+inline uint32_t funnel(uint32_t a, uint32_t b, int sh)
+{
+#if defined(__XTENSA__)
+    uint32_t r;
+    __asm__("ssr %3\n\tsrc %0, %1, %2" : "=r"(r) : "r"(b), "r"(a), "r"(sh));
+    return r;
+#else
+    return uint32_t(((uint64_t(b) << 32) | a) >> sh);
+#endif
+}
+
+// One playfield line's characters as three plane rows (32 bytes each, 32
+// apart in `raw`; bit i of byte c = column c's pixel i). `uniform` = all
+// 32 column scrolls the same (then the character row is the same for every
+// column). Its own function, so that its loop has the registers it needs.
+[[gnu::noinline]] void gather_line(const uint8_t* chars, const uint8_t* vram, const uint8_t* cs, int base,
+                                   bool uniform, uint8_t* raw)
+{
+    if (uniform) {
+        const int sy = (base + cs[0]) & 0xff;
+        const uint8_t* vr = vram + ((sy & 0xf8) << 2);
+        const uint8_t* g0 = chars + (sy & 7);
+        const uint8_t* g1 = g0 + 0x800;
+        const uint8_t* g2 = g0 + 0x1000;
+        for (int c = 0; c < 32; ++c) {
+            const int t = vr[c] * 8;
+            raw[c] = g0[t];
+            raw[c + 32] = g1[t];
+            raw[c + 64] = g2[t];
+        }
+        return;
+    }
+    for (int c = 0; c < 32; ++c) {
+        const int sy = (base + cs[c]) & 0xff;
+        const uint8_t* g = chars + vram[((sy & 0xf8) << 2) + c] * 8 + (sy & 7);
+        raw[c] = g[0];
+        raw[c + 32] = g[0x800];
+        raw[c + 64] = g[0x1000];
+    }
+}
 
 } // namespace
 
@@ -211,6 +242,13 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes
     main_wait_ = std::memcmp(roms.cpu + kMainWaitAt, kMainWait, sizeof kMainWait) == 0;
     sound_loop_ = std::memcmp(roms.sound + kSoundLoopAt, kSoundLoop, sizeof kSoundLoop) == 0 &&
                   std::memcmp(roms.sound + 0x1d8, kSoundLoopBack, sizeof kSoundLoopBack) == 0;
+
+    // Drawing: a nibble of plane p's byte (bit 0 = the leftmost pixel) as
+    // four pens' bit p (byte 0 = the leftmost pixel, little-endian); row 3:
+    // the nibble's pixels as byte masks (0xff where set).
+    for (int p = 0; p < 4; ++p)
+        for (int n = 0; n < 16; ++n)
+            spread_[p][n] = ((uint32_t(n) * 0x00204081u) & 0x01010101u) * (p < 3 ? 1u << p : 0xffu);
 
     dc_r_ = std::exp(-2.0f * 3.14159265f * kDcHz / float(audio_rate));
     for (int i = 0; i < 64; ++i) palette_write(2 * i, 0), palette_write(2 * i + 1, 0);
@@ -327,6 +365,16 @@ uint8_t Machine::mem_read(void* ctx, uint16_t addr)
     }
 }
 
+void Machine::colscroll_write(int off, uint8_t v)
+{
+    uint8_t* cs = video_.colscroll + (off & 0x60);
+    if (off >= 0x60 || cs[off & 0x1f] == v) return;
+    cs[off & 0x1f] = v;
+    int diff = 0;
+    for (int c = 1; c < 32; ++c) diff += cs[c] != cs[0];
+    video_.cs_diff[off >> 5] = uint8_t(diff);
+}
+
 void Machine::palette_write(int off, uint8_t v)
 {
     video_.palette[off] = v;
@@ -358,7 +406,7 @@ void Machine::mem_write(void* ctx, uint16_t addr, uint8_t v)
     case 0xd:
         switch (addr & 0x0f00) {
         case 0x000: case 0x100:
-            if (addr < 0xd060) m.video_.colscroll[addr & 0x7f] = v;
+            if (addr < 0xd060) m.colscroll_write(addr & 0x7f, v);
             else if (addr < 0xd100) m.ram_d060_[addr - 0xd060] = v;
             else m.video_.sprites[addr & 0xff] = v;
             return;
@@ -856,69 +904,91 @@ int Machine::run_frame(int16_t* audio, int cap)
 
 // --- video ---------------------------------------------------------------------------
 
+// A line is built from bit planes: each playfield's 32 columns give three
+// 32-byte rows (a plane each; bit i of byte c = column c's pixel i), which
+// the scroll turns into 8 screen-aligned 32-bit words a plane (a funnel
+// shift a word: one SRC on the Xtensa). The planes are laid on each other
+// 32 pixels at a time: a playfield with nothing in those 32 pixels costs
+// three loads; else four pixels at a time, from each plane's nibble through
+// a 16-entry table, into words of four pens (byte 0 = the leftmost pixel).
+// The sprites are drawn as pens into a byte line. Colours go out four at a
+// time, looked up only when the four pens differ from the four before (a
+// line is mostly runs). 32-bit words, no library calls, small tables in
+// the machine (internal RAM): v0.23's 64-bit words and an 8-byte memcpy a
+// column (a library call on the Xtensa) took ~140 us a line on the S3.
 void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
 {
     const int line = y + kFirstLine;
-    // Each plane's pens for this line (0 = blank), 8 bytes at a time.
-    alignas(8) uint8_t plane[4][264];                   // 0 = sprites, 1-3 = playfields 1-3
-    const int col[3] = {(vs.colorbank[0] & 7) * 8, ((vs.colorbank[0] >> 4) & 7) * 8, (vs.colorbank[1] & 7) * 8};
-    bool on[4];
+    uint32_t bp[3][3][8];                               // [playfield][plane][32-pixel span]
+    uint32_t live[3] = {0, 0, 0};                       // a bit per span that isn't blank
+    const uint8_t cb0 = vs.colorbank[0], cb1 = vs.colorbank[1];
+    const uint32_t cidx[3] = {uint32_t(cb0 & 7), uint32_t((cb0 >> 4) & 7), uint32_t(cb1 & 7)};
+
     for (int l = 0; l < 3; ++l) {
-        on[l + 1] = vs.mode & (0x10 << l);
-        if (!on[l + 1]) continue;
+        if (!(vs.mode & (0x10 << l))) continue;
+        const bool bank = l == 0 ? cb0 & 0x08 : l == 1 ? cb0 & 0x80 : cb1 & 0x08;
+        uint32_t raw[3][8];
+        gather_line(vs.chars + (bank ? 0x1800 : 0), vs.vram[l], vs.colscroll + 32 * l,
+                    line + vs.scroll[2 * l + 1], vs.cs_diff[l] == 0, reinterpret_cast<uint8_t*>(raw));
+        uint32_t any = 0;
+        for (int i = 0; i < 8; ++i) any |= raw[0][i] | raw[1][i] | raw[2][i];
+        if (!any) continue;                             // nothing on this line
+        // Screen pixel x shows stream pixel (x - xs) & 255.
         const int s = vs.scroll[2 * l];
         const int xs = -(s & 0xf8) + ((s + kFudge1[l]) & 7) + kFudge2[l];
-        const uint8_t bank = l == 0 ? vs.colorbank[0] & 0x08 : l == 1 ? vs.colorbank[0] & 0x80 : vs.colorbank[1] & 0x08;
-        const uint8_t* chars = vs.chars + (bank ? 0x1800 : 0);
-        const uint8_t* vram = vs.vram[l];
-        const uint8_t* cs = vs.colscroll + 32 * l;
-        const int vscroll = vs.scroll[2 * l + 1];
-        const uint64_t pen = uint64_t(col[l]);
-        uint8_t* buf = plane[l + 1];
-        const int x0 = xs & 0xff;
-        for (int c = 0; c < 32; ++c) {
-            const int sy = (line + cs[c] + vscroll) & 0xff;
-            const uint8_t* g = chars + vram[(sy >> 3) * 32 + c] * 8 + (sy & 7);
-            uint64_t w = kSpread.v[g[0]] | kSpread.v[g[0x800]] << 1 | kSpread.v[g[0x1000]] << 2;
-            if (w) w |= nonzero_bytes(w) * pen;
-            std::memcpy(buf + ((x0 + c * 8) & 0xff), &w, 8);
+        const int d = -xs & 0xff;
+        const int q = d >> 5, sh = d & 31;
+        for (int p = 0; p < 3; ++p) {
+            const uint32_t* sw = raw[p];
+            uint32_t* o = bp[l][p];
+            int k = q;
+            uint32_t a = sw[k];
+            for (int i = 0; i < 8; ++i) {
+                k = (k + 1) & 7;
+                const uint32_t b = sw[k];
+                o[i] = funnel(a, b, sh);
+                a = b;
+            }
         }
-        for (int i = 0; i < (x0 & 7); ++i) buf[i] = buf[256 + i];
+        uint32_t m = 0;
+        for (int i = 0; i < 8; ++i)
+            if (bp[l][0][i] | bp[l][1][i] | bp[l][2][i]) m |= 1u << i;
+        live[l] = m;
     }
 
-    uint8_t* obj = plane[0];
-    std::memset(obj, 0, 256);
-    on[0] = false;
+    uint32_t obj32[64];
+    uint8_t* obj = reinterpret_cast<uint8_t*>(obj32);
+    uint32_t obj_live = 0;                              // a bit per span with a sprite pixel
     if (vs.mode & 0x80) {
         const uint8_t* sr = vs.sprites + ((vs.mode & 0x04) ? 0x80 : 0);
-        const int colbase = 2 * ((vs.colorbank[1] >> 4) & 3);
-        // Drawn 1E, 1D ... 0, then 1F on top (1F comes first in the chain).
-        for (int k = 0x1f; k >= 0; --k) {
-            const int which = (k - 1) & 0x1f;
-            if (which >= 0x10 && which <= 0x17) continue;
-            const uint8_t* s = sr + which * 4;
-            const uint8_t sy = uint8_t(240 - s[1]);
-            if (sy >= 240) continue;
-            int r = line - sy;
-            if (r < 0 || r > 15) continue;
+        const uint32_t colbase = 2 * ((cb1 >> 4) & 3);
+        for (int k = 0; k < 24; ++k) {
+            const uint8_t* s = sr + kSpriteOrder[k] * 4;
+            // top line 240 - s[1] (s[1] 1-240; others are off the
+            // picture: for lines 16-239 this test leaves them out too)
+            int r = line - 240 + s[1];
+            if (unsigned(r) > 15) continue;
             if (s[2] & 0x02) r = 15 - r;
             const uint8_t* g = vs.chars + ((s[3] & 0x40) ? 0x1800 : 0) + (s[3] & 0x3f) * 32 + (r & 7) + (r & 8) * 2;
-            uint64_t half[2] = {kSpread.v[g[0]] | kSpread.v[g[0x800]] << 1 | kSpread.v[g[0x1000]] << 2,
-                                kSpread.v[g[8]] | kSpread.v[g[0x808]] << 1 | kSpread.v[g[0x1008]] << 2};
-            if (!(half[0] | half[1])) continue;
-            on[0] = true;
-            uint8_t px[16];
-            std::memcpy(px, half, 16);
+            const uint32_t a0 = g[0], b0 = g[0x800], e0 = g[0x1000], a1 = g[8], b1 = g[0x808], e1 = g[0x1008];
+            if (!(a0 | b0 | e0 | a1 | b1 | e1)) continue;
+            if (!obj_live) std::memset(obj32, 0, sizeof obj32);
+            const uint32_t px[4] = {spread_[0][a0 & 15] | spread_[1][b0 & 15] | spread_[2][e0 & 15],
+                                    spread_[0][a0 >> 4] | spread_[1][b0 >> 4] | spread_[2][e0 >> 4],
+                                    spread_[0][a1 & 15] | spread_[1][b1 & 15] | spread_[2][e1 & 15],
+                                    spread_[0][a1 >> 4] | spread_[1][b1 >> 4] | spread_[2][e1 >> 4]};
             const uint8_t pen = uint8_t((colbase + ((s[2] >> 2) & 1)) * 8);
             const bool fx = s[2] & 0x01;
             const int sx = uint8_t(s[0] - 1);
             for (int i = 0; i < 16; ++i) {
-                const uint8_t p = px[fx ? 15 - i : i];
+                const int n = fx ? 15 - i : i;
+                const uint32_t p = (px[n >> 2] >> (8 * (n & 3))) & 7;
                 if (!p) continue;
                 int x = sx + i;
                 if (x > 255) x -= 256;                  // also drawn at sx - 256
                 if (x < kSpriteMinX || x > kSpriteMaxX) continue;
                 obj[x] = uint8_t(pen | p);
+                obj_live |= 1u << (x >> 5);
             }
         }
     }
@@ -930,10 +1000,11 @@ void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
     const uint8_t* prom = roms_.prom + ((vs.priority & 0x0f) << 4);
     const int shift = (vs.priority & 0x10) ? 2 : 0;
     for (int m = 0; m < 16; ++m) pick[m] = uint8_t((prom[m] >> shift) & 3);
-    const uint8_t bg = uint8_t(col[2]);
+    const uint32_t bg = cidx[2] * 8;
+    const uint16_t* pal = vs.pens;
     // Usually the PROM's choice is a plain order of the planes (the shown
     // plane = the topmost that isn't blank): then the planes are laid on
-    // each other 8 pixels at a time. Otherwise pixel by pixel.
+    // each other. Otherwise pixel by pixel.
     int order[4];                                       // top first
     bool plain = true;
     for (int k = 0, used = 0; k < 4; ++k) {
@@ -947,39 +1018,79 @@ void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
                 plain = pick[m] == order[k];
                 break;
             }
-    alignas(8) uint8_t pens[256];
-    if (plain) {
-        uint64_t* d = reinterpret_cast<uint64_t*>(pens);
-        const uint64_t bgw = 0x0101010101010101ull * bg;
-        for (int i = 0; i < 32; ++i) d[i] = bgw;
-        for (int k = 3; k >= 0; --k) {
-            const int p = order[k];
-            if (!on[p]) continue;
-            const uint8_t* src = plane[p];
-            for (int i = 0; i < 32; ++i) {
-                uint64_t v;
-                std::memcpy(&v, src + 8 * i, 8);
-                if (!v) continue;
-                const uint64_t m = nonzero_bytes(v) * 0xff;
-                d[i] = (d[i] & ~m) | v;
+
+    const uint32_t* s0 = spread_[0];
+    const uint32_t* s1 = spread_[1];
+    const uint32_t* s2 = spread_[2];
+    const uint32_t* bm = spread_[3];                    // a nibble's pixels as byte masks
+    if (!plain) {
+        for (int x = 0; x < 256; ++x) {
+            uint32_t pen[4];
+            pen[0] = obj_live ? obj[x] : 0;
+            const int i = x >> 5, b = x & 31;
+            for (int l = 0; l < 3; ++l) {
+                const uint32_t p = live[l] ? ((bp[l][0][i] >> b) & 1) | ((bp[l][1][i] >> b) & 1) << 1 |
+                                             ((bp[l][2][i] >> b) & 1) << 2
+                                           : 0;
+                pen[l + 1] = p ? cidx[l] * 8 + p : 0;
+            }
+            const int m = (pen[0] ? 0 : 1) | (pen[1] ? 0 : 2) | (pen[2] ? 0 : 4) | (pen[3] ? 0 : 8);
+            const uint32_t v = pen[pick[m]];
+            out[x] = pal[(v ? v : bg) & 63];
+        }
+        return;
+    }
+    int lay[4];                                         // bottom first: 0 sprites, 1-3 playfields
+    int n = 0;
+    for (int k = 3; k >= 0; --k) {
+        const int p = order[k];
+        if (p ? live[p - 1] != 0 : obj_live != 0) lay[n++] = p;
+    }
+    const uint32_t bgw = 0x01010101u * bg;
+    uint32_t last = ~0u;                                // no word of pens is all ones
+    uint16_t c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+    for (int sp = 0; sp < 8; ++sp) {
+        uint32_t w[8] = {bgw, bgw, bgw, bgw, bgw, bgw, bgw, bgw};
+        for (int k = 0; k < n; ++k) {
+            const int p = lay[k];
+            if (!p) {
+                if (!(obj_live >> sp & 1)) continue;
+                const uint32_t* o = obj32 + 8 * sp;
+                for (int i = 0; i < 8; ++i) {
+                    const uint32_t v = o[i];
+                    if (v) w[i] = (w[i] & ~byte_mask(v)) | v;
+                }
+                continue;
+            }
+            const int l = p - 1;
+            if (!(live[l] >> sp & 1)) continue;
+            const uint32_t b0 = bp[l][0][sp], b1 = bp[l][1][sp], b2 = bp[l][2][sp];
+            const uint32_t opq = b0 | b1 | b2;
+            const uint32_t cw = 0x08080808u * cidx[l];
+#pragma GCC unroll 8
+            for (int i = 0; i < 8; ++i) {
+                const uint32_t nib = (opq >> (4 * i)) & 15;
+                if (!nib) continue;
+                const uint32_t mk = bm[nib];
+                const uint32_t v = s0[(b0 >> (4 * i)) & 15] | s1[(b1 >> (4 * i)) & 15] | s2[(b2 >> (4 * i)) & 15] | (mk & cw);
+                w[i] = (w[i] & ~mk) | v;
             }
         }
-    } else {
-        for (int p = 0; p < 4; ++p)
-            if (!on[p]) std::memset(plane[p], 0, 256);
-        for (int x = 0; x < 256; ++x) {
-            const int m = (plane[0][x] ? 0 : 1) | (plane[1][x] ? 0 : 2) | (plane[2][x] ? 0 : 4) | (plane[3][x] ? 0 : 8);
-            const uint8_t v = plane[pick[m]][x];
-            pens[x] = v ? v : bg;
+        for (int i = 0; i < 8; ++i) {
+            const uint32_t v = w[i];
+            if (__builtin_expect(v != last, 0)) {
+                last = v;
+                c0 = pal[v & 63];
+                c1 = pal[(v >> 8) & 63];
+                c2 = pal[(v >> 16) & 63];
+                c3 = pal[(v >> 24) & 63];
+            }
+            out[0] = c0;
+            out[1] = c1;
+            out[2] = c2;
+            out[3] = c3;
+            out += 4;
         }
-    }
-    uint16_t pal[64];                                   // (a local copy: no aliasing with `out`)
-    std::memcpy(pal, vs.pens, sizeof pal);
-    for (int x = 0; x < 256; x += 4) {
-        out[x] = pal[pens[x] & 63];
-        out[x + 1] = pal[pens[x + 1] & 63];
-        out[x + 2] = pal[pens[x + 2] & 63];
-        out[x + 3] = pal[pens[x + 3] & 63];
     }
 }
 

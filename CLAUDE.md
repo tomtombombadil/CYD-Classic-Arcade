@@ -1423,12 +1423,42 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   loop at 0164 - after one pass run, every register they set is as each
   pass leaves it, so the rest are time and R (main ~49.5K, sound ~39K
   cycles a frame skipped). PC (same run, best of 3): emu ~0.050 ms
-  (Pac-Man 0.028-0.032), render ~0.105 ms (Pac-Man ~0.050); callgrind:
-  emulation ~0.66M host instructions a frame, the four AYs ~0.3M of it;
-  render ~1.4M (three playfields decoded per line). `--panel` 240x320 /
-  320x480: 0 wrong (~1,900 / 3,400 pixels a picture). Memory (xtensa):
-  machine 21.6 KB (the VideoState 15.6 KB - character RAM 12 KB), the
-  snapshot 15.6 KB, ROM 74.3 KB (biggest 4 KB; 8 KB in `elevator`).
+  (Pac-Man 0.028-0.032); callgrind: emulation ~0.66M host instructions a
+  frame, the four AYs ~0.3M of it. Drawing (2026-10-23; Tom, v0.23.0 on
+  the 4.0" S3: "59.2 fps, 24 shown/s ... picture 33.6 (send 1.8)" - ~31
+  ms of rendering on core 0, ~140 us a line, Dig Dug II 8.0): v0.23's
+  render was 64-bit words with an 8-byte memcpy to an unaligned place a
+  column (a newlib call on the Xtensa, 96 a line) and a 1.6 KB stack
+  frame that put spilled variables out of the short load offsets - ~14K
+  Xtensa instructions a line. Now, exact (`--hash` the same over 12,000
+  frames of attract and 3 x 12,000 played; `elevator_tests` against the
+  per-pixel model on dense and sparse characters, one and many column
+  scrolls): bit planes - `gather_line` (its own function, for registers)
+  copies a playfield line's 32 characters' three plane bytes into 3 x 32
+  bytes (12 Xtensa instructions a column when all 32 column scrolls are
+  the same - playfields 1 and 2 always are; the VideoState keeps a count
+  per playfield of columns unlike column 0, `cs_diff`, updated on writes;
+  23 otherwise); a playfield line with nothing in it stops there; the scroll turns
+  each plane into 8 screen-aligned words (a funnel shift each: `ssr` +
+  `src` by inline asm on the Xtensa, a 64-bit shift elsewhere); the
+  layers are laid on each other 32 pixels at a time in the PROM's order -
+  a playfield blank there costs three loads - else 4 pixels at a time
+  from each plane's nibble through 16-entry tables (`spread_`, 256 B in
+  the machine, made at init) into words of four pens; sprites (the 24
+  slots in a fixed order, one unsigned compare a slot) as pens into a byte
+  line, cleared only when one is on it; colours go out 4 at a time, looked
+  up only when the 4 pens differ from the 4 before (74 % don't). No
+  library calls, 32-bit words only, stack frame 768 B. Per line (83
+  sampled frames of play): 2.2 one-scroll + 0.8 per-column gathers, 9.7
+  live spans, 67 nibbles, 17 of 64 words looked up - ~4.5K Xtensa
+  instructions by the code's count (v0.23 ~14K): the S3's render should
+  be ~3x faster, ~6-10 ms (picture ~9-13 ms with hash and send) - not yet
+  measured on a board. PC: render 0.114 -> 0.099 ms (Pac-Man 0.061, the
+  same run); callgrind 1.55M -> 1.46M host instructions a frame (x86 has
+  64-bit words; Pac-Man ~0.79M). `--panel` 240x320 / 320x480: 0 wrong
+  (~2,000 / 3,600 pixels a picture). Memory (xtensa): machine 22.0 KB
+  (the VideoState 15.6 KB - character RAM 12 KB), the snapshot 15.6 KB,
+  ROM 74.3 KB (biggest 4 KB; 8 KB in `elevator`).
 - Xevious: removed in v0.23.1 (Tom, 2026-10-21: "It's just not going to
   work" - on the 4.0" S3 it drew 21 pictures a second: its background
   scrolls all the time, ~98,000 pixels to send a picture). It ran on the

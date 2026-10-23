@@ -7,7 +7,8 @@
 // latches both ways, its bus requests writing and reading the Z80's
 // memory, the graphics ROM port, inputs and DIPs, the sound command and
 // NMI, the sound status, the VBLANK IRQ, the watchdog), the picture
-// against a per-pixel model of the hardware on random video RAM, and that
+// against a per-pixel model of the hardware on random video RAM (dense and
+// sparse characters, one or many column scrolls), and that
 // idle skipping (the MCU's loop, the main CPU's frame wait, the sound
 // CPU's main loop) leaves everything as it is without it.
 //
@@ -769,19 +770,38 @@ void test_picture()
     z80::Cpu& c = m.cpu();
     uint16_t line[256];
     int bad = 0, checked = 0;
-    for (int trial = 0; trial < 12; ++trial) {
-        for (int a = 0x9000; a < 0xc000; ++a) c.wr(uint16_t(a), uint8_t(rnd() & rnd()));
-        for (int a = 0xc400; a < 0xd000; ++a) c.wr(uint16_t(a), uint8_t(rnd()));
-        for (int a = 0xd000; a < 0xd060; ++a) c.wr(uint16_t(a), uint8_t(rnd()));
+    for (int trial = 0; trial < 20; ++trial) {
+        // trials 12-19: sparse characters (whole blank rows and 32-pixel
+        // spans) and playfields with one column scroll for all columns
+        const bool sparse = trial >= 12;
+        for (int a = 0x9000; a < 0xc000; ++a)
+            c.wr(uint16_t(a), uint8_t(sparse ? (rnd() % 4 ? 0 : rnd() & rnd()) : rnd() & rnd()));
+        for (int a = 0xc400; a < 0xd000; ++a) c.wr(uint16_t(a), uint8_t(sparse && rnd() % 2 ? 0 : rnd()));
+        for (int l = 0; l < 3; ++l) {
+            const bool one = sparse && ((trial + l) % 3 != 0);
+            const uint8_t v = uint8_t(rnd());
+            for (int col = 0; col < 32; ++col) c.wr(uint16_t(0xd000 + 32 * l + col), one ? v : uint8_t(rnd()));
+            if (one && (trial & 1)) {                   // a column away and back: one scroll again
+                c.wr(uint16_t(0xd000 + 32 * l + 7), uint8_t(v + 1));
+                c.wr(uint16_t(0xd000 + 32 * l + 7), v);
+            } else if (one) {                           // the first column away: not one scroll any more
+                c.wr(uint16_t(0xd000 + 32 * l), uint8_t(v + 8));
+            }
+        }
         for (int a = 0xd200; a < 0xd280; ++a) c.wr(uint16_t(a), uint8_t(rnd()));
         for (int a = 0xd100; a < 0xd200; ++a) c.wr(uint16_t(a), uint8_t(rnd()));
         for (int a = 0xd500; a < 0xd506; ++a) c.wr(uint16_t(a), uint8_t(rnd()));
         c.wr(0xd506, uint8_t(rnd()));
         c.wr(0xd507, uint8_t(rnd()));
-        c.wr(0xd300, uint8_t(trial < 8 ? trial | ((trial & 1) << 4) : 8 + (trial & 1) * 0x10));
-        c.wr(0xd600, uint8_t((rnd() & 0xf4) | (trial < 4 ? 0xf0 : 0)));
+        c.wr(0xd300, uint8_t(trial < 8 ? trial | ((trial & 1) << 4) : trial < 12 ? 8 + (trial & 1) * 0x10 : (trial & 7) | (trial & 0x10)));
+        c.wr(0xd600, uint8_t((rnd() & 0xf4) | (trial < 4 || sparse ? 0xf0 : 0)));
         const elevator::VideoState& vs = m.video();
-        for (int y = 0; y < elevator::kScreenH; y += (trial < 2 ? 1 : 3)) {
+        for (int l = 0; l < 3; ++l) {                   // the count of columns off the first one's scroll
+            int diff = 0;
+            for (int col = 1; col < 32; ++col) diff += vs.colscroll[32 * l + col] != vs.colscroll[32 * l];
+            CHECK_EQ(vs.cs_diff[l], diff);
+        }
+        for (int y = 0; y < elevator::kScreenH; y += (trial < 2 || sparse ? 1 : 3)) {
             m.render_line(y, line);
             for (int x = 0; x < 256; ++x) {
                 ++checked;
