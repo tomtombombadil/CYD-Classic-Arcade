@@ -17,7 +17,8 @@
 //
 // The picture is drawn a line at a time from the video RAM as it is when
 // VBLANK starts (a frame here runs from VBLANK to VBLANK), straight from
-// the character RAM - no frame buffer, nothing decoded ahead.
+// the character RAM - no frame buffer, nothing decoded ahead (the program
+// rewrites the character RAM all the time) - in 32-bit words of four pens.
 #pragma once
 
 #include "../cpu/m68705.h"
@@ -97,6 +98,7 @@ struct VideoState {
     uint8_t  chars[0x3000];     // 9000-BFFF: two banks of 0x1800 (planes at +0 / +0x800 / +0x1000)
     uint8_t  vram[3][0x400];    // C400-CFFF: the three playfields
     uint8_t  colscroll[0x60];   // D000-D05F: 32 column scrolls per playfield
+    uint8_t  cs_diff[3] = {};   // per playfield: its column scrolls unlike column 0's (0 = one scroll for all)
     uint8_t  sprites[0x100];    // D100-D1FF: two banks of 32 x 4 bytes
     uint8_t  palette[0x80];     // D200-D27F
     uint16_t pens[64];          // the palette as RGB565 (kept up to date as it's written)
@@ -159,6 +161,7 @@ private:
     int  snd_now() const { return snd_t_ + snd_.elapsed() * kSoundTicks; }
     uint8_t in(int reg);
     void palette_write(int offset, uint8_t v);
+    void colscroll_write(int offset, uint8_t v);
 
     // The MCU interface (taitosj's security board): latches both ways, the
     // address counter, BUSRQ.
@@ -243,6 +246,8 @@ private:
     float    dc_r_ = 0, dc_x_ = 0, dc_y_ = 0;
 
     bool     swap_ = false;
+    // Drawing: a plane byte's nibble as four pens' bit (made at init).
+    uint32_t spread_[4][16] = {};
     VideoState video_{};
 };
 

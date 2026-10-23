@@ -58,7 +58,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Defender | 51.9 | - | 15.2 / 17.0 | **67.2 / 68.9** | - | 30.0 | 4 |
 | Star Wars | 52.6 | - | 15.8 / 17.7 | **68.4 / 70.2** | 27.6 | 72.0 | 16 |
 | Zaxxon | 20.8 | - | 14.7 / 16.1 | **35.5 / 36.9** | 1.2 | 104.5 | 8 |
-| Elevator Action | 21.6 | - | 14.4 / 16.0 | **36.0 / 37.6** | 15.6 | 74.3 | 4 (8 in `elevator`) |
+| Elevator Action | 22.0 | - | 14.4 / 16.0 | **36.4 / 38.0** | 15.6 | 74.3 | 4 (8 in `elevator`) |
 | Qix | 8.1 | 64.0 (2 x 32) | 14.7 / 16.1 | **86.8 / 88.2** | - | 32.0 | 2 |
 
 Missile Command (2026-10-20, Xtensa sizeof 18,752 bytes): the machine is
@@ -131,18 +131,25 @@ and a VideoState byte to it) + the second tile bank decoded (4,096) + its sound 
 (`dkongjr_sound::Board` 240). Buffers and snapshot (`VideoState` 1,796 B)
 as Donkey Kong's. ROM 44.8 KB in 5 regions: program 24 (three 8 KB chips),
 sound 4, tiles 8, sprites 8, PROMs 0.75.
-Elevator Action (2026-10-21, xtensa-esp-elf-g++ `sizeof`, -mdynconfig
-xtensa_esp32.so): the games.cpp wrapper 22,152 bytes (elevator::Machine
-22,136: the live VideoState 15,978 - character RAM 12 KB, the three
-playfields 3 KB, sprites 256 B, palette 128 B + its 64 RGB565 pens -, two
-Z80s 576 B each, the 68705 164 B, four AYs 84 B each, RAM 2 + 1 + 1 KB);
-shown 274 x 240 on the 240x320 panels and 366 x 320 on the 320x480 ones
-(strip 4,384 / 5,856, x map 548 / 732, line 512, segment hashes 224 x 8
-x 4 = 7,168, sound 2,048, with the heads 14,700 / 16,356 bytes); the
-snapshot is the VideoState (15,978 + 8). ROM 74.3 KB in 5 regions
-(program 32, sound 8, MCU 2, graphics 32, PROM 0.25): with the snapshot
-taken, one 32 KB region goes to the scratch flash (the graphics ROMs are
-read only through the D404 port, when the program copies them).
+Elevator Action (2026-10-23, xtensa-esp-elf-g++ `sizeof`, -mdynconfig
+xtensa_esp32.so): the games.cpp wrapper 22,496 bytes (elevator::Machine
+22,480: the live VideoState 15,982 - character RAM 12 KB, the three
+playfields 3 KB, sprites 256 B, palette 128 B + its 64 RGB565 pens, the
+column scrolls' 3 "one scroll" counts -, two Z80s 576 B each, the 68705
+164 B, four AYs 104 B each (84 before Gyruss's AY work), RAM 2 + 1 + 1 KB,
+the drawing's nibble tables 256 B (made at init); 2026-10-21 it was
+22,136 - the 2026-10-23 drawing added the tables and the counts, 260
+bytes); shown 274 x 240 on the 240x320 panels and 366 x 320 on the
+320x480 ones (strip 4,384 / 5,856, x map 548 / 732, line 512, segment
+hashes 224 x 8 x 4 = 7,168, sound 2,048, with the heads 14,700 / 16,356
+bytes); the snapshot is the VideoState (15,982 + 8). The drawing's stack
+frame (on the draw task) is 768 + 32 bytes (v0.23: 1,616). ROM 74.3 KB in
+5 regions (program 32, sound 8, MCU 2, graphics 32, PROM 0.25): with the
+snapshot taken, one 32 KB region goes to the scratch flash (the graphics
+ROMs are read only through the D404 port, when the program copies them).
+On an ESP32 board's ~92 KB area: 38.0 + 15.6 = 53.6 KB, ~38 KB left for
+ROM regions in RAM (the program's 32 KB fits; the 2026-10-21 figure was
+the same within 0.3 KB).
 
 ## 2. The ESP32 boards' RAM
 
