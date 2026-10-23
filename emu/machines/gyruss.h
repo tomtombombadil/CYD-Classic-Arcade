@@ -146,6 +146,7 @@ public:
 
     // Tables (tests): the sound board's timer as AY 3's port A reads it.
     static uint8_t timer_bits(uint64_t sound_cycles);
+    uint8_t timer_at(int snd_cycle) const;
 
 private:
     static uint8_t mem_read(void* ctx, uint16_t addr);
@@ -181,7 +182,10 @@ private:
     void mcu_to(int snd_cycle);
     // Completes the output samples that end by this sound cycle.
     void audio_to(int snd_cycle);
-    void room_to(int snd_cycle);                // rows_ for an AY run to snd_cycle
+    bool needs_flush(int snd_cycle) const;      // no room in rows_ for an AY run to snd_cycle
+    void ay_write(int chip, uint8_t v, int at);
+    void defer_sound(int what, uint8_t v, int at);
+    void apply_sound();
     // Sample j's end (sound cycles this frame).
     int  sample_end(int j) const { return j + 1 < audio_n_ ? (j + 1) * snd_frame_ / audio_n_ : snd_frame_; }
     void chip_to(int chip, int snd_cycle);      // one AY, into the samples' rows
@@ -209,6 +213,17 @@ private:
     bool     sub_irq_mask_ = false;
     uint8_t  latch_ = 0, latch2_ = 0;
     bool     snd_irq_ = false;      // held until the sound CPU takes it
+    // The main CPU's sound writes in the instruction it stopped after.
+    struct Cmd { int at; uint8_t command; uint8_t v; };     // command 0 = the IRQ, 1 = C100
+    static constexpr int kMaxCmds = 4;
+    Cmd      cmds_[kMaxCmds] = {};
+    int      cmd_n_ = 0;
+    // A sound CPU write put off to the end of its instruction (defer_sound):
+    // an AY (0-4) or the i8039's interrupt / command.
+    enum : int { kSndMcuIrq = 5, kSndMcuCmd = 6 };
+    bool     snd_defer_ = false;
+    int      snd_what_ = 0, snd_at_ = 0;
+    uint8_t  snd_v_ = 0;
     uint8_t  dips_ = kDipDefault;
     bool     demo_sounds_ = true;
     uint16_t buttons_ = 0;
@@ -233,6 +248,7 @@ private:
     uint64_t snd_rem_ = 0;
     int      snd_done_ = 0;
     uint64_t snd_base_ = 0;
+    uint32_t snd_base10_ = 0;       // snd_base_ % 10240 (the timer's round)
     int      mcu_done_ = 0;         // i8039 cycles this frame
     uint8_t  dac_ = 0x80;           // the DAC as of dac_clock_
     uint8_t  dac_out_ = 0x80;       // the i8039's last P1 write

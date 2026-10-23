@@ -158,6 +158,9 @@ const romset::Set kRomSet = {
 
 uint8_t Machine::timer_bits(uint64_t sound_cycles) { return kTimer[(sound_cycles / 1024) % 10]; }
 
+// The same at this frame's sound cycle `at`, in 32 bits.
+uint8_t Machine::timer_at(int at) const { return kTimer[((snd_base10_ + uint32_t(at)) % 10240) / 1024]; }
+
 void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap)
 {
     roms_ = roms;
@@ -262,6 +265,8 @@ void Machine::reset()
     carry_ = 0;
     sub_due_ = 0;
     sub_lag_ = false;
+    cmd_n_ = 0;
+    snd_defer_ = false;
     cpu_.map_ram(0xa000, 0x800, shared_);
 }
 
@@ -322,15 +327,12 @@ void Machine::mem_write(void* ctx, uint16_t addr, uint8_t v)
     if ((addr & 0xfe00) != 0xc000) return;
     switch (addr & 0x180) {
     case 0x080:                                         // C080: the sound CPU's IRQ
-        m.sound_to(m.now());
-        if (!m.snd_irq_) {
-            m.snd_irq_ = true;
-            m.snd_.irq(true, 0xff);
-        }
-        break;
     case 0x100:                                         // C100: the sound command
-        m.sound_to(m.now());
-        m.latch_ = v;
+        // Done by run_frame() once this instruction ends (the CPU stops):
+        // the sound board runs to now first. (Not from here: nested this
+        // deep, every call costs the boards' register windows a spill.)
+        if (m.cmd_n_ < kMaxCmds) m.cmds_[m.cmd_n_++] = {m.now(), uint8_t((addr & 0x180) == 0x100), v};
+        m.cpu_.stop();
         break;
     case 0x180:                                         // C180-C187: LS259
         if ((addr & 7) == 0) {
@@ -557,7 +559,7 @@ uint8_t Machine::snd_port_read(void* ctx, uint16_t port)
     const int chip = p >> 2;
     if (chip != 2) return m.ay_[chip].read_data();
     const int at = m.sound_now();
-    m.ay_[2].set_port_in(0, timer_bits(m.snd_base_ + uint64_t(at)));
+    m.ay_[2].set_port_in(0, m.timer_at(at));
     const uint8_t v = m.ay_[2].read_data();
     // In a timer wait (RST 10 called from one of the loops): stop after this
     // IN, so sound_to() can skip the passes to come.
@@ -583,29 +585,61 @@ void Machine::snd_port_write(void* ctx, uint16_t port, uint8_t v)
         case 0: m.ay_[chip].write_address(v); break;
         case 2: {
             const int at = m.sound_now();
-            m.room_to(at);
-            if (chip < 2) {
+            bool flush = m.needs_flush(at);
+            if (chip < 2 && !flush) {
                 // A new filter applies to the samples from here on: the ones
                 // so far are finished with the old one first.
                 const ay8910::Chip& a = m.ay_[chip];
                 const int r = a.selected();
                 const uint8_t bits = r == 15 ? ((a.reg(7) & 0x80) ? v : 0xff)
                                    : r == 7 ? ((v & 0x80) ? a.reg(15) : 0xff) : m.filter_bits_[chip];
-                if (bits != m.filter_bits_[chip]) m.sync_audio(at);
+                flush = bits != m.filter_bits_[chip];
             }
-            m.chip_to(chip, at);
-            m.ay_[chip].write_data(v);
-            if (chip < 2) m.set_filter(chip, m.ay_[chip].port_out(1));
+            if (flush) m.defer_sound(chip, v, at);      // the finishing by sound_to()
+            else m.ay_write(chip, v, at);
             break;
         }
         default: break;
         }
     } else if (p == 0x14) {
-        m.mcu_to(m.sound_now());
-        m.mcu_.irq(true);
+        m.defer_sound(kSndMcuIrq, v, m.sound_now());     // the i8039 brought up to date by sound_to()
     } else if (p == 0x18) {
-        m.mcu_to(m.sound_now());
-        m.latch2_ = v;
+        m.defer_sound(kSndMcuCmd, v, m.sound_now());
+    }
+}
+
+void Machine::ay_write(int chip, uint8_t v, int at)
+{
+    chip_to(chip, at);
+    ay_[chip].write_data(v);
+    if (chip < 2) set_filter(chip, ay_[chip].port_out(1));
+}
+
+// A sound CPU write that needs the i8039 or the samples brought up to date
+// first: done once its instruction ends (the CPU stops), by sound_to() -
+// the same, but not nested in the CPU's run.
+void Machine::defer_sound(int what, uint8_t v, int at)
+{
+    if (snd_defer_) apply_sound();                     // (never: one write an instruction)
+    snd_defer_ = true;
+    snd_what_ = what;
+    snd_v_ = v;
+    snd_at_ = at;
+    snd_.stop();
+}
+
+void Machine::apply_sound()
+{
+    snd_defer_ = false;
+    if (snd_what_ == kSndMcuIrq) {
+        mcu_to(snd_at_);
+        mcu_.irq(true);
+    } else if (snd_what_ == kSndMcuCmd) {
+        mcu_to(snd_at_);
+        latch2_ = snd_v_;
+    } else {
+        sync_audio(snd_at_);
+        ay_write(snd_what_, snd_v_, snd_at_);
     }
 }
 
@@ -619,7 +653,7 @@ void Machine::mcu_port_write(void* ctx, uint8_t port, uint8_t v)
     if (port == i8035::kP1) {
         if (v != m.dac_out_) {
             m.dac_out_ = v;
-            const int at = int(int64_t(m.mcu_now()) * m.snd_frame_ / kI8039PerFrame);
+            const int at = int(uint32_t(m.mcu_now()) * uint32_t(m.snd_frame_) / kI8039PerFrame);
             if (m.dac_qn_ == kDacQueue) {           // full: the samples so far take theirs
                 m.audio_to(at);
                 m.dac_to(at);
@@ -637,13 +671,15 @@ void Machine::mcu_port_write(void* ctx, uint8_t port, uint8_t v)
 void Machine::sound_to(int main_cycle)
 {
     if (main_cycle > kCyclesPerFrame) main_cycle = kCyclesPerFrame;
-    const int target = int(int64_t(main_cycle) * snd_frame_ / kCyclesPerFrame);
+    // (32 bits: 50,688 x 59,063 < 2^32; no 64-bit division on the boards.)
+    const int target = int(uint32_t(main_cycle) * uint32_t(snd_frame_) / uint32_t(kCyclesPerFrame));
     while (snd_done_ < target) {
         if (snd_irq_) {
             // Held until the CPU takes it (IM 1): an instruction at a time,
             // so it drops at once.
             const bool ready = snd_.iff1 != 0;
             snd_done_ += snd_.run(1);
+            if (snd_defer_) apply_sound();
             if (ready && !snd_.iff1) {
                 snd_irq_ = false;
                 snd_.irq(false);
@@ -651,13 +687,14 @@ void Machine::sound_to(int main_cycle)
             continue;
         }
         snd_done_ += snd_.run(target - snd_done_);
+        if (snd_defer_) apply_sound();
         if (wait_read_) skip_timer_wait(target);
     }
 }
 
 void Machine::mcu_to(int snd_cycle)
 {
-    const int target = int(int64_t(snd_cycle) * kI8039PerFrame / (snd_frame_ ? snd_frame_ : 1));
+    const int target = int(uint32_t(snd_cycle) * kI8039PerFrame / uint32_t(snd_frame_ ? snd_frame_ : 1));
     // In slices, so a CPU gone idle is found soon (where a run ends changes
     // nothing: its inputs don't change meanwhile).
     while (mcu_done_ < target) {
@@ -673,16 +710,14 @@ void Machine::sync_audio(int snd_cycle)
     audio_to(snd_cycle);
 }
 
-// Before an AY runs to snd_cycle: room for its samples in rows_, else the
-// samples so far are finished first (the i8039 brought up to date for
-// their DAC).
-void Machine::room_to(int snd_cycle)
+// Before an AY runs to snd_cycle: is there room for its samples in rows_?
+// Else the samples so far are finished first (the i8039 brought up to date
+// for their DAC). (Past the frame's end, or no samples asked for:
+// everything at once, as the i8039 then runs past the frame's end too.)
+bool Machine::needs_flush(int snd_cycle) const
 {
     const int last = audio_done_ + kRows - 1;
-    // (Past the frame's end, or no samples asked for: everything at once, as
-    // the i8039 then runs past the frame's end too.)
-    if (!audio_n_ || snd_cycle >= snd_frame_ || (last < audio_n_ && sample_end(last) <= snd_cycle))
-        sync_audio(snd_cycle);
+    return !audio_n_ || snd_cycle >= snd_frame_ || (last < audio_n_ && sample_end(last) <= snd_cycle);
 }
 
 // --- idle loops (see the top) -------------------------------------------------------------
@@ -727,19 +762,20 @@ void Machine::skip_timer_wait(int target)
     if ((snd_.af.b.h & 0x04) != wait_stay_) return;     // this pass leaves the loop
     // The passes after this one whose reads (69 cycles apart) still see
     // the same bit 2: up to the timer's next change of it.
-    const uint64_t read = snd_base_ + uint64_t(wait_at_);
-    uint64_t step = read / 1024;
+    // (The timer's place in its 10 x 1024-cycle round: 32 bits.)
+    const uint32_t read = (snd_base10_ + uint32_t(wait_at_)) % 10240;
+    uint32_t step = read / 1024;
     do ++step; while (((kTimer[step % 10] ^ wait_stay_) & 0x04) == 0);
-    const int64_t left = int64_t(step * 1024 - read);    // cycles until the bit changes (> 0)
-    int64_t passes = (left - 1) / kSndPass;             // later reads still before the change
-    const int64_t room = (int64_t(target) - snd_done_ - 1) / kSndPass;
+    const int left = int(step * 1024 - read);           // cycles until the bit changes (> 0)
+    int passes = (left - 1) / kSndPass;                 // later reads still before the change
+    const int room = (target - snd_done_ - 1) / kSndPass;
     if (passes > room) passes = room;
     if (passes <= 0) return;
-    snd_done_ += int(passes * kSndPass);
+    snd_done_ += passes * kSndPass;
     skipped_[2] += uint64_t(passes) * kSndPass;
     snd_.r = uint8_t(snd_.r + passes * kSndFetches);
     // A = the last skipped pass's read, F = its AND 04's: H, or Z H P.
-    ay_[2].set_port_in(0, timer_bits(read + uint64_t(passes) * kSndPass));
+    ay_[2].set_port_in(0, kTimer[((read + uint32_t(passes) * kSndPass) % 10240) / 1024]);
     snd_.af.b.h = ay_[2].read_data();
     snd_.af.b.l = wait_stay_ ? 0x10 : 0x54;
 }
@@ -1020,6 +1056,19 @@ int Machine::run_frame(int16_t* audio, int cap)
         while (done < end) {
             slice_start_ = done;
             done += cpu_.run(end - done);
+            // The sound writes of the instruction it stopped after.
+            for (int i = 0; i < cmd_n_; ++i) {
+                sound_to(cmds_[i].at);
+                if (!cmds_[i].command) {
+                    if (!snd_irq_) {
+                        snd_irq_ = true;
+                        snd_.irq(true, 0xff);
+                    }
+                } else {
+                    latch_ = cmds_[i].v;
+                }
+            }
+            cmd_n_ = 0;
         }
     }
     sub_behind(kCyclesPerFrame / 2);
@@ -1037,6 +1086,7 @@ int Machine::run_frame(int16_t* audio, int cap)
 
     // The sound CPU's and the i8039's overrun carry into the next frame.
     snd_base_ += uint64_t(snd_frame_);
+    snd_base10_ = (snd_base10_ + uint32_t(snd_frame_)) % 10240;
     snd_done_ -= snd_frame_;
     mcu_done_ -= kI8039PerFrame;
     const int count = audio_ ? audio_n_ : 0;
