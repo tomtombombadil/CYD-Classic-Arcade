@@ -146,6 +146,7 @@ public:
 
     // Tables (tests): the sound board's timer as AY 3's port A reads it.
     static uint8_t timer_bits(uint64_t sound_cycles);
+    uint8_t timer_at(int snd_cycle) const;
 
 private:
     static uint8_t mem_read(void* ctx, uint16_t addr);
@@ -172,6 +173,8 @@ private:
     int  sound_now() const { return snd_done_ + snd_.elapsed(); }
     int  mcu_now() const { return mcu_done_ + mcu_.elapsed(); }
     void run_sub(int target);
+    void sub_catch_up();            // the sub CPU's turns put off (see gyruss.cpp)
+    void sub_behind(int due);
     // Runs the sound CPU to where the main CPU's frame cycle has reached.
     void sound_to(int main_cycle);
     // Runs the i8039 to a sound-CPU cycle of this frame, then the audio.
@@ -179,10 +182,16 @@ private:
     void mcu_to(int snd_cycle);
     // Completes the output samples that end by this sound cycle.
     void audio_to(int snd_cycle);
-    void chip_to(int chip, int snd_cycle);      // one AY, within the current sample
-    void dac_to(int snd_cycle);                 // the DAC, within the current sample
+    bool needs_flush(int snd_cycle) const;      // no room in rows_ for an AY run to snd_cycle
+    void ay_write(int chip, uint8_t v, int at);
+    void defer_sound(int what, uint8_t v, int at);
+    void apply_sound();
+    // Sample j's end (sound cycles this frame).
+    int  sample_end(int j) const { return j + 1 < audio_n_ ? (j + 1) * snd_frame_ / audio_n_ : snd_frame_; }
+    void chip_to(int chip, int snd_cycle);      // one AY, into the samples' rows
+    void dac_to(int snd_cycle);                 // the DAC, into the samples' rows
     void set_filter(int chip, uint8_t bits);
-    int16_t mix_sample(uint32_t clocks);
+    int16_t mix_sample(const uint32_t* acc, uint32_t dac_acc, uint32_t clocks);
     int  main_idle(int room);
     int  sub_idle(int room);
     void skip_timer_wait(int target);
@@ -204,6 +213,17 @@ private:
     bool     sub_irq_mask_ = false;
     uint8_t  latch_ = 0, latch2_ = 0;
     bool     snd_irq_ = false;      // held until the sound CPU takes it
+    // The main CPU's sound writes in the instruction it stopped after.
+    struct Cmd { int at; uint8_t command; uint8_t v; };     // command 0 = the IRQ, 1 = C100
+    static constexpr int kMaxCmds = 4;
+    Cmd      cmds_[kMaxCmds] = {};
+    int      cmd_n_ = 0;
+    // A sound CPU write put off to the end of its instruction (defer_sound):
+    // an AY (0-4) or the i8039's interrupt / command.
+    enum : int { kSndMcuIrq = 5, kSndMcuCmd = 6 };
+    bool     snd_defer_ = false;
+    int      snd_what_ = 0, snd_at_ = 0;
+    uint8_t  snd_v_ = 0;
     uint8_t  dips_ = kDipDefault;
     bool     demo_sounds_ = true;
     uint16_t buttons_ = 0;
@@ -211,6 +231,8 @@ private:
     int      slice_start_ = 0;      // main cycle of the slice's start
     int      sub_start_ = 0;        // sub cycle of its run's start
     int      sub_done_ = 0;         // sub cycles run this frame
+    int      sub_due_ = 0;          // sub cycles it must have run before the main CPU's slice
+    bool     sub_lag_ = false;      // behind: the shared RAM unmapped for the main CPU
     uint32_t frame_ = 0;
 
     // Sprites: each slot's value since line slot_from_ (writes while the
@@ -226,6 +248,7 @@ private:
     uint64_t snd_rem_ = 0;
     int      snd_done_ = 0;
     uint64_t snd_base_ = 0;
+    uint32_t snd_base10_ = 0;       // snd_base_ % 10240 (the timer's round)
     int      mcu_done_ = 0;         // i8039 cycles this frame
     uint8_t  dac_ = 0x80;           // the DAC as of dac_clock_
     uint8_t  dac_out_ = 0x80;       // the i8039's last P1 write
@@ -251,10 +274,16 @@ private:
     uint64_t audio_rem_ = 0;
     int16_t* audio_ = nullptr;
     int      audio_n_ = 0, audio_done_ = 0;
-    int      sample_start_ = 0, sample_end_ = 0;   // the current output sample's sound cycles
     int      ay_clock_[5] = {};     // each AY's sound cycle this frame
-    uint32_t acc_[15] = {};         // AY channels: level x AY clocks
-    uint32_t dac_acc_ = 0;          // DAC level x sound cycles
+    int      ay_sample_[5] = {};    // the sample it is in
+    int      dac_sample_ = 0;       // the sample dac_clock_ is in
+    // The output samples not finished yet: row r = sample audio_done_ + r,
+    // the 15 AY channels' level x AY clocks (chip x 3 + channel), [15] the
+    // DAC's level x sound cycles.
+    static constexpr int kRows = 32;
+    uint32_t rows_[kRows][16] = {};
+    uint32_t scale_clocks_ = 0;     // mix_sample(): 1 / clocks for the last clocks
+    float    scale_ = 0;
     uint8_t  filter_bits_[2] = {};
     float    lp_a_[6] = {};         // AY 1 / 2's channels: 0 = no capacitor, else the low-pass step
     float    lp_y_[6] = {};

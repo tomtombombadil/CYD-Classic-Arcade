@@ -70,6 +70,7 @@ void Cpu::reset()
     count_mode = 0;
     prescaler = 0;
     t1_last_ = false;
+    update_irq();
 }
 
 // Stack entry n (n = SP) at RAM 8 + 2n: PC bits 0-7, then PC bits 8-11 and
@@ -132,6 +133,7 @@ void Cpu::count()
     if (over) {
         timer_flag = true;
         if (tirq_enabled) timer_overflow = true;
+        update_irq();
     }
 }
 
@@ -147,6 +149,7 @@ int Cpu::take_irq()
         pc = 0x007;
         timer_overflow = false;
     }
+    update_irq();
     return 2;
 }
 
@@ -159,10 +162,11 @@ EMU_HOT int Cpu::run(int cycles)
 {
     done_ = 0;
     target_ = cycles;
+    update_irq();                           // (tests may set the flags between runs)
     while (done_ < target_) {
         int c;
         uint8_t op;
-        if (!in_irq && ((irq_line_ && xirq_enabled) || (timer_overflow && tirq_enabled))) {
+        if (__builtin_expect(irq_ready_, 0)) {
             c = take_irq();
             op = 0;                         // runs as a NOP below
         } else {
@@ -213,7 +217,7 @@ EMU_HOT int Cpu::run(int cycles)
             break;
         }
         case 0x83: pop_pc(false); break;        // RET
-        case 0x93: in_irq = false; pop_pc(true); break;   // RETR
+        case 0x93: in_irq = false; pop_pc(true); update_irq(); break;   // RETR
 
         // --- accumulator ----------------------------------------------------------
         case 0x03: add(fetch(), 0); break;
@@ -339,10 +343,10 @@ EMU_HOT int Cpu::run(int cycles)
         case 0xd5: psw |= BS; break;
         case 0xe5: a11 = 0; break;
         case 0xf5: a11 = 0x800; break;
-        case 0x05: xirq_enabled = true; break;
-        case 0x15: xirq_enabled = false; break;
-        case 0x25: tirq_enabled = true; break;
-        case 0x35: tirq_enabled = false; timer_overflow = false; break;
+        case 0x05: xirq_enabled = true; update_irq(); break;
+        case 0x15: xirq_enabled = false; update_irq(); break;
+        case 0x25: tirq_enabled = true; update_irq(); break;
+        case 0x35: tirq_enabled = false; timer_overflow = false; update_irq(); break;
         case 0x45: if (count_mode != 2) t1_last_ = test(1); count_mode = 2; break;   // STRT CNT
         case 0x55: count_mode = 1; prescaler = 0; break;                     // STRT T
         case 0x65: count_mode = 0; break;                                    // STOP TCNT

@@ -1510,8 +1510,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   the 8039's 128 bytes - Donkey Kong `--hash` identical) at 8 MHz, 8,800
   machine cycles a frame: every MOVX reads its command, P2 drops its
   interrupt, P1 = the DAC; its DAC changes are queued with their times
-  (they don't make the AYs catch up), each AY is brought up to date only
-  for its own writes and at each output sample's end. Mix (mono = left +
+  (they don't make the AYs catch up). Mix (mono = left +
   right, MAME's resistor mixer: AY 1 2.2k a channel, AY 3 / AY 4 3.3k
   each tied, right; AY 2, AY 5, the DAC 4.7k, left), an 8 kHz output RC
   (200 ohm / 0.1 uF), a 20 Hz coupling (assumed), x 9 with a soft knee
@@ -1527,23 +1526,63 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   it off - picture, audio, the four CPUs' registers): the main CPU's task
   wait at 05F4 (JP / LD A,(5865) / LD H,A / LD A,(9433) / LD L,A / LD
   A,(HL) / RLCA / JP C, 65 cycles 8 fetches, its own RAM only) from any of
-  its instructions at a slice's start, A H L F set as a pass leaves them;
-  the sub CPU's BRA * at F0B6 to the slice's end while no interrupt can be
-  taken; the sound CPU's timer waits at 00FE / 0105 (through RST 10, 69
-  cycles 7 fetches; the IN stops the CPU, the passes that read the same
-  bit 2 skipped, A = the last read, F = AND 04's); the i8039's NOP / JMP
-  at 0019 and any DJNZ Rr to itself (its delay after each DAC write, which
-  stops it), the timer's prescaler counted. Left in play a frame: main ~26K
-  cycles, sub ~15K, sound ~16K, i8039 up to 8.8K (all real work). PC
-  (in play, fire held, the same runs): emu ~0.14 ms (Pac-Man ~0.03),
-  render ~0.045 (Pac-Man ~0.048); callgrind 1.09M host instructions a
-  frame emulated vs Pac-Man's 0.35M (3.1x; 0.81M = 2.3x in the attract
-  mode), rendering 0.55M vs 0.79M. **Probably too slow for full speed on
-  the ESP32 boards** (Pac-Man's emulation takes ~5.7 ms there: Gyruss's
-  ~3x is ~17 ms of a 16.5 ms frame) - the S3 may manage; not yet run on a
-  board. Controls: the 8-way stick as on the cabinet (it moves the ship
-  round the circle), A (or B) fire, Select coin, Start 1P, L 2P. Snapshot
-  for core 0: the VideoState, 4.4 KB. Memory: machine 37.6 KB (Xtensa),
+  its instructions at a slice's start to where the CPU would stop at the
+  slice's end (whole passes, then instruction by instruction: PC, R, A H L
+  F as the loop leaves them); the sub CPU's BRA * at F0B6 (in its long
+  put-off runs the 6809 core idles to the run's end by itself); the sound
+  CPU's timer waits at 00FE / 0105 (through RST 10, 69 cycles 7 fetches;
+  the IN stops the CPU, the passes that read the same bit 2 skipped, and
+  when the pass that reads the change ends before the CPU's target that
+  one too - the CPU left after the loop with A = the read AND 04, F, R, SP
+  as it leaves them); the i8039's NOP / JMP at 0019 and any DJNZ Rr to
+  itself (its delay after each DAC write, which stops it), the timer's
+  prescaler counted. Left in play a frame: main ~23K cycles, sub ~15K,
+  sound ~12K, i8039 ~2K (all real work). Speed (2026-10-23; Tom's 4.0" S3,
+  v0.23.0: "43.0 fps (game 60.6), emu 22.0 ms (worst 50.0)"), all exact
+  (`arcade_host --hash` of every frame the same as v0.23.0 over 6,000
+  attract, 3 x 8,000 played, 20,000 attract with demo sounds off and
+  20,000 played frames; the CPUs frame by frame as with idle skipping
+  off): the sub CPU's turns (2 lines each, after the main CPU's) are put
+  off until the main CPU touches the shared RAM (its pages unmapped while
+  the sub CPU is behind; the first access runs it up to the slice before),
+  VBLANK or the frame's end, and then run in one go - 128 6809 runs a
+  frame -> ~19, the same instructions at the same times (nothing it reads
+  changed meanwhile); the output samples' sums go to rows (`rows_`, 32
+  samples, 2 KB): an AY write brings only that AY up to date, the other
+  AYs, the i8039 (run only then and at its own port writes) and the mix
+  wait until the rows fill, a filter switch (AY 1 / 2 port B) or the DAC
+  queue needs them - ~16 such passes a frame instead of one at every AY
+  write; the main CPU's sound writes stop it after the instruction and
+  run_frame() runs the sound board then, a sound CPU write that needs the
+  i8039 or the samples stops it and sound_to() does that (not nested
+  deep inside the interpreters - each call that deep spills the ESP32's
+  register windows); `ay8910::Chip::run_pieces` (a row of pieces: the
+  quick path's stretch between output changes at once, silent channels
+  add nothing), the noise register's long catch-ups by matrix powers (17
+  x 17 bits over GF(2), M^2^i, 1.2 KB of flash: `step_noise`); the mix's
+  filter states below the smallest normal float set to 0 (silent channels'
+  tails sat in denormals, which the PC ran 4x slower; such a state never
+  reaches an output sample); no 64-bit division (the sound clock in 32
+  bits, the timer's round kept mod 10240); the samples' ends stepped
+  along; the capture's sprite order by a counting sort; the i8035 core
+  keeps whether an interrupt can be taken (`irq_ready_`; Donkey Kong /
+  Jr. `--hash` identical). A single interrupt / HALT test in the Z80 loop
+  was tried and dropped (more host instructions). PC, in play (best of 5,
+  the same runs): emu 0.168 -> 0.093 ms (Pac-Man 0.034), render ~0.047
+  (Pac-Man ~0.062); callgrind 1.02M -> 0.875M host instructions a frame
+  emulated in play (Pac-Man 0.345M; attract 0.90M -> 0.76M): main + sound
+  Z80 ~260K, the 6809 ~260K, the AYs ~100K, mix ~70K, i8039 ~80K, glue
+  ~100K. With the x86's denormal flush on (FTZ + DAZ, as a CPU without a
+  denormal penalty) base ~0.12, now ~0.11 ms: the gain on a board whose
+  FPU has no denormal penalty is ~10-15 % plus what the flatter calls and
+  fewer CPU switches save there (unmeasured; ESP32's denormal speed not
+  known). The 4.0" S3 ran other games' emulation at ~140x the PC's wall
+  time (Elevator Action 7.2 ms / 0.050, Donkey Kong Jr. 8.0 / 0.056,
+  Gyruss 22.0 / 0.16): ~13 ms expected if the board tracks the PC, ~19
+  ms if its FPU never paid for denormals. Controls: the 8-way stick as on
+  the cabinet (it moves the ship round the circle), A (or B) fire, Select
+  coin, Start 1P, L 2P. Snapshot for core 0: the VideoState, 4.4 KB.
+  Memory: machine 39.6 KB (Xtensa; 37.6 before the 2 KB of sample rows),
   ROM 92.5 KB (biggest 8 KB). `boot_frames` 170 (the grid test, then the
   stars fade, the score lines at 170). `--panel` 240x320 / 320x480: 0
   wrong.

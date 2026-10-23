@@ -24,6 +24,28 @@ constexpr uint8_t kMask[16] = {
     0x1f, 0x1f, 0x1f, 0xff, 0xff, 0x0f, 0xff, 0xff,
 };
 
+// The noise register is linear over GF(2): k steps = a 17 x 17 bit
+// matrix. kNoiseJump[i][j] = where 2^i steps take the register's bit j
+// alone (for long runs of steps: sync() carries it up to 4096 ticks).
+struct NoiseJump {
+    uint32_t m[17][17];
+    static constexpr uint32_t step(uint32_t v) { return (v >> 1) | (((v ^ (v >> 3)) & 1) << 16); }
+    static constexpr uint32_t apply(const uint32_t* cols, uint32_t v)
+    {
+        uint32_t r = 0;
+        for (int j = 0; j < 17; ++j)
+            if ((v >> j) & 1) r ^= cols[j];
+        return r;
+    }
+    constexpr NoiseJump() : m()
+    {
+        for (int j = 0; j < 17; ++j) m[0][j] = step(1u << j);
+        for (int i = 1; i < 17; ++i)
+            for (int j = 0; j < 17; ++j) m[i][j] = apply(m[i - 1], m[i - 1][j]);    // M^2^i = (M^2^(i-1))^2
+    }
+};
+constexpr NoiseJump kNoiseJump{};
+
 // Tone periods up to this count as their average (see update_levels).
 constexpr uint32_t kFastPeriod = 4;
 // The counters that can't be heard are brought up to date at least this
@@ -165,7 +187,21 @@ bool Chip::step_noise(uint32_t period, uint32_t ticks)
     // Up to 14 steps at once: the new bits (bit 0 XOR bit 3, into bit 16)
     // only reach the taps after 14 steps, so they all come from the old
     // register.
-    for (uint32_t left = steps; left;) {
+    uint32_t left = steps;
+    if (left >= 48) {                       // many: by the matrix powers (the same register)
+        left %= 131071u;                    // the register's period (2^17 - 1, from any state but 0)
+        uint32_t v = lfsr_;
+        for (int i = 0; i < 17 && left; ++i, left >>= 1)
+            if (left & 1) {
+                const uint32_t* cols = kNoiseJump.m[i];
+                uint32_t r = 0;
+                for (int j = 0; j < 17; ++j) r ^= cols[j] & (0u - ((v >> j) & 1));
+                v = r;
+            }
+        lfsr_ = v;
+        left = 0;
+    }
+    for (; left;) {
         const uint32_t k = left < 12 ? left : 12;
         lfsr_ = (lfsr_ >> k) | (((lfsr_ ^ (lfsr_ >> 3)) & ((1u << k) - 1)) << (17 - k));
         left -= k;

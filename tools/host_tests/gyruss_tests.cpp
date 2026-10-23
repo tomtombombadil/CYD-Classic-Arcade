@@ -187,6 +187,61 @@ void test_ay_chunks()
     CHECK_EQ(acc[0], 4096u * 800 * 50);
 }
 
+// run_pieces() = the same pieces one run() at a time (sums and state), 0
+// pieces skipped; and long runs of noise steps (sync()'s matrix jump) land
+// on the register stepping would.
+void test_ay_pieces()
+{
+    const uint8_t settings[][14] = {
+        {10, 0, 3, 0, 200, 1, 0, 0x38, 15, 12, 9, 0, 0, 0},
+        {100, 0, 37, 0, 12, 0, 3, 0x30, 15, 0x10, 8, 20, 0, 0x0e},
+        {7, 0, 0, 0, 0, 0, 1, 0x07, 15, 15, 15, 0, 0, 0},
+        {255, 15, 1, 0, 33, 2, 31, 0x00, 0, 15, 0x10, 255, 255, 0x0a},
+        {50, 0, 60, 0, 70, 0, 0, 0x38, 0, 0, 0, 0, 0, 0},              // silent
+    };
+    for (const auto& st : settings) {
+        ay8910::Chip a, b;
+        for (int r = 0; r < 14; ++r) {
+            a.write(r, st[r]);
+            b.write(r, st[r]);
+        }
+        uint32_t seed = 777;
+        bool same = true;
+        for (int round = 0; round < 400; ++round) {
+            uint32_t clocks[16];
+            uint32_t rows_a[16][4] = {}, rows_b[16][4] = {};
+            const int n = 1 + round % 16;
+            for (int i = 0; i < n; ++i) {
+                seed = seed * 1103515245u + 12345u;
+                clocks[i] = (seed >> 20) % 7 == 0 ? 0 : 1 + (seed >> 16) % 150;
+            }
+            for (int i = 0; i < n; ++i)
+                if (clocks[i]) a.run(clocks[i], rows_a[i]);
+            b.run_pieces(clocks, n, rows_b[0], 4);
+            same = same && std::memcmp(rows_a, rows_b, sizeof rows_a) == 0;
+        }
+        a.sync();
+        b.sync();
+        CHECK(same);
+        for (int c = 0; c < 3; ++c) CHECK_EQ(a.tone_output(c), b.tone_output(c));
+        CHECK_EQ(a.noise_register(), b.noise_register());
+        CHECK_EQ(a.envelope_volume(), b.envelope_volume());
+    }
+    // Unheard noise carried along for k register steps (2 ticks each at
+    // period 1), then brought up to date: the register stepping gives.
+    for (uint32_t k : {1u, 11u, 12u, 47u, 48u, 49u, 255u, 1000u, 2047u, 4000u}) {
+        ay8910::Chip n;
+        n.write(6, 1);
+        n.write(7, 0x3f);                               // noise off everywhere: not live
+        uint32_t acc[3] = {};
+        n.run(k * 16, acc);
+        n.sync();
+        uint32_t ref = 1;
+        for (uint32_t i = 0; i < k; ++i) ref = (ref >> 1) | (((ref ^ (ref >> 3)) & 1) << 16);
+        CHECK_EQ(n.noise_register(), ref);
+    }
+}
+
 // --- the board -----------------------------------------------------------------------
 
 struct Board {
@@ -394,9 +449,11 @@ void test_board()
         for (int i = 0; i < n; ++i) loud = std::max(loud, std::abs(int(audio[i])));
     }
     CHECK(same);
-    for (int k = 0; k < 4; ++k) CHECK(m.skipped_cycles(k) > 0);
+    for (int k : {0, 2, 3}) CHECK(m.skipped_cycles(k) > 0);
     CHECK(m.skipped_cycles(0) > 150ull * 40000);       // the main CPU idles nearly all the time
-    CHECK(m.skipped_cycles(1) > 150ull * 5000);        // (its IRQ polls the beam to line 128)
+    // (The sub CPU's BRA * now mostly passes inside its long put-off runs,
+    // where the 6809 core idles to the run's end by itself: sub_idle seldom
+    // gets a turn. The same results either way - checked above.)
     CHECK(m.skipped_cycles(2) > 150ull * 50000);
     CHECK(m.skipped_cycles(3) > 150ull * 8000);
     for (int k = 0; k < 4; ++k) CHECK_EQ(plain.skipped_cycles(k), 0ull);
@@ -467,6 +524,7 @@ int main()
 {
     test_konami1();
     test_ay_chunks();
+    test_ay_pieces();
     test_board();
     std::printf("Gyruss tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

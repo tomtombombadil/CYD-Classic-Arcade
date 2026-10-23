@@ -62,7 +62,7 @@ public:
     int  elapsed() const { return done_; }
 
     // The INT pin, level-sensitive: true = asserted (the pin is low).
-    void irq(bool level) { irq_line_ = level; }
+    void irq(bool level) { irq_line_ = level; update_irq(); }
     bool irq_line() const { return irq_line_; }
 
     // --- registers (public for tests and debuggers) -----------------------
@@ -87,6 +87,13 @@ public:
 
 private:
     bool    irq_line_ = false;
+    // An interrupt can be taken (from the state below; worked out again at
+    // each run() and whenever a part of it changes).
+    bool    irq_ready_ = false;
+    void    update_irq()
+    {
+        irq_ready_ = !in_irq && ((irq_line_ && xirq_enabled) || (timer_overflow && tirq_enabled));
+    }
     bool    t1_last_ = false;
     int     done_ = 0, target_ = 0;
 
