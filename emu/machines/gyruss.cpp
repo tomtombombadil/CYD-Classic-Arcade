@@ -960,8 +960,20 @@ void Machine::audio_to(int snd_cycle)
         uint32_t clocks[kRows];
         const uint32_t b = uint32_t(snd_base_ & 1);
         int n = 0;
+        // (Sample j ends at floor((j + 1) x snd_frame_ / audio_n_): stepped
+        // along without a division a sample.)
+        const int q = snd_frame_ / audio_n_, r = snd_frame_ % audio_n_;
+        int e = sample_end(audio_done_);
+        int rem = (audio_done_ + 1) * r % audio_n_;
         for (int start = audio_done_ ? sample_end(audio_done_ - 1) : 0;;) {
-            const int e = sample_end(audio_done_ + n);
+            if (n) {
+                e += q;
+                rem += r;
+                if (rem >= audio_n_) {
+                    rem -= audio_n_;
+                    ++e;
+                }
+            }
             if (e > snd_cycle) break;
             ends[n] = e;
             clocks[n] = ((b + uint32_t(e)) >> 1) - ((b + uint32_t(start)) >> 1);
