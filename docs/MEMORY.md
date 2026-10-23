@@ -39,7 +39,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Pac-Man | 14.4 | - | 15.7 / 17.1 | **30.1 / 31.5** | 2.0 | 24.8 | 4 |
 | Galaxian | 14.4 | - | 14.7 / 16.1 | **29.1 / 30.5** | 2.1 | 14.0 | 2 |
 | Amidar | 17.1 | - | 14.7 / 16.1 | **31.8 / 33.2** | 2.1 | 28.0 | 4 |
-| Gyruss | 37.6 | - | 14.7 / 16.1 | **52.3 / 53.7** | 4.3 | 92.5 | 8 |
+| Gyruss | 39.6 | - | 14.7 / 16.1 | **54.3 / 55.7** | 4.3 | 92.5 | 8 |
 | Burger Time | 17.6 | - | 14.2 / 15.6 | **31.9 / 33.3** | - | 52.0 | 4 |
 | Missile Command | 18.3 | - | 14.4 / 16.0 | **32.8 / 34.3** | 15.5 | 12.0 | 2 |
 | Rally-X | 18.6 | - | 15.0 / 16.8 | **33.7 / 35.5** | 2.6 | 21.1 | 4 |
@@ -96,7 +96,9 @@ B, the I/O chips 40 B each. Buffers as Pac-Man's (224 x 288). Snapshot =
 the VideoState, 4,740 B. ROM 76.8 KB in 7 regions (program 32, sound CPU
 8, characters 4, sprites 2 x 16, PROMs 0.5 + 0.25): the renderer reads
 the sprite ROMs every line, from flash when they don't fit.
-Gyruss (2026-10-21, xtensa-esp32-elf-g++ `sizeof`): gyruss::Machine
+Gyruss (2026-10-21, xtensa-esp32-elf-g++ `sizeof`; 2026-10-23 after the
+speed work: 40,544 bytes, + 2,064 B - the 32 output samples' sums `rows_`
+2 KB, the put-off sound writes): gyruss::Machine
 38,480 bytes, the games.cpp wrapper ~38,488: RAM 11 KB (colour / video 2 KB,
 work RAM 4 KB, shared 2 KB, sub CPU 2 KB, sound 1 KB), the sub program
 decrypted for its opcode fetches 8 KB (Konami-1), the tiles decoded by
