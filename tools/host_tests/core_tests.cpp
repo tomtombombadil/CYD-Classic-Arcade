@@ -3,6 +3,7 @@
 #include "../../core/log_pack.h"
 #include "../../core/log_ring.h"
 #include "../../core/rom_store.h"
+#include "../../core/scratch_layout.h"
 #include "../../core/usb_import.h"
 #include "../../emu/rom/crc32.h"
 #include "../../emu/util/inflate.h"
@@ -158,6 +159,49 @@ void test_store()
     rom_store::Store s6;
     s6.open(f);
     check(s6.count() == 0, "a damaged directory reads as empty");
+}
+
+// The loader borrowing the store's free sectors (rom_store forget_erased,
+// core/scratch_layout.h).
+void test_scratch_borrow()
+{
+    FakeFlash f(128 * 1024);
+    rom_store::Store s;
+    s.open(f);
+    const auto a = pattern(5000, 11);
+    check(store_file(s, "a.zip", a), "store before borrowing");
+    // A file that fails part way leaves sectors the store thinks erased
+    const auto junk = pattern(20000, 12);
+    check(s.begin("cut.zip", 20000, crc32::of(junk.data(), 20000)) && s.add(junk.data(), 12000), "half a file");
+    s.abort();
+    // The loader writes ROMs into the free sectors after the files
+    const uint32_t from = (5000 + 4096 + 4095) / 4096 * 4096;
+    for (uint32_t at = from; at < 64 * 1024; at += 4096) f.erase_sector(at);
+    const auto rom = pattern(64 * 1024 - from, 13);
+    f.write(from, rom.data(), uint32_t(rom.size()));
+    s.forget_erased();
+    const auto b = pattern(30000, 14);
+    check(store_file(s, "b.zip", b), "store after the loader borrowed sectors");
+    check(same(s, "a.zip", a) && same(s, "b.zip", b), "both read back whole");
+    rom_store::Store s2;
+    s2.open(f);
+    check(same(s2, "b.zip", b), "and after a restart");
+
+    // Places: regions that fit the area keep their places, the rest go below
+    const uint32_t fits[] = {16384, 8192, 1792};
+    int32_t off[8];
+    scratch_layout::Result r = scratch_layout::place(fits, 3, 128 * 1024, 4096, off);
+    check(off[0] == 4096 && off[1] == 20480 && off[2] == 28672 && r.top == 32768 && r.below == 0,
+          "regions that fit go after the header, as before");
+    const uint32_t big[] = {65536, 49152, 16384, 16384, 16384, 16384};
+    r = scratch_layout::place(big, 6, 128 * 1024, 4096, off);
+    check(off[0] == 4096 && off[1] == 69632 && r.top == 4096 + 65536 + 49152, "the first ones above");
+    check(off[2] == -16384 && off[3] == -32768 && off[4] == -49152 && off[5] == -65536 && r.below == 65536,
+          "the rest below the area");
+    const uint32_t mixed[] = {120000, 8192, 2000};
+    r = scratch_layout::place(mixed, 3, 128 * 1024, 4096, off);
+    check(off[0] == 4096 && off[1] == -8192 && off[2] == 126976 && r.top == 131072 && r.below == 8192,
+          "a later small region still fits above");
 }
 
 // ---- protocol ---------------------------------------------------------------
@@ -380,6 +424,7 @@ int main()
     test_log_ring();
     test_log_pack();
     test_store();
+    test_scratch_borrow();
     test_protocol();
     std::printf("core tests: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

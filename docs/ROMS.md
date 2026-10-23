@@ -53,6 +53,7 @@ File names change between MAME versions (Space Invaders' `invaders.h` is
 | Donkey Kong Jr. | `dkongjr` | Donkey Kong Junior (US set F-2) | - |
 | Elevator Action | `elevator` (or `elevatora`) | Elevator Action (BA3, 4 PCB version, 1.1) / (EA, 5 PCB version, 1.1) | `elevator` for `elevatora` |
 | Gyruss | `gyruss` | Gyruss (Konami) | - |
+| 1942 | `1942` (or `1942a`, `1942b`) | 1942 (Revision B) / (Revision A) / (First Version) | `1942` for `1942a` / `1942b` |
 | Spy Hunter (stretch) | `spyhunt` | Spy Hunter | - |
 | Rolling Thunder (stretch) | `rthunder` | Rolling Thunder (rev 3) | - |
 
@@ -179,6 +180,25 @@ Notes:
   `gyrussk.pr1` `.pr2` `.pr3` (7ed057de de823a81 98782db3)). Tom's zip is
   exactly this set. The Centuri set (`gyrussce`) has other main program
   ROMs (`gya-1.11j` ...) and isn't read; it would be a romset variant.
+- **1942:** MAME's `1942` (Revision B), `1942a` (Revision A) or `1942b`
+  (First Version) - only the five main program chips differ: Revision B
+  `srb-03.m3` ... `srb-07.m7` (d9dafcc3 da0cf924 d102911c 466f8248
+  0d31038c), Revision A `sra-03.m3` `sr-04.m4` ... `sr-07.m7` (40201bab
+  a60ac644 835f7b24 821c6481 5df525e1), First Version `sr-03.m3`
+  (612975f2) with Revision A's other four. The rest is the same in all:
+  sound `sr-01.c11` (bd87f06b), characters `sr-02.f2` (6ebca191),
+  tiles `sr-08.a1` ... `sr-13.a6` (3884d9eb 999cf6e0 8edb273a 3a2726c3
+  1bd3d8bb 658f02c4), sprites `sr-14.l1` `sr-15.l2` `sr-16.n1`
+  `sr-17.n2` (2528bec6 f89287aa 024418f8 e2c7e489), PROMs `sb-0.f1`
+  (6047d91b, characters' lookup), `sb-1.k6` (712ac508, interrupt timing),
+  `sb-4.d6` (4858968d, tiles' lookup), `sb-5.e8` `sb-6.e9` `sb-7.e10`
+  (93ab8153 8ab44f7d f4ade9a4, red / green / blue), `sb-8.k3` (f6fad943,
+  sprites' lookup); `sb-2`, `sb-3` and `sb-9` aren't needed. Tom's zip is
+  an older `1942.zip` holding Revision A under the names `1-n3a.bin`
+  `1-n4.bin` ... `1-n7.bin`, `1-c11.bin`, `1-f2.bin`, `2-a1.bin` ...
+  `2-a6.bin`, `2-l1.bin` `2-l2.bin` `2-n1.bin` `2-n2.bin`, `f01_sb-0.bin`
+  ... `01m_sb-9.bin` - the same CRCs. The bootleg `1942abl` (other chip
+  sizes), the hack `1942h`, `1942w` and the Tecfri `1942p` aren't read.
 - **Only the ROM zips** are needed. MAME also has separate "sample" sets
   (recordings of analog sounds); this emulator doesn't use them - those
   sounds are modelled in the firmware.

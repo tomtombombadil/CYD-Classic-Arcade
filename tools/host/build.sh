@@ -30,7 +30,7 @@ EMU="$ROOT/emu/cpu/z80.cpp $ROOT/emu/cpu/i8080.cpp $ROOT/emu/cpu/i8035.cpp $ROOT
      $ROOT/emu/machines/galaxian_video.cpp $ROOT/emu/sound/galaxian_sound.cpp $ROOT/emu/machines/galaxian.cpp $ROOT/emu/machines/amidar.cpp \
      $ROOT/emu/machines/mappy.cpp \
      $ROOT/emu/cpu/m68705.cpp $ROOT/emu/machines/elevator.cpp \
-     $ROOT/emu/machines/gyruss.cpp"
+     $ROOT/emu/machines/gyruss.cpp $ROOT/emu/machines/c1942.cpp"
 [ -n "$2" ] && EMU="$2"
 g++ -std=c++17 -O2 -Wall -Wextra -o "$OUT/arcade_host" \
     "$ROOT/tools/host/arcade_host.cpp" "$ROOT/tools/host/writers.cpp" $EMU

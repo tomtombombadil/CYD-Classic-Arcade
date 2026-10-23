@@ -40,6 +40,7 @@ maps, chip behaviour, timings, ROM checksums) - never copied.
 | Donkey Kong Jr. | Z80 3.072 MHz | Donkey Kong's board: i8035 sound CPU + DAC, two tile banks, its own analog effects (walk, jump, climb, fall - our models), program chips spread over the map in 2 KB pieces | 224x256 portrait | done: dkong::Machine with the Junior board switched on; ~2x Pac-Man's emulation time (as Donkey Kong) |
 | Elevator Action | Z80 4 MHz + 68705P3 protection MCU (our own 6805 core) | Taito SJ: three scrolling playfields + 24 sprites from character RAM the program fills through a graphics ROM port, a priority PROM, palette RAM; Z80 sound CPU + 3 AY-3-8910 + DAC, a fourth AY on the main board | 256x224 landscape | done: the three CPUs' idle loops skipped (exact), ~1.4x Pac-Man's host instructions a frame (4 AYs); drawn from bit planes, 32 pixels at a time (2026-10-23: ~3x fewer Xtensa instructions); machine 22.0 KB + 74 KB of ROM |
 | Gyruss | Z80 3.072 MHz + Konami-1 (6809 with scrambled opcodes) 1.536 MHz | tiles (2 bits, colour PROMs, some in front of the sprites), 48 sprites of 8x16 rewritten by the sub CPU as the beam goes down; Z80 sound CPU + 5 AY-3-8910 (two through switched RC filters) + i8039 with a DAC | 224x256 portrait | done: the idle loops of all four CPUs skipped (exact); still ~3x Pac-Man's host instructions a frame in play (~2.3x in the attract mode), ~4.5x its PC time - likely too slow for full speed on the ESP32 boards |
+| 1942 | Z80 3 MHz, ROM banks | sound Z80 3 MHz + 2 AY-3-8910; characters, a 512-pixel background of 16x16 3-bit tiles scrolled down the screen (1 pixel every other frame in play), 32 sprites of 16x16 4 bits up to 256 lines tall | 224x256 portrait | done: main and sound CPUs' idle loops skipped (exact), ~1.2x Pac-Man's host instructions a frame emulated; 210 KB of ROM - more than the 128 KB scratch flash, the rest borrowed from the ROM store's free room; the scrolling background changes ~61 % of the panel a picture (~71,000 pixels on 320x480) - fewer pictures a second |
 | Stargate (stretch) | 6809 1 MHz | 6800 sound CPU + DAC | 292x240 landscape | medium-hard |
 | Spy Hunter (stretch) | Z80 | Z80 + 2 AY-8910, 68000 music board | 480x512 portrait | probably too big |
 | Rolling Thunder (stretch) | 2x 6809 1.5 MHz + HD63701 MCU | YM2151 FM + Namco CUS30 + sampled voices, 3 tile layers + sprites, 1.2 MB of ROMs | 288x224 landscape | very hard: ROMs bigger than the ROM partition, FM synthesis |
@@ -58,7 +59,8 @@ its sound one of three ways, and we do what the machine did:
    Elevator Action (four AY-3-8910s - one played by the main CPU, three
    by a sound Z80 - and a DAC on one AY's port);
    Gyruss (five AY-3-8910s and a sound Z80, plus an i8039 playing effects
-   through a DAC - its program from the set, exact);
+   through a DAC - its program from the set, exact); 1942 (two AY-3-8910s
+   and a sound Z80);
    Spy Hunter (AY-8910s). We emulate the chip; the sound is exact.
 2. **A sound CPU with its own program and a DAC** - Donkey Kong's music
    (i8035), Q\*bert's effects (6502), Defender / Stargate (all of it,

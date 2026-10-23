@@ -30,6 +30,7 @@
 #include "machines/mappy.h"
 #include "machines/elevator.h"
 #include "machines/gyruss.h"
+#include "machines/c1942.h"
 
 #include <cstring>
 #include <new>
@@ -825,6 +826,47 @@ const ButtonName kGyrussButtons[] = {
     {"start1", gyruss::kStart1}, {"start2", gyruss::kStart2}, {"service", gyruss::kService},
 };
 
+// ---- 1942 ---------------------------------------------------------------------
+
+class C1942 : public Machine {
+public:
+    void init(const uint8_t* const* r, uint32_t rate, bool swap) override
+    {
+        using namespace c1942;
+        m_.init({r[kRegionMain0], r[kRegionMain1], {r[kRegionBank0], r[kRegionBank1], r[kRegionBank2]},
+                 r[kRegionSound], r[kRegionChars], r[kRegionTiles], r[kRegionSprites], r[kRegionProms]},
+                rate, swap);
+    }
+    // No demo sounds switch (MAME's DIP list has none; the attract mode is
+    // silent).
+    void set_dips(uint8_t d) override { m_.set_dips(d); }
+    void set_inputs(uint16_t b) override { m_.set_inputs(b); }
+    int  run_frame(int16_t* a, int cap) override { return m_.run_frame(a, cap); }
+    void render_line(int y, uint16_t* out) override { m_.render_line(y, out); }
+    bool snapshot() override { return shot_.take(m_); }
+    void render_snapshot_line(int y, uint16_t* out) override { shot_.render(m_, y, out); }
+    int  watchdog_resets() const override { return m_.watchdog_resets(); }
+
+private:
+    c1942::Machine m_;
+    Shot<c1942::Machine> shot_;
+};
+
+// The 8-way stick; A fires, B loops (the roll) - the cabinet's two buttons
+// by position. Select = coin, Start = 1 player, L = 2 players (they take
+// turns).
+const Control kC1942Controls[] = {
+    {kPadUp, c1942::kUp}, {kPadDown, c1942::kDown}, {kPadLeft, c1942::kLeft},
+    {kPadRight, c1942::kRight}, {kPadA, c1942::kFire}, {kPadB, c1942::kLoop},
+    {kPadSelect, c1942::kCoin}, {kPadStart, c1942::kStart1}, {kPadL, c1942::kStart2},
+};
+
+const ButtonName kC1942Buttons[] = {
+    {"up", c1942::kUp}, {"down", c1942::kDown}, {"left", c1942::kLeft}, {"right", c1942::kRight},
+    {"fire", c1942::kFire}, {"loop", c1942::kLoop}, {"coin", c1942::kCoin}, {"coin2", c1942::kCoin2},
+    {"start1", c1942::kStart1}, {"start2", c1942::kStart2}, {"service", c1942::kService},
+};
+
 // ---- Williams: Robotron: 2084, Defender --------------------------------------
 
 template <williams::Board B> class Williams : public Machine {
@@ -1072,6 +1114,9 @@ const Info kGames[] = {
     {"gyruss", "Gyruss", &gyruss::kRomSet, gyruss::kScreenW, gyruss::kScreenH, Orientation::Portrait,
      gyruss::kCpuClock, gyruss::kCyclesPerFrame, kGyrussControls, COUNT(kGyrussControls), kGyrussButtons,
      COUNT(kGyrussButtons), nullptr, 0, make<Gyruss>, false, false, "Konami", 1983, 170},
+    {"1942", "1942", &c1942::kRomSet, c1942::kScreenW, c1942::kScreenH, Orientation::Portrait,
+     c1942::kCpuClock, c1942::kCyclesPerFrame, kC1942Controls, COUNT(kC1942Controls), kC1942Buttons,
+     COUNT(kC1942Buttons), nullptr, 0, make<C1942>, false, false, "Capcom", 1984, 12},
 };
 
 const int kGameCount = COUNT(kGames);

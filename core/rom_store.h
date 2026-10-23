@@ -56,6 +56,12 @@ public:
     // Forgets every file (the space is reused, sectors erased as written).
     bool clear();
 
+    // Someone else wrote into the free sectors after the files (the game
+    // loader borrows them for ROMs that don't fit its scratch area): they
+    // are erased again before a file reaches them. The sector the files end
+    // in is never lent.
+    void forget_erased();
+
     // Storing a file: begin(), add() its bytes in any pieces, finish().
     // finish() checks the size and CRC and only then adds the directory
     // entry; a file that doesn't finish leaves the store as it was.

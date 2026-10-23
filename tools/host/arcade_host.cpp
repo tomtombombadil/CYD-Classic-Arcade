@@ -64,6 +64,8 @@
 //                         coin2 start1 start2 service tilt;
 //                         gyruss: up down left right fire coin coin2 start1
 //                         start2 service;
+//                         1942: up down left right fire loop coin coin2
+//                         start1 start2 service;
 //                         any game: lx=N / ly=N, the left stick's X / Y
 //                         -512..511 (down positive), e.g.
 //                         "1200+60:lx=-300+fire")

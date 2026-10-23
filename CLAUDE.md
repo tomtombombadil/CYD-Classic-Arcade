@@ -221,7 +221,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   1625 - its Williams logo, qix 190, starwars 90,
   bzone 70 - black until its first picture at 67, galaxian 216 - after
   its cross-hatch test, amidar 193, gyruss 170 - after its grid test and
-  its stars' fade, the rest 30 for the
+  its stars' fade, 1942 12, the rest 30 for the
   first black / garbage frame). The runner runs them before the game loop
   with nothing drawn and the sound thrown away, as fast as the board goes
   (bar, back check and a vTaskDelay(1) for the watchdog only every 32
@@ -302,7 +302,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   measurement.
 - Two cores (v0.14.6, the next step after the speed page; Galaga's busy
   waves on the 4.0"): the tile games (Pac-Man, Ms. Pac-Man, Galaga, Dig
-  Dug, Donkey Kong, Rally-X, Q*bert, Galaxian, Amidar, Dig Dug II, Gyruss) copy their
+  Dug, Donkey Kong, Rally-X, Q*bert, Galaxian, Amidar, Dig Dug II, Gyruss, 1942) copy their
   VideoState after a frame
   (`Machine::snapshot()`, a `Shot<>` in games.cpp, ~2-5 KB allocated at the
   first one) and a "draw" task on core 0 (priority 1, as BTstack's loop;
@@ -978,7 +978,7 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   on; the attract's play sounds and tunes - 6000 frames: peak 18,600 vs
   0). No switch, attract silent on the cabinet: Galaxian, Pac-Man,
   Ms. Pac-Man, Space Invaders, Rally-X, Donkey Kong (and Jr.), Mr. Do!, Burger Time,
-  Asteroids, Tempest, Dig Dug II, Missile Command (MAME's DIP lists have none for these
+  Asteroids, Tempest, Dig Dug II, 1942, Missile Command (MAME's DIP lists have none for these
   sets; Missile Command's attract measured silent, peak 0 over 10,000
   frames),
   Battlezone (no switch either; its program sets the sound-on bit of the
@@ -1547,6 +1547,80 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   ROM 92.5 KB (biggest 8 KB). `boot_frames` 170 (the grid test, then the
   stars fade, the score lines at 170). `--panel` 240x320 / 320x480: 0
   wrong.
+- 1942 (`emu/machines/c1942.*`, game id and zip `1942`, C++ namespace
+  `c1942`; MAME's `1942` (Revision B), `1942a` (Revision A - Tom's zip,
+  old names `1-n3a.bin` ... `01m_sb-9.bin`, same CRCs) and `1942b` as
+  romset variants - only the five main program chips differ; portrait
+  224x256 = the board's 256-pixel lines 16-239 turned as MAME's ROT270:
+  display x = line - 16, display y = 255 - pixel; 262 lines of 192 cycles
+  = 59.64 Hz). Tom: Galagino did it, so it's possible - Galagino (GPL)
+  was read for facts and shortcuts only, nothing taken. Emulated: the main
+  Z80 at 3 MHz (12 MHz / 4; ROM 0000-7FFF, the bank at 8000 = M5 / M6 (8
+  KB, A000-BFFF empty) / M7 / empty by C806, inputs C000-C004 active low,
+  set_dips = DSWA's bonus / lives, coinage 1 coin 1 credit, upright, DSWB
+  defaults; C800 / C801 the two sound commands, C802-C803 scroll, C804 bit
+  4 = sound CPU held in reset (starts at 0 when let go), C805 palette
+  bank, CC00-CC7F sprites, D000 characters, D800 background, E000 RAM; no
+  watchdog), interrupt mode 0 with the RST the timing PROM sb-1 gives
+  (RST 08 at line 109, RST 10 at 240) and the sound CPU's IRQ (lines 44,
+  109, 175, 240), all read from the PROM at init and held until taken
+  (stepped an instruction at a time while raised; a later RST overtakes
+  an untaken one, as MAME's HOLD_LINE), the sound Z80 at 3 MHz (ROM, RAM
+  4000, latches 6000 / 6001, AY 1 8000 / 8001, AY 2 C000 / C001) run to
+  the main CPU's time at each command / reset write and each PROM line,
+  two AY-3-8910s at 1.5 MHz; the six channels mixed evenly (220k each
+  into the pot - MAME's netlist values), a 20 Hz coupling (assumed), x 1.6
+  with a soft knee above 16,000 (play peaks ~18,000-19,500). Video:
+  characters 32 x 32 of 8 x 8 2 bits (code bit 8 = attribute bit 7,
+  colour bits 0-5 through sb-0 to palette 128-143, pen 0 clear) on top;
+  the background 32 x 16 tiles of 16 x 16 3 bits (planes 16 KB apart),
+  per column 16 codes + 16 attributes (bit 7 code bit 8, bit 6 flip Y, 5
+  flip X, 0-4 colour through sb-4), palette bank C805 (x 16), the 9-bit
+  scroll along the board's lines (down the turned screen; 1 pixel every
+  other frame in play); 32 sprites of 16 x 16 4 bits, 16 / 32 / 64 / 256
+  lines tall (byte 1 bits 6-7), X bit 8 = byte 1 bit 4, code bit 7 =
+  byte 1 bit 5, bit 8 = byte 0 bit 7, colour through sb-8, pen 15 clear,
+  slot 0 on top, slots 16-23 only on lines up to 128 and 24-31 from 129
+  (MAME's reading of the board's sprite counter), no wrap past line 255;
+  three colour PROMs through 2.2k / 1k / 470 / 220. Not drawn: flip screen
+  (cocktail). Drawing: a display line is one board pixel column; the
+  background column under it (16 display lines) is decoded once into a
+  3.5 KB strip of palette indices (repeated tiles down the column - open
+  sea - copied), valid while that column's 32 bytes and the bank are the
+  same; characters skip pixel columns that are blank (a byte a character,
+  made at init). Idle skipping, exact (`--hash` identical over 4,000
+  played frames with and without it; `c1942_tests` compares both CPUs'
+  registers, RAM and audio frame by frame): the main task loop at 0087
+  (EI, scan 16 slots at EFC0 for one >= 20, 825 cycles a pass, writes
+  nothing - only while every slot is below 20 and no interrupt is raised)
+  and the sound CPU's EI / JR at 0064 (16 cycles, while no IRQ is
+  raised): from any instruction in the loop the CPU runs a pass itself
+  (two at most); a pass that leaves every register as it found them
+  repeats, so the whole passes to the run's end are skipped (time and R
+  counted); the CPUs run in 1 KB chunks while their loop is known, to be
+  caught coming back into it; ~72K of 100K cycles a frame skipped in the
+  attract mode, ~56K in play. PC (in play, best of 3, the same runs): emu
+  ~0.07 ms (Pac-Man ~0.04), render ~0.08 (Pac-Man ~0.08); callgrind 0.43M
+  host instructions a frame emulated, 0.98M rendered (0.28M of it the
+  strips). The picture's weak spot: the scroll moves the whole background
+  every other frame, so `--panel` 320x480 sends ~71,000 pixels a picture
+  in steady play (61 % of the panel; 48,000 averaged over 6,000 frames
+  with deaths and READY pages), 240x320 ~40,000 - fewer than 60 pictures
+  a second on the boards (by Xevious' 21 a second at 98,000 on the S3,
+  ~25-30 on 320x480); the game itself keeps full speed. Controls: 8-way
+  stick, A fire, B loop (the roll), Select coin, Start 1P, L 2P. No demo
+  sounds switch (attract silent, measured 0). `boot_frames` 12 (garbage,
+  black, then the title). Snapshot for core 0: the VideoState, 3.1 KB.
+  Memory: machine 19.6 KB (Xtensa), ROM 209.8 KB in 10 regions (biggest
+  16 KB) - more than RAM + the 128 KB scratch area, so the loader got a
+  way to borrow the ROM store's free sectors just below the area
+  (`core/scratch_layout.h`, `flash_store::scratch_below()`, negative
+  scratch offsets; `rom_store::Store::forget_erased()` makes the store
+  erase them again before storing a zip there): ~64 KB for 1942 on an
+  ESP32 board (the sprites); every other game keeps its places and
+  header. Needs the store to have that much free (else "Not enough flash
+  room for its ROMs"); the S3 holds it all in PSRAM. **Not yet run on a
+  board** (the loader change included).
 - Idea, later (Tom): Spy Hunter / Rolling Thunder only on ESP32-S3 or -C5
   boards (more RAM / PSRAM). Note: Bluepad32 on S3 / C5 is BLE only, so
   PlayStation / Switch Pro controllers don't work there - Xbox and BLE
