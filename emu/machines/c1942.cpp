@@ -101,22 +101,22 @@ uint16_t rgb565(int r, int g, int b, bool swap)
     return swap ? uint16_t((v >> 8) | (v << 8)) : v;
 }
 
-// kSpread[b]: byte i = bit 7 - i of b (a bit plane's 8 pixels, the left
-// one first, one a byte).
-constexpr uint64_t spread(int b)
+// A bit plane's nibble as 4 pixels, one a byte: kNib[n] byte j = bit 3 - j
+// of n (left pixel first), kNibRev[n] byte j = bit j (a flipped tile).
+constexpr uint32_t nib(int n, bool rev)
 {
-    uint64_t v = 0;
-    for (int i = 0; i < 8; ++i)
-        if (b & (0x80 >> i)) v |= uint64_t(1) << (8 * i);
+    uint32_t v = 0;
+    for (int j = 0; j < 4; ++j)
+        if (n & (rev ? 1 << j : 8 >> j)) v |= uint32_t(1) << (8 * j);
     return v;
 }
-#define C1942_S4(n) spread(n), spread(n + 1), spread(n + 2), spread(n + 3)
-#define C1942_S16(n) C1942_S4(n), C1942_S4(n + 4), C1942_S4(n + 8), C1942_S4(n + 12)
-#define C1942_S64(n) C1942_S16(n), C1942_S16(n + 16), C1942_S16(n + 32), C1942_S16(n + 48)
-constexpr uint64_t kSpread[256] = {C1942_S64(0), C1942_S64(64), C1942_S64(128), C1942_S64(192)};
-#undef C1942_S64
-#undef C1942_S16
-#undef C1942_S4
+#define C1942_N4(n, r) nib(n, r), nib(n + 1, r), nib(n + 2, r), nib(n + 3, r)
+constexpr uint32_t kNib[16] = {C1942_N4(0, false), C1942_N4(4, false), C1942_N4(8, false), C1942_N4(12, false)};
+constexpr uint32_t kNibRev[16] = {C1942_N4(0, true), C1942_N4(4, true), C1942_N4(8, true), C1942_N4(12, true)};
+#undef C1942_N4
+
+// Words of 16-bit pixel rows (the strip, the key bytes): may alias them.
+typedef uint32_t Word __attribute__((may_alias, aligned(4)));
 
 // A colour PROM nibble through 2.2k / 1k / 470 / 220 ohm (bit 0 .. 3).
 int gun(uint8_t nibble)
@@ -256,7 +256,7 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap_rgb565_bytes
     snd_wait_ok_ = std::memcmp(roms.sound + kSoundLoopPc, kSoundLoop, sizeof kSoundLoop) == 0;
 
     dc_r_ = std::exp(-2.0f * 3.14159265f * kDcHz / float(audio_rate));
-    strip_col_ = -1;
+    strip_id_ = -1;
     reset();
 }
 
@@ -560,44 +560,77 @@ int Machine::run_frame(int16_t* audio, int cap)
 
 // --- video -------------------------------------------------------------------------
 
-// One background tile column (16 pixels wide) over the shown lines 16-239
-// (tile rows 1-14): palette indices, strip_[pixel column][line - 16].
-void Machine::decode_strip(const VideoState& vs, int col) const
+// One tile's half (8 pixel columns x 16 lines) into the strip at `o`:
+// `p2` = its bit 2 plane bytes for this half (bit 1, bit 0 0x4000 / 0x8000
+// further), 16 rows; pixel 0 = bit 7 (bit 0 when flipped across).
+template <bool FX>
+static inline void decode_half(const uint8_t* p2, bool fy, const uint16_t* pens, uint16_t* o)
+{
+    constexpr const uint32_t* nt = FX ? kNibRev : kNib;
+    constexpr int sa = FX ? 0 : 4, sb = FX ? 4 : 0;   // the nibble of pixels 0-3, 4-7
+    const uint8_t* q = p2 + (fy ? 15 : 0);
+    const int step = fy ? -1 : 1;
+    for (int ty = 0; ty < 16; ++ty, ++o, q += step) {
+        const int b2 = q[0], b1 = q[0x4000], b0 = q[0x8000];
+        // 4 pixels' 3-bit values, one a byte
+        const uint32_t a = nt[(b2 >> sa) & 15] << 2 | nt[(b1 >> sa) & 15] << 1 | nt[(b0 >> sa) & 15];
+        const uint32_t b = nt[(b2 >> sb) & 15] << 2 | nt[(b1 >> sb) & 15] << 1 | nt[(b0 >> sb) & 15];
+        o[0 * kScreenW] = pens[a & 0xff];
+        o[1 * kScreenW] = pens[(a >> 8) & 0xff];
+        o[2 * kScreenW] = pens[(a >> 16) & 0xff];
+        o[3 * kScreenW] = pens[a >> 24];
+        o[4 * kScreenW] = pens[b & 0xff];
+        o[5 * kScreenW] = pens[(b >> 8) & 0xff];
+        o[6 * kScreenW] = pens[(b >> 16) & 0xff];
+        o[7 * kScreenW] = pens[b >> 24];
+    }
+}
+
+// Half a background tile column (8 pixel columns: half 0 = the tiles'
+// left halves) over the shown lines 16-239 (tile rows 1-14): RGB565 pens,
+// strip_[pixel column][line - 16]. A tile the same as one higher in the
+// column (open sea) is copied.
+void Machine::decode_strip(const VideoState& vs, int col, int half) const
 {
     const uint8_t* c = vs.bg + col * 32;
-    const uint8_t bankbits = uint8_t(vs.palette_bank << 4);
+    const int bankbits = vs.palette_bank << 4;
     for (int r = 1; r < 15; ++r) {
         const uint8_t attr = c[16 + r];
         const int code = c[r] | ((attr & 0x80) << 1);
-        // The same tile higher in the column (open sea): copied
+        const int at0 = (r - 1) * 16;
         int same = 0;
-        for (int q = 1; q < r && !same; ++q)
-            if (c[q] == c[r] && c[16 + q] == attr) same = q;
+        for (int q = 1; q < r; ++q)
+            if (c[q] == c[r] && c[16 + q] == attr) {
+                same = q;
+                break;
+            }
         if (same) {
-            for (int tx = 0; tx < 16; ++tx) std::memcpy(&strip_[tx][(r - 1) * 16], &strip_[tx][(same - 1) * 16], 16);
+            const int from = (same - 1) * 16;
+            for (int tx = 0; tx < 8; ++tx) {
+                const Word* s = reinterpret_cast<const Word*>(&strip_[tx][from]);
+                Word* d = reinterpret_cast<Word*>(&strip_[tx][at0]);
+                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+                d[4] = s[4]; d[5] = s[5]; d[6] = s[6]; d[7] = s[7];
+            }
             continue;
         }
+        // The tile's 8 pens (its colour through the lookup PROM, the bank)
+        uint16_t pens[8];
         const uint8_t* lut = tile_lut_ + (attr & 0x1f) * 8;
-        const uint8_t* p2 = roms_.tiles + code * 32;          // bit 2
-        const uint8_t* p1 = p2 + 0x4000;                      // bit 1
-        const uint8_t* p0 = p2 + 0x8000;                      // bit 0
+        for (int v = 0; v < 8; ++v) pens[v] = palette_[bankbits | lut[v]];
         const bool fx = attr & 0x20, fy = attr & 0x40;
-        for (int ty = 0; ty < 16; ++ty) {
-            const int sr = fy ? 15 - ty : ty;
-            const int at = (r - 1) * 16 + ty;
-            for (int h = 0; h < 2; ++h) {
-                // 8 pixels: byte i = pixel i's 3 bits (left pixel first)
-                const int src = fx ? 1 - h : h;
-                uint64_t v8 = kSpread[p2[src * 16 + sr]] << 2 | kSpread[p1[src * 16 + sr]] << 1 |
-                              kSpread[p0[src * 16 + sr]];
-                if (fx) v8 = __builtin_bswap64(v8);
-                for (int i = 0; i < 8; ++i, v8 >>= 8) strip_[h * 8 + i][at] = uint8_t(bankbits | lut[v8 & 7]);
-            }
-        }
+        // Pixel columns 0-7 of this half: from the tile's own half (the
+        // other one when flipped), bit 7 first (bit 0 first when flipped)
+        const int src = fx ? 1 - half : half;
+        const uint8_t* p2 = roms_.tiles + code * 32 + src * 16;     // bit 2 (then 1, 0)
+        uint16_t* o = &strip_[0][at0];
+        if (fx) decode_half<true>(p2, fy, pens, o);
+        else    decode_half<false>(p2, fy, pens, o);
     }
-    std::memcpy(strip_key_, c, 32);
-    strip_key_[32] = vs.palette_bank;
-    strip_col_ = col;
+    const Word* k = reinterpret_cast<const Word*>(c);
+    for (int i = 0; i < 8; ++i) strip_key_[i] = k[i];
+    strip_bank_ = vs.palette_bank;
+    strip_id_ = col * 2 + half;
 }
 
 void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
@@ -607,12 +640,15 @@ void Machine::render_line(const VideoState& vs, int y, uint16_t* out) const
 
     // Background
     const int mx = (x + vs.scroll) & 511;
-    const int col = mx >> 4;
-    const uint8_t* key = vs.bg + col * 32;
-    if (strip_col_ != col || strip_key_[32] != vs.palette_bank || std::memcmp(strip_key_, key, 32) != 0)
-        decode_strip(vs, col);
-    const uint8_t* s = strip_[mx & 15];
-    for (int i = 0; i < kScreenW; ++i) out[i] = palette_[s[i]];
+    const int id = mx >> 3;     // column x 2 + half
+    {
+        const Word* k = reinterpret_cast<const Word*>(vs.bg + (mx >> 4) * 32);
+        if (strip_id_ != id || strip_bank_ != vs.palette_bank || ((k[0] ^ strip_key_[0]) | (k[1] ^ strip_key_[1]) |
+            (k[2] ^ strip_key_[2]) | (k[3] ^ strip_key_[3]) | (k[4] ^ strip_key_[4]) | (k[5] ^ strip_key_[5]) |
+            (k[6] ^ strip_key_[6]) | (k[7] ^ strip_key_[7])) != 0)
+            decode_strip(vs, mx >> 4, id & 1);
+    }
+    std::memcpy(out, strip_[mx & 7], sizeof strip_[0]);
 
     // Sprites: slot 0 on top (drawn last); 16-23 only on lines up to 128,
     // 24-31 only from 129.
