@@ -130,7 +130,7 @@ constexpr float kOutGain = 9.0f;          // play peaks ~20,000 (PC runs)
 inline float flush_tiny(float v)
 {
     uint32_t bits;
-    std::memcpy(&bits, &v, 4);
+    __builtin_memcpy(&bits, &v, 4);         // (inline: the firmware builds with -fno-builtin-memcpy)
     return (bits & 0x7f800000u) ? v : 0.0f;
 }
 
@@ -258,6 +258,11 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap)
                 std::memcmp(roms.sound + 0x10, kSndRst, sizeof kSndRst) == 0;
     mcu_loop_ = std::memcmp(roms.i8039 + 0x19, kMcuLoop, sizeof kMcuLoop) == 0;
 
+    // The filters' steps by a channel's two capacitor bits (set_filter).
+    for (int b = 0; b < 4; ++b) {
+        const float cap = ((b & 1) ? kCapBit0 : 0) + ((b & 2) ? kCapBit1 : 0);
+        lp_tab_[b] = cap > 0 ? 1.0f - std::exp(-1.0f / (kFilterR * cap * float(audio_rate_))) : 0;
+    }
     out_a_ = 1.0f - std::exp(-2.0f * 3.14159265f * kOutHz / float(audio_rate));
     dc_r_ = std::exp(-2.0f * 3.14159265f * kDcHz / float(audio_rate));
     reset();
@@ -282,6 +287,7 @@ void Machine::reset()
     carry_ = 0;
     sub_due_ = 0;
     sub_lag_ = false;
+    sub_log_n_ = 0;
     cmd_n_ = 0;
     snd_defer_ = false;
     cpu_.map_ram(0xa000, 0x800, shared_);
@@ -337,7 +343,13 @@ void Machine::mem_write(void* ctx, uint16_t addr, uint8_t v)
 {
     Machine& m = *static_cast<Machine*>(ctx);
     if ((addr & 0xf800) == 0xa000) {
-        m.sub_catch_up();
+        // The sub CPU sees it from its turn of this slice on: kept until
+        // the sub CPU runs (sub_catch_up), which then takes it there.
+        if (m.sub_log_n_ == kSubLog) m.sub_catch_up();
+        if (m.sub_lag_) {
+            m.sub_log_[m.sub_log_n_++] = {uint16_t(m.sub_due_), uint16_t(addr & 0x7ff), v};
+            return;
+        }
         m.shared_[addr & 0x7ff] = v;
         return;
     }
@@ -345,11 +357,10 @@ void Machine::mem_write(void* ctx, uint16_t addr, uint8_t v)
     switch (addr & 0x180) {
     case 0x080:                                         // C080: the sound CPU's IRQ
     case 0x100:                                         // C100: the sound command
-        // Done by run_frame() once this instruction ends (the CPU stops):
-        // the sound board runs to now first. (Not from here: nested this
-        // deep, every call costs the boards' register windows a spill.)
-        if (m.cmd_n_ < kMaxCmds) m.cmds_[m.cmd_n_++] = {m.now(), uint8_t((addr & 0x180) == 0x100), v};
-        m.cpu_.stop();
+        // Queued: the sound board runs to now and takes it at the frame's
+        // end (flush_cmds; here only when the queue is full).
+        if (m.cmd_n_ == kMaxCmds) m.flush_cmds();
+        m.cmds_[m.cmd_n_++] = {m.now(), uint8_t((addr & 0x180) == 0x100), v};
         break;
     case 0x180:                                         // C180-C187: LS259
         if ((addr & 7) == 0) {
@@ -391,14 +402,25 @@ uint8_t Machine::sub_opcode(void* ctx, uint16_t addr)
 }
 
 // The sub CPU's turns come after the main CPU's (2 lines each) but are put
-// off until the main CPU touches the shared RAM (its pages are unmapped
-// while the sub CPU is behind), VBLANK or the frame's end: then the sub
-// CPU runs all of them in one go. The same instructions at the same times:
-// nothing it reads changed meanwhile (the main CPU didn't touch the shared
-// RAM, no interrupt came), and where a turn ends never matters to it (a
-// wait, BRA * or an idle skip only runs on to the later end).
+// off until the main CPU reads the shared RAM (its pages are unmapped while
+// the sub CPU is behind), VBLANK or the frame's end: then the sub CPU runs
+// all of them in one go. The main CPU's writes meanwhile are kept with the
+// turn they belong to (sub_log_) and put into the shared RAM when the sub
+// CPU gets there. The same instructions at the same times: what it reads
+// is as it would have been, and where a turn ends never matters to it (a
+// wait, BRA * or an idle skip only runs on to the later end). (~19 sub CPU
+// runs a frame -> ~3: each one cost the S3's instruction cache the 6809's
+// code and then the Z80's again.)
 void Machine::sub_catch_up()
 {
+    // The main CPU's writes kept while it ran ahead, each where the sub CPU
+    // would have seen it.
+    for (int i = 0; i < sub_log_n_; ++i) {
+        const SubWrite& w = sub_log_[i];
+        if (sub_done_ < w.due) run_sub(w.due);
+        shared_[w.addr] = w.v;
+    }
+    sub_log_n_ = 0;
     if (sub_done_ < sub_due_) run_sub(sub_due_);
     if (sub_lag_) {
         sub_lag_ = false;
@@ -709,6 +731,22 @@ void Machine::sound_to(int main_cycle)
     }
 }
 
+void Machine::flush_cmds()
+{
+    for (int i = 0; i < cmd_n_; ++i) {
+        sound_to(cmds_[i].at);
+        if (!cmds_[i].command) {
+            if (!snd_irq_) {
+                snd_irq_ = true;
+                snd_.irq(true, 0xff);
+            }
+        } else {
+            latch_ = cmds_[i].v;
+        }
+    }
+    cmd_n_ = 0;
+}
+
 void Machine::mcu_to(int snd_cycle)
 {
     const int target = int(uint32_t(snd_cycle) * kI8039PerFrame / uint32_t(snd_frame_ ? snd_frame_ : 1));
@@ -869,20 +907,20 @@ int Machine::mcu_idle(int room)
 void Machine::set_filter(int chip, uint8_t bits)
 {
     filter_bits_[chip] = bits;
-    for (int ch = 0; ch < 3; ++ch) {
-        const int b = (bits >> (2 * ch)) & 3;
-        const float cap = ((b & 1) ? kCapBit0 : 0) + ((b & 2) ? kCapBit1 : 0);
-        lp_a_[chip * 3 + ch] = cap > 0 ? 1.0f - std::exp(-1.0f / (kFilterR * cap * float(audio_rate_))) : 0;
-    }
+    for (int ch = 0; ch < 3; ++ch) lp_a_[chip * 3 + ch] = lp_tab_[(bits >> (2 * ch)) & 3];
 }
 
 int16_t Machine::mix_sample(const uint32_t* acc, uint32_t dac_acc, uint32_t clocks)
 {
-    if (clocks != scale_clocks_) {          // a sample is 74 or 75 AY clocks: worked out once
-        scale_clocks_ = clocks;
-        scale_ = clocks ? 1.0f / float(clocks) : 0;
+    // A sample is 74 or 75 AY clocks: 1 / clocks kept for the last two.
+    int slot = clocks == scale_clocks_[0] ? 0 : clocks == scale_clocks_[1] ? 1 : -1;
+    if (slot < 0) {
+        slot = scale_next_;
+        scale_next_ ^= 1;
+        scale_clocks_[slot] = clocks;
+        scale_[slot] = clocks ? 1.0f / float(clocks) : 0;
     }
-    const float scale = scale_;
+    const float scale = scale_[slot];
     float ch[6];
     for (int c = 0; c < 6; ++c) {
         const float x = float(acc[c]) * scale;
@@ -1056,9 +1094,19 @@ void Machine::audio_to(int snd_cycle)
             const int16_t s = mix_sample(rows_[i], rows_[i][15], clocks[i]);
             if (audio_) audio_[audio_done_ + i] = s;
         }
-        // The rows of samples still going (AYs written later) move down.
-        std::memmove(rows_[0], rows_[n], sizeof rows_[0] * (kRows - n));
-        std::memset(rows_[kRows - n], 0, sizeof rows_[0] * n);
+        // The rows of samples still going (AYs written later) move down:
+        // only rows up to the furthest any AY or the DAC has reached can
+        // hold anything (the rest are 0 already).
+        int hi = dac_sample_;
+        for (int k = 0; k < 5; ++k) hi = ay_sample_[k] > hi ? ay_sample_[k] : hi;
+        hi = hi - audio_done_ + 1;
+        if (hi > kRows) hi = kRows;
+        if (hi > n) {
+            std::memmove(rows_[0], rows_[n], sizeof rows_[0] * (hi - n));
+            std::memset(rows_[hi - n], 0, sizeof rows_[0] * n);
+        } else {
+            std::memset(rows_[0], 0, sizeof rows_[0] * hi);
+        }
         audio_done_ += n;
     }
 }
@@ -1112,19 +1160,6 @@ int Machine::run_frame(int16_t* audio, int cap)
         while (done < end) {
             slice_start_ = done;
             done += cpu_.run(end - done);
-            // The sound writes of the instruction it stopped after.
-            for (int i = 0; i < cmd_n_; ++i) {
-                sound_to(cmds_[i].at);
-                if (!cmds_[i].command) {
-                    if (!snd_irq_) {
-                        snd_irq_ = true;
-                        snd_.irq(true, 0xff);
-                    }
-                } else {
-                    latch_ = cmds_[i].v;
-                }
-            }
-            cmd_n_ = 0;
         }
     }
     sub_behind(kCyclesPerFrame / 2);
@@ -1133,6 +1168,7 @@ int Machine::run_frame(int16_t* audio, int cap)
     sub_done_ -= kCyclesPerFrame / 2;
     slice_start_ = 0;
 
+    flush_cmds();
     sound_to(kCyclesPerFrame);
     sync_audio(snd_frame_);
     for (int k = 0; k < 5; ++k) chip_to(k, snd_frame_);    // (no samples asked for)

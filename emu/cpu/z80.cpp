@@ -1,9 +1,10 @@
 // Z80 CPU interpreter - see z80.h.
 //
 // Dispatch: one switch per opcode table. The unprefixed table is a template
-// over the index register (0 = HL, 1 = IX, 2 = IY), so DD / FD opcodes reuse
-// it: H / L become IXH / IXL, (HL) becomes (IX+d), and the opcodes that use
-// (HL) together with H or L keep the real H / L, as the chip does.
+// over the index register (0 = HL, 1 = IX or IY by use_iy_), so DD /
+// FD opcodes reuse it: H / L become IXH / IXL, (HL) becomes (IX+d), and the
+// opcodes that use (HL) together with H or L keep the real H / L, as the chip
+// does.
 #include "z80.h"
 
 namespace z80 {
@@ -340,7 +341,7 @@ int Cpu::take_irq()
 template <int IDX>
 inline __attribute__((always_inline)) int Cpu::exec(uint8_t op)
 {
-    Pair& xy = IDX == 0 ? hl : (IDX == 1 ? ix : iy);
+    Pair& xy = IDX == 0 ? hl : (use_iy_ ? iy : ix);   // DD / FD: one copy of the code
     uint8_t& xh = xy.b.h;
     uint8_t& xl = xy.b.l;
     int t = kCycMain[op] + (IDX ? 4 : 0);
@@ -507,7 +508,8 @@ inline __attribute__((always_inline)) int Cpu::exec(uint8_t op)
     case 0xdd:
         if (IDX != 0) { --pc.w; --r; return 4; }   // repeated prefix: the first is a NOP
         ++r;
-        return exec_ix(fetch());
+        use_iy_ = false;
+        return exec_index(fetch());
     case 0xde: sbc8(fetch()); return t;
     case 0xdf: RST(0x18)
 
@@ -546,15 +548,17 @@ inline __attribute__((always_inline)) int Cpu::exec(uint8_t op)
     case 0xfd:
         if (IDX != 0) { --pc.w; --r; return 4; }
         ++r;
-        return exec_iy(fetch());
+        use_iy_ = true;
+        return exec_index(fetch());
     case 0xfe: cp8(fetch()); return t;
     default:   RST(0x38)    // 0xff
     }
 }
 
-// Plain functions (not template instances) so EMU_HOT can place them.
-EMU_HOT int Cpu::exec_ix(uint8_t op) { return exec<1>(op); }
-EMU_HOT int Cpu::exec_iy(uint8_t op) { return exec<2>(op); }
+// A plain function (not a template instance) so EMU_HOT can place it. One
+// copy for IX and IY (use_iy_ says which): the code is ~18 KB a copy, and the
+// ESP32-S3's instruction cache is 16 KB.
+EMU_HOT int Cpu::exec_index(uint8_t op) { return exec<1>(op); }
 
 EMU_HOT int Cpu::run(int cycles)
 {
