@@ -551,7 +551,8 @@ inline __attribute__((always_inline)) int Cpu::exec(uint8_t op)
         use_iy_ = true;
         return exec_index(fetch());
     case 0xfe: cp8(fetch()); return t;
-    default:   RST(0x38)    // 0xff
+    case 0xff: RST(0x38)
+    default:   __builtin_unreachable();     // (every byte has its case: no range check)
     }
 }
 
@@ -565,27 +566,31 @@ EMU_HOT int Cpu::run(int cycles)
     done_ = 0;
     target_ = cycles;
     while (done_ < target_) {
-        if (nmi_pending_) {
-            nmi_pending_ = false;
-            halted = false;
-            iff1 = 0;
-            ++r;
-            push(pc.w);
-            pc.w = 0x66;
-            done_ += 11;
-            continue;
-        }
-        if (irq_line_ && iff1 && !ei_delay_) {
-            done_ += take_irq();
-            continue;
-        }
-        ei_delay_ = false;
-        if (halted) {
-            // Executes NOPs until an interrupt: burn the rest of the slice.
-            const int n = (target_ - done_ + 3) >> 2;
-            r = uint8_t(r + n);
-            done_ += n * 4;
-            break;
+        // One test for the rare cases (an NMI, an IRQ that can be taken, the
+        // EI delay, HALT), then each as before.
+        if (nmi_pending_ | halted | ei_delay_ | (irq_line_ & (iff1 != 0))) {
+            if (nmi_pending_) {
+                nmi_pending_ = false;
+                halted = false;
+                iff1 = 0;
+                ++r;
+                push(pc.w);
+                pc.w = 0x66;
+                done_ += 11;
+                continue;
+            }
+            if (irq_line_ && iff1 && !ei_delay_) {
+                done_ += take_irq();
+                continue;
+            }
+            ei_delay_ = false;
+            if (halted) {
+                // Executes NOPs until an interrupt: burn the rest of the slice.
+                const int n = (target_ - done_ + 3) >> 2;
+                r = uint8_t(r + n);
+                done_ += n * 4;
+                break;
+            }
         }
         ++r;
         done_ += exec<0>(fetch());   // inlined: no call per instruction
