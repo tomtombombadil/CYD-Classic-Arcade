@@ -127,11 +127,11 @@ constexpr float kOutGain = 9.0f;          // play peaks ~20,000 (PC runs)
 // denormal arithmetic is very slow on many CPUs (here: the PC ran its mix
 // 4x slower on the silent channels' tails), and so small a value never
 // reaches an output sample (they are whole numbers: --hash the same).
+// (Exponent 0 = +-0 or a denormal: the same as |v| < FLT_MIN, NaN kept;
+// float compares only - the S3 moves nothing to the integer registers.)
 inline float flush_tiny(float v)
 {
-    uint32_t bits;
-    __builtin_memcpy(&bits, &v, 4);         // (inline: the firmware builds with -fno-builtin-memcpy)
-    return (bits & 0x7f800000u) ? v : 0.0f;
+    return __builtin_fabsf(v) < 1.17549435e-38f ? 0.0f : v;
 }
 
 // The idle loops (see above).
