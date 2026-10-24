@@ -714,8 +714,8 @@ inline void Cpu::exec_inline(uint8_t op)
     case 0xf9: group<0xf9>(); break; case 0xfa: group<0xfa>(); break; case 0xfb: group<0xfb>(); break; case 0xfc: group<0xfc>(); break;
     case 0xfd: group<0xfd>(); break; case 0xfe: group<0xfe>(); break; case 0xff: group<0xff>(); break;
 
-    default:                                    // nothing else below 0x80
-        break;
+    default:                                    // every byte has its case: no range check
+        __builtin_unreachable();
     }
 }
 

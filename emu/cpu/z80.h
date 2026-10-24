@@ -167,6 +167,7 @@ private:
     int  exec_cb(uint8_t op);
     int  exec_index_cb(uint16_t base);
     int  exec_ed(uint8_t op, int pre);         // pre: T-states of a DD / FD prefix
+    int  ldi_run();                             // ED A0 (and the LDIs right after it)
     int  block_copy(uint8_t op, int spent);
 };
 

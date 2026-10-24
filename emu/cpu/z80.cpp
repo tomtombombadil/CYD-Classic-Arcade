@@ -528,7 +528,11 @@ inline __attribute__((always_inline)) int Cpu::exec(uint8_t op)
     case 0xec: CALL_IF(rF & PF)
     case 0xed:
         ++r;
-        return (IDX ? 4 : 0) + exec_ed(fetch(), IDX ? 4 : 0);
+        if (IDX == 0) {
+            const uint8_t op2 = fetch();
+            return op2 == 0xa0 ? ldi_run() : exec_ed(op2, 0);
+        }
+        return 4 + exec_ed(fetch(), 4);
     case 0xee: xor8(fetch()); return t;
     case 0xef: RST(0x28)
 
@@ -673,6 +677,34 @@ EMU_HOT int Cpu::block_copy(uint8_t op, int spent)
         added += 21;
     }
     return added;
+}
+
+// LDI, and the LDIs straight after it (programs unroll their copies into
+// LDI chains - Gyruss's main CPU ~300 a frame): each further one is run here
+// exactly as run() would run it next - when the slice has time left, no
+// interrupt or HALT is waiting and its two bytes are in directly read
+// pages (so looking at them has no side effect): the same accesses in the
+// same order, R and the time as one instruction at a time. Returns the
+// last one's T-states (the others are in done_ already).
+EMU_HOT int Cpu::ldi_run()
+{
+    for (;;) {
+        const uint8_t v = rd(hl.w);
+        wr(de.w, v);
+        ++hl.w;
+        ++de.w;
+        --bc.w;
+        const uint8_t n = uint8_t(v + rA);
+        rF = uint8_t((rF & (SF | ZF | CF)) | (bc.w ? PF : 0) | (n & XF) | ((n << 4) & YF));
+        if (done_ + 16 >= target_ || (nmi_pending_ | halted | ei_delay_ | (irq_line_ & (iff1 != 0)))) return 16;
+        const uint16_t a1 = uint16_t(pc.w + 1);
+        const uint8_t* p0 = read_page[pc.w >> kPageShift];
+        const uint8_t* p1 = read_page[a1 >> kPageShift];
+        if (!p0 || !p1 || p0[pc.w & (kPageSize - 1)] != 0xed || p1[a1 & (kPageSize - 1)] != 0xa0) return 16;
+        done_ += 16;
+        r = uint8_t(r + 2);
+        pc.w = uint16_t(pc.w + 2);
+    }
 }
 
 EMU_HOT int Cpu::exec_ed(uint8_t op, int pre)
