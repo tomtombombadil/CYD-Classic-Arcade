@@ -309,7 +309,15 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   5 KB stack; 1 ms pause after each picture for the idle task's watchdog)
   renders, hashes and sends that copy while core 1 emulates the next
   frame. A snapshot is taken whenever the task is free, so slow drawing
-  skips pictures, never frames; four frames of sound are queued. Their
+  skips pictures, never frames; four frames of sound are queued. Since
+  2026-10-24 also while core 1 waits for the sound before its next frame
+  (the machine holds the last frame's picture until then; core 1 looks
+  every 1 ms tick): before, a picture a little longer than a frame waited
+  for the end of the next frame, so pictures came every 2 frames (1942 on
+  Tom's S3: 22 ms pictures, 31 a second); a timing model (frames every
+  16.8 ms, emulation 7.4 ms, +-15 % jitter) gives 22 ms -> 39 a second,
+  18 ms -> 48 (no change below 14 ms). Same copy, same core, only taken
+  sooner; nothing else changes. Their
   render_line(vs, ...) read only the copy and tables made at init
   (checked: every member they read is written only in init). Touch shares
   the display's bus on the ESP32-32E boards, so the game loop reads the
@@ -1628,11 +1636,25 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   (MAME's reading of the board's sprite counter), no wrap past line 255;
   three colour PROMs through 2.2k / 1k / 470 / 220. Not drawn: flip screen
   (cocktail). Drawing: a display line is one board pixel column; the
-  background column under it (16 display lines) is decoded once into a
-  3.5 KB strip of palette indices (repeated tiles down the column - open
-  sea - copied), valid while that column's 32 bytes and the bank are the
-  same; characters skip pixel columns that are blank (a byte a character,
-  made at init). Idle skipping, exact (`--hash` identical over 4,000
+  half background column under it (8 display lines) is decoded once into
+  a 3.5 KB strip of RGB565 pens (8 pixel columns x 224 lines; repeated
+  tiles down the column - open sea - copied as words), valid while that
+  column's 32 bytes (compared as 8 words; VideoState is `alignas(4)`) and
+  the bank are the same, and a line's background is one 448-byte memcpy
+  of a strip row; characters skip pixel columns that are blank (a byte a
+  character, made at init). Render cut 2026-10-24, exact (`--hash` of
+  12,000 played, 12,000 played (other inputs) and 6,000 attract frames the
+  same; `c1942_tests`' per-pixel model): v0.24 decoded palette indices
+  through 64-bit spread tables + bswap with scattered byte stores (~13
+  Xtensa instructions a pixel), 16 memcpy calls per repeated tile, a
+  memcmp call and a 224-pixel palette lookup (~6 a pixel) every line; now
+  the tile's 8 pens are looked up once, 4 pixels' 3-bit values come from
+  three 16-entry nibble tables (kNib / kNibRev for flipped tiles, a
+  template per flip, fy by pointer step) - ~9.4 a pixel with the pen
+  lookup (the Xtensa listing). Per picture by the code's count (77 tiles
+  decoded, 158 copied, 256 lines; sprites / characters unchanged ~0.23M):
+  background ~0.73M -> ~0.29M Xtensa instructions. PC render 0.12 -> 0.06
+  ms a frame. Idle skipping, exact (`--hash` identical over 4,000
   played frames with and without it; `c1942_tests` compares both CPUs'
   registers, RAM and audio frame by frame): the main task loop at 0087
   (EI, scan 16 slots at EFC0 for one >= 20, 825 cycles a pass, writes
@@ -1654,7 +1676,40 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   ~25-30 on 320x480); the game itself keeps full speed. Tom's 4.0" S3,
   v0.24.1: "59.7 fps (game 59.6), 31 pictures a second, slowest second
   60 / 60, emulation 7.4 ms (worst 15.2), picture 22.2 (worst 51.8),
-  sending 12.5 ms, 46.7K pixels" - sending is over half the picture. Controls: 8-way
+  sending 12.5 ms, 46.7K pixels" - sending is over half the picture.
+  With the render cut and line_diff's (see Drawing) a heavy picture is
+  ~1.93M -> ~1.03M Xtensa instructions (light ~1.23M -> ~0.64M), so render
+  + hash ~9.7 -> ~5.2 ms on the S3 (estimate, not measured), picture
+  ~22 -> ~18 ms; with the sooner snapshots (Two cores) ~48 pictures a
+  second by the timing model (~32 without them). Other boards, same
+  model (ESP32 emulation assumed 11 ms; send at the S3's 0.27 us a pixel,
+  Tom's mix of 46.7K pixels on 320x480 = ~26K on 240x320; render +20 % for
+  ROMs read from flash): 3.5" / 4.0" ESP32 ST7796 ~30 -> ~41; 2.8" / 3.2"
+  ST7789 (80 MHz) ~34 -> ~60; 2.8" ILI9341 (40 MHz, ~13 ms sending) ~30
+  -> ~41. Assessed, not built (2026-10-24): (1) the panels' hardware
+  vertical scroll (VSCRDEF 33h / VSCRSADD 37h on all three controllers):
+  in portrait it moves the panel's rows, which is 1942's scroll direction;
+  a model of it (best shift each picture, segments compared row by row
+  against the shifted panel) cuts play pictures 2 frames apart from ~59K
+  to ~9K pixels on 240x320 (shown 240 x 274: 18 doubled rows break the
+  one-row shift) and ~105K to ~39K on 320x480 (366 rows: the 110 doubled
+  rows can't line up with a one-row shift) - the score / lives
+  characters, sprites and those rows resent. Not built: whether VSCRSADD
+  counts in memory rows with LovyanGFX's rotation 2 (MY | ML set; the
+  ILI9341 datasheet counts the fixed areas from the bottom when ML = 1,
+  ST7789 wants ML = 0 in scroll mode) is a hardware fact per controller;
+  every push's rows would be mapped and split at the wrap; RST is tied to
+  EN and the init lists send no SWRESET, so a crash mid-game would leave
+  the menu scrolled until a boot-time reset of the scroll registers; the
+  shifted score / sprites show for the few ms until resent. Tom would
+  need to test it on all four panels in both Rotate Screen 180 settings,
+  and after a crash. (2) Sending by DMA while the next lines render (S3
+  only; LovyanGFX already DMAs pushes under 1 KB through its flip buffer
+  on every board, bigger strips go 64 bytes at a time by the CPU):
+  picture ~max(render, send) - ~13 ms on the S3, 60 a second when under
+  ~14 ms; needs two strips (+5 KB) and pushImageDMA / waitDMA, and a test
+  on the S3 (pictures and the touch's I2C, the codec) - never on the
+  ESP32-32E boards (v0.2.0). Controls: 8-way
   stick, A fire, B loop (the roll), Select coin, Start 1P, L 2P. No demo
   sounds switch (attract silent, measured 0). `boot_frames` 12 (garbage,
   black, then the title). Snapshot for core 0: the VideoState, 3.1 KB.
@@ -1767,6 +1822,17 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   vs 62.9K (~100 blocks a picture), Dig Dug 1.7K vs 7.8K, Pac-Man 3.0K vs
   12.3K, Rally-X 14.8K vs 29.4K, Star Wars 9.1K vs 36.1K, Defender 6.8K vs
   26.4K, Robotron 5.1K vs 25.7K. Run it after any change to the drawing.
+  Faster, same pushes (2026-10-24): `diff` hashes two segments side by
+  side (two multiply chains) with a pixel pair as one 32-bit load when the
+  line is word-aligned (the same hash values - `seg_hash` is the plain
+  form, used for an odd tail); a scaled row is built 4 pixels an
+  iteration and the line's further rows (scaled up) are memcpy'd from the
+  one above. Xtensa: hash ~4 -> ~2.75 instructions a pixel, the scaled
+  copy ~6 -> ~4.5 a panel pixel, the second row of a doubled line ~6 ->
+  ~0.6. Checked with a copy of arcade_host running main's drawer beside
+  it on the same lines: every push (place, size, pixels' CRC) the same,
+  2.55M pushes over all 26 games x 240x320 / 320x480, 3,000 frames each;
+  `--panel` 0 wrong.
 - Galaga: emulated CPUs, WSG, tiles / sprites / 05XX stars (the 256 stars
   of the LFSR period found once, placed per frame); 54XX explosions are our
   own noise + band-pass model (`emu/sound/namco54.*`). Speedups: sub / sound

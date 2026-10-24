@@ -96,9 +96,9 @@ struct Roms {
 };
 
 // What a picture needs, copied at VBLANK (the snapshot for core 0).
-struct VideoState {
+struct alignas(4) VideoState {
     uint8_t  fg[0x800];      // character codes, then attributes
-    uint8_t  bg[0x400];      // per column: 16 codes, 16 attributes
+    uint8_t  bg[0x400];      // per column: 16 codes, 16 attributes (read as words: 4-aligned)
     uint8_t  spr[0x80];
     uint16_t scroll = 0;
     uint8_t  palette_bank = 0;
@@ -154,7 +154,7 @@ private:
     bool skip_main_wait(int target);
     bool skip_sound_wait(int target);
 
-    void decode_strip(const VideoState& vs, int col) const;
+    void decode_strip(const VideoState& vs, int col, int half) const;
 
     Roms     roms_{};
     z80::Cpu cpu_, snd_;
@@ -206,12 +206,14 @@ private:
     uint8_t  tile_lut_[256] = {};
     uint8_t  char_cols_[512] = {};  // bit k: pixel column k of the character draws
 
-    // The background column being drawn, decoded once for its 16 display
-    // lines: palette indices for each of its 16 pixel columns over the 224
-    // shown lines; valid while its tiles (and the bank) are the same.
-    mutable uint8_t strip_[16][kScreenW] = {};
-    mutable uint8_t strip_key_[33] = {};
-    mutable int     strip_col_ = -1;
+    // Half a background column (8 pixel columns) being drawn, decoded once
+    // for its 8 display lines: the RGB565 pens of its 8 pixel columns over
+    // the 224 shown lines; valid while its column's 32 bytes and the bank
+    // are the same (strip_key_, the bytes as words).
+    alignas(4) mutable uint16_t strip_[8][kScreenW] = {};
+    mutable uint32_t strip_key_[8] = {};
+    mutable int      strip_id_ = -1;     // column x 2 + half, -1 = none
+    mutable int      strip_bank_ = -1;
 
     VideoState state_{};
 };

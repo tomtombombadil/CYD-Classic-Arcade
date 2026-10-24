@@ -117,8 +117,9 @@ the tiles come from the decoded table).
 1942 (2026-10-23, xtensa-esp32-elf-g++ `sizeof`): c1942::Machine 20,048
 bytes (the games.cpp wrapper + 8): RAM 8 KB (work 4, characters 2, sound
 2), background 1 KB, sprites 128 B, the VideoState 3,204 B, the
-background column being drawn 3.5 KB (16 pixel columns x 224 lines of
-palette indices, decoded once per 16 display lines), pens and lookups 1.8
+half background column being drawn 3.5 KB (8 pixel columns x 224 lines of
+RGB565 pens, decoded once per 8 display lines; since 2026-10-24, was 16
+columns of palette indices - same size), pens and lookups 1.8
 KB, which pixel columns of each character draw 512 B, two Z80s 576 B
 each, two AYs 104 B each. Buffers as Amidar's (224 x 256). Snapshot = the
 VideoState, 3,204 B. ROM 209.8 KB in 10 regions (main 16 + 16, banks 16 +
@@ -136,7 +137,7 @@ before (same places, same header - nothing rewritten). Cost to the user:
 nothing while the store has 64 KB free (Tom's ~970 KB); with less, 1942
 says "Not enough flash room for its ROMs". The S3 puts every region in
 PSRAM. The renderer reads the sprite ROMs every line and the tile ROMs
-when it decodes a background column (~17 a picture), from flash there.
+when it decodes half a background column (~34 a picture), from flash there.
 
 The largest single block a game needs is its machine (Star Wars 52.6 KB,
 Robotron / Defender 51.9) or one of Qix's 32 KB halves.

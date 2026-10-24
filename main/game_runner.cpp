@@ -21,9 +21,10 @@
 // state (Machine::snapshot - the tile games) are drawn by a task on core 0
 // while core 1 emulates the next frame, so core 1 only emulates. Core 0
 // otherwise runs Bluetooth, which needs little; the draw task has the same
-// priority as BTstack's loop, so they share it. A snapshot is taken after a
-// frame whenever the draw task is free (drawing slower than the game skips
-// pictures, never frames). The others (vector, Williams, Qix, Mr. Do!,
+// priority as BTstack's loop, so they share it. A snapshot of the last
+// frame is taken whenever the draw task is free - after a frame, or while
+// core 1 waits for the sound before the next one (drawing slower than the
+// game skips pictures, never frames). The others (vector, Williams, Qix, Mr. Do!,
 // Burger Time, Invaders) are drawn between frames on core 1 as before.
 // Touch shares the display's bus on the ESP32-32E boards: the screen and
 // the touch read are kept apart by a mutex.
@@ -359,6 +360,21 @@ void run(int index, AudioRing& ring)
     int worst_frames = -1, worst_drawn = 0;
     uint32_t sec_drawn_base = 0, log_drawn_base = 0, log_lines_base = 0;
     int64_t log_draw_base = 0;
+    // Async: the last frame emulated, not yet copied for core 0; the copy
+    // is taken as soon as core 0 is free - right after the frame, or while
+    // this core waits for the sound before the next one (the machine holds
+    // that frame's picture until then). v0.24: only right after a frame, so
+    // a picture that took a little longer than a frame waited for the end
+    // of the next one (1942 on Tom's S3: pictures of 22 ms, 31 a second).
+    bool shot_due = false, shot_warm = false;
+    auto take_shot = [&]() {
+        shot_due = false;
+        job.warm = shot_warm;
+        if (m->snapshot()) {
+            job.busy = true;
+            xTaskNotifyGive(s_draw);
+        }
+    };
     crash_note::step(g.title, "playing");
     while (!cancelled) {
         in.update(now_ms());
@@ -383,7 +399,12 @@ void run(int index, AudioRing& ring)
 
         const uint32_t queue_target =
             async ? async_target : std::min(queue_max, std::max(frame_samples * 3, draw_est + frame_samples * 2));
-        while (ring.count() > queue_target) vTaskDelay(1);
+        while (ring.count() > queue_target) {
+            // Core 0 got free while this core waits: it draws the frame
+            // just finished now, not after the next one
+            if (shot_due && !job.busy) take_shot();
+            vTaskDelay(1);
+        }
         const int64_t t0 = esp_timer_get_time();
         const int n = m->run_frame(audio, kAudioCap);
         ring.push(audio, uint32_t(n));
@@ -411,14 +432,11 @@ void run(int index, AudioRing& ring)
         }
 
         if (async) {
-            // Core 0 free: it draws this frame's picture from a copy
-            if (!job.busy) {
-                job.warm = warm;
-                if (m->snapshot()) {
-                    job.busy = true;
-                    xTaskNotifyGive(s_draw);
-                }
-            }
+            // Core 0 free: it draws this frame's picture from a copy (else
+            // when it gets free while this core waits for the sound, above)
+            shot_due = true;
+            shot_warm = warm;
+            if (!job.busy) take_shot();
         } else if (ring.count() >= draw_est + frame_samples / 2) {
             // (With less sound queued than a draw takes, it's skipped.)
             // Only the changed segments of each line go (line_diff::Drawer).

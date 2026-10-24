@@ -13,6 +13,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 namespace line_diff {
 
@@ -35,23 +36,64 @@ inline Layout layout(int width)
 
 inline uint32_t rotl(uint32_t v, int n) { return (v << n) | (v >> (32 - n)); }
 
+// One segment's hash: `w` pixels from `p`.
+inline uint32_t seg_hash(const uint16_t* p, int w)
+{
+    uint32_t h = 2166136261u;
+    int x = 0;
+    for (; x + 1 < w; x += 2) h = rotl(h ^ (uint32_t(p[x]) | uint32_t(p[x + 1]) << 16), 13) * 0x9E3779B1u;
+    if (x < w) h = rotl(h ^ p[x], 13) * 0x9E3779B1u;
+    return h;
+}
+
+inline uint32_t seg_mix(uint32_t h)
+{
+    h ^= h >> 15;
+    h *= 0x85EBCA6Bu;
+    h ^= h >> 13;
+    return h | 1;   // never 0, the "never sent" mark
+}
+
 // Hashes `line` (width pixels), compares with the stored hashes (`seg`:
 // layout.segs entries; 0 = never sent) and stores the new ones. Returns a
 // bit per segment to send; 0 = unchanged.
+// Two segments are hashed side by side (each hash is a chain of multiplies,
+// so two chains keep the multiplier busy), a pixel pair as one 32-bit load
+// when the line is word-aligned (pixel x | pixel x + 1 << 16, little-endian)
+// - the same hashes as one pixel at a time (seg_hash).
 inline uint32_t diff(const Layout& l, const uint16_t* line, uint32_t* seg)
 {
     uint32_t mask = 0;
-    for (int s = 0; s < l.segs; ++s) {
+    int s = 0;
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    typedef uint32_t Word __attribute__((may_alias, aligned(4)));
+    if (!(reinterpret_cast<uintptr_t>(line) & 3) && !(l.seg_w & 1)) {
+        const int pairs = l.seg_w >> 1;
+        for (; s + 1 < l.segs && (s + 2) * l.seg_w <= l.width; s += 2) {
+            const Word* p = reinterpret_cast<const Word*>(line + s * l.seg_w);
+            const Word* q = p + pairs;
+            uint32_t h0 = 2166136261u, h1 = 2166136261u;
+            for (int i = 0; i < pairs; ++i) {
+                h0 = rotl(h0 ^ p[i], 13) * 0x9E3779B1u;
+                h1 = rotl(h1 ^ q[i], 13) * 0x9E3779B1u;
+            }
+            h0 = seg_mix(h0);
+            h1 = seg_mix(h1);
+            if (h0 != seg[s]) {
+                seg[s] = h0;
+                mask |= 1u << s;
+            }
+            if (h1 != seg[s + 1]) {
+                seg[s + 1] = h1;
+                mask |= 2u << s;
+            }
+        }
+    }
+#endif
+    for (; s < l.segs; ++s) {
         const int x0 = s * l.seg_w;
         const int x1 = x0 + l.seg_w < l.width ? x0 + l.seg_w : l.width;
-        uint32_t h = 2166136261u;
-        int x = x0;
-        for (; x + 1 < x1; x += 2) h = rotl(h ^ (uint32_t(line[x]) | uint32_t(line[x + 1]) << 16), 13) * 0x9E3779B1u;
-        if (x < x1) h = rotl(h ^ line[x], 13) * 0x9E3779B1u;
-        h ^= h >> 15;
-        h *= 0x85EBCA6Bu;
-        h ^= h >> 13;
-        h |= 1;   // never 0, the "never sent" mark
+        const uint32_t h = seg_mix(seg_hash(line + x0, x1 - x0));
         if (h != seg[s]) {
             seg[s] = h;
             mask |= 1u << s;
@@ -138,10 +180,22 @@ struct Drawer {
                     sx1 = b;
                 }
                 uint16_t* row = strip + rows * w;
-                if (scaled) {
-                    for (int x = 0; x < w; ++x) row[x] = src[x_map[a + x]];
+                if (r > r0 && rows > 0) {
+                    // the line's next row (scaled up): the same pixels
+                    std::memcpy(row, row - w, size_t(w) * 2);
+                } else if (scaled) {
+                    const uint16_t* m = x_map + a;
+                    int x = 0;
+                    for (; x + 4 <= w; x += 4) {
+                        const uint16_t p0 = src[m[x]], p1 = src[m[x + 1]], p2 = src[m[x + 2]], p3 = src[m[x + 3]];
+                        row[x] = p0;
+                        row[x + 1] = p1;
+                        row[x + 2] = p2;
+                        row[x + 3] = p3;
+                    }
+                    for (; x < w; ++x) row[x] = src[m[x]];
                 } else {
-                    for (int x = 0; x < w; ++x) row[x] = src[a + x];
+                    std::memcpy(row, src + a, size_t(w) * 2);
                 }
                 if (++rows == strip_rows) flush();
             }
