@@ -182,6 +182,8 @@ void Machine::init(const Roms& roms, uint32_t audio_rate, bool swap)
 {
     roms_ = roms;
     audio_rate_ = audio_rate;
+    audio_q_ = uint32_t(uint64_t(audio_rate) * kCyclesPerFrame / kCpuClock);
+    audio_r_ = uint32_t(uint64_t(audio_rate) * kCyclesPerFrame % kCpuClock);
 
     // Palette.
     {
@@ -287,6 +289,7 @@ void Machine::reset()
     carry_ = 0;
     sub_due_ = 0;
     sub_lag_ = false;
+    sub_vbl_ = false;
     sub_log_n_ = 0;
     cmd_n_ = 0;
     snd_defer_ = false;
@@ -403,14 +406,15 @@ uint8_t Machine::sub_opcode(void* ctx, uint16_t addr)
 
 // The sub CPU's turns come after the main CPU's (2 lines each) but are put
 // off until the main CPU reads the shared RAM (its pages are unmapped while
-// the sub CPU is behind), VBLANK or the frame's end: then the sub CPU runs
+// the sub CPU is behind) or the frame's end: then the sub CPU runs
 // all of them in one go. The main CPU's writes meanwhile are kept with the
 // turn they belong to (sub_log_) and put into the shared RAM when the sub
 // CPU gets there. The same instructions at the same times: what it reads
 // is as it would have been, and where a turn ends never matters to it (a
-// wait, BRA * or an idle skip only runs on to the later end). (~19 sub CPU
-// runs a frame -> ~3: each one cost the S3's instruction cache the 6809's
-// code and then the Z80's again.)
+// wait, BRA * or an idle skip only runs on to the later end), and its VBLANK
+// is taken where it reaches line 240 (run_sub). (~19 sub CPU runs a frame
+// -> ~2: each one cost the S3's instruction cache the 6809's code and then
+// the Z80's again.)
 void Machine::sub_catch_up()
 {
     // The main CPU's writes kept while it ran ahead, each where the sub CPU
@@ -438,6 +442,20 @@ void Machine::sub_behind(int due)
 }
 
 void Machine::run_sub(int target)
+{
+    // Its VBLANK (line 240: the sprites' capture, the IRQ) where it gets
+    // there, as when it caught up at the main CPU's VBLANK: nothing it does
+    // reaches the main CPU before the next catch-up anyway.
+    if (sub_vbl_ && target >= kSubVblank) {
+        run_sub_to(kSubVblank);
+        sub_vbl_ = false;
+        capture_sprites();
+        if (sub_irq_mask_) sub_.irq(true);
+    }
+    run_sub_to(target);
+}
+
+void Machine::run_sub_to(int target)
 {
     while (sub_done_ < target) {
         if (idle_skip_) sub_done_ += sub_idle(target - sub_done_);
@@ -474,11 +492,15 @@ void Machine::sprite_write(int offset, uint8_t)
     slot_from_[slot] = uint8_t(line);
 }
 
-void Machine::capture()
+void Machine::capture_tiles()
+{
+    std::memcpy(state_.cram, vcram_, 0x400);
+    std::memcpy(state_.vram, vcram_ + 0x400, 0x400);
+}
+
+void Machine::capture_sprites()
 {
     VideoState& vs = state_;
-    std::memcpy(vs.cram, vcram_, 0x400);
-    std::memcpy(vs.vram, vcram_ + 0x400, 0x400);
     // Close every slot at the frame's last line.
     for (int slot = 0; slot < kMaxSprites; ++slot) {
         if (slot_from_[slot] >= kVblankLine || entries_ >= kMaxEntries) continue;
@@ -1113,27 +1135,38 @@ void Machine::audio_to(int snd_cycle)
 
 // --- frame ---------------------------------------------------------------------------------
 
+// The main CPU's side of VBLANK; the sub CPU's comes when it gets to line
+// 240 (run_sub).
 void Machine::vblank()
 {
-    capture();
+    capture_tiles();
     if (nmi_mask_ && !nmi_line_) {
         nmi_line_ = true;
         nmi_now_ = true;
         cpu_.nmi();
     }
-    if (sub_irq_mask_) sub_.irq(true);
+    sub_vbl_ = true;
 }
 
 int Machine::run_frame(int16_t* audio, int cap)
 {
     // The sound board's cycles this frame: 50688 x (14.318 MHz / 4) / 3.072 MHz.
-    snd_rem_ += uint64_t(kCyclesPerFrame) * kSoundXtal;
-    snd_frame_ = int(snd_rem_ / (uint64_t(kCpuClock) * 4));
-    snd_rem_ %= uint64_t(kCpuClock) * 4;
+    // (The remainders stepped along: no 64-bit division a frame - a library
+    // call on the boards.)
+    constexpr uint64_t kSndPerFrame = uint64_t(kCyclesPerFrame) * kSoundXtal, kSndDiv = uint64_t(kCpuClock) * 4;
+    snd_frame_ = int(kSndPerFrame / kSndDiv);
+    snd_rem_ += uint32_t(kSndPerFrame % kSndDiv);
+    if (snd_rem_ >= kSndDiv) {
+        snd_rem_ -= uint32_t(kSndDiv);
+        ++snd_frame_;
+    }
 
-    audio_rem_ += uint64_t(audio_rate_) * kCyclesPerFrame;
-    int n = int(audio_rem_ / kCpuClock);
-    audio_rem_ %= kCpuClock;
+    int n = int(audio_q_);
+    audio_rem_ += audio_r_;
+    if (audio_rem_ >= kCpuClock) {
+        audio_rem_ -= kCpuClock;
+        ++n;
+    }
     if (n > cap) n = cap;
     audio_ = audio && n > 0 ? audio : nullptr;
     audio_n_ = n > 0 ? n : 0;
@@ -1150,10 +1183,7 @@ int Machine::run_frame(int16_t* audio, int cap)
     for (int line = 0; line < kLinesPerFrame; line += kSliceLines) {
         // The sub CPU's turns so far are due before this slice (sub_catch_up).
         sub_behind(line * kCyclesPerLine / 2);
-        if (line == kVblankLine) {
-            sub_catch_up();
-            vblank();
-        }
+        if (line == kVblankLine) vblank();
         const int end = (line + kSliceLines) * kCyclesPerLine;
         if (idle_skip_) done += main_idle(end - done);
         nmi_now_ = false;
