@@ -1452,8 +1452,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   sampled frames of play): 2.2 one-scroll + 0.8 per-column gathers, 9.7
   live spans, 67 nibbles, 17 of 64 words looked up - ~4.5K Xtensa
   instructions by the code's count (v0.23 ~14K): the S3's render should
-  be ~3x faster, ~6-10 ms (picture ~9-13 ms with hash and send) - not yet
-  measured on a board. PC: render 0.114 -> 0.099 ms (Pac-Man 0.061, the
+  be ~3x faster, ~6-10 ms (picture ~9-13 ms with hash and send). Tom's
+  4.0" S3, v0.24.1: "59.2 fps, 48 pics/s, slowest second 59 / 59, emu 6.3
+  ms (worst 18.3), picture 11.1 (worst 45.7), sending 0.8 ms, 3.6K
+  pixels" (v0.23.0: 24 a second, picture 33.6). PC: render 0.114 -> 0.099 ms (Pac-Man 0.061, the
   same run); callgrind 1.55M -> 1.46M host instructions a frame (x86 has
   64-bit words; Pac-Man ~0.79M). `--panel` 240x320 / 320x480: 0 wrong
   (~2,000 / 3,600 pixels a picture). Memory (xtensa): machine 22.0 KB
@@ -1579,7 +1581,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   known). The 4.0" S3 ran other games' emulation at ~140x the PC's wall
   time (Elevator Action 7.2 ms / 0.050, Donkey Kong Jr. 8.0 / 0.056,
   Gyruss 22.0 / 0.16): ~13 ms expected if the board tracks the PC, ~19
-  ms if its FPU never paid for denormals. Controls: the 8-way stick as on
+  ms if its FPU never paid for denormals. Tom's 4.0" S3, v0.24.1: "46.8
+  fps (game 60.6), 47 shown/s, slowest second 36 / 36, emulation 19.5 ms
+  (worst 53.8), picture 9.9 (worst 25.5), sending 2.1 ms, 5.8K pixels" -
+  the ~19 ms case: the S3 gained ~11 %, not the PC's 45 %. Controls: the 8-way stick as on
   the cabinet (it moves the ship round the circle), A (or B) fire, Select
   coin, Start 1P, L 2P. Snapshot for core 0: the VideoState, 4.4 KB.
   Memory: machine 39.6 KB (Xtensa; 37.6 before the 2 KB of sample rows),
@@ -1646,7 +1651,10 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   in steady play (61 % of the panel; 48,000 averaged over 6,000 frames
   with deaths and READY pages), 240x320 ~40,000 - fewer than 60 pictures
   a second on the boards (by Xevious' 21 a second at 98,000 on the S3,
-  ~25-30 on 320x480); the game itself keeps full speed. Controls: 8-way
+  ~25-30 on 320x480); the game itself keeps full speed. Tom's 4.0" S3,
+  v0.24.1: "59.7 fps (game 59.6), 31 pictures a second, slowest second
+  60 / 60, emulation 7.4 ms (worst 15.2), picture 22.2 (worst 51.8),
+  sending 12.5 ms, 46.7K pixels" - sending is over half the picture. Controls: 8-way
   stick, A fire, B loop (the roll), Select coin, Start 1P, L 2P. No demo
   sounds switch (attract silent, measured 0). `boot_frames` 12 (garbage,
   black, then the title). Snapshot for core 0: the VideoState, 3.1 KB.
