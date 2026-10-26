@@ -319,3 +319,10 @@ internal + PSRAM; 214.6 free at app_main, 201.4 before Bluetooth, 165.7
 after the SD import (still 35.7 KB kept - to check), 158 at the menu;
 game area 111-112 KB, 39-41 KB outside; Gyruss used 62 of 110 KB (ROM in
 PSRAM). The 48 KB of bigger caches came out of internal RAM, as expected.
+
+The 35.7 KB "after SD import" on the S3 (2026-10-26): the ui task ran the
+SD import on core 1 while app_main started Bluetooth on core 0 - the two
+overlapped, and the step's drop holds Bluetooth's start (its log line
+"Bluetooth started" came after it). ESP32 v0.15.7: Bluetooth 28 KB.
+v0.24.5: the ui task waits for Bluetooth first (step "Bluetooth up"), so
+"after SD import" measures the import alone.

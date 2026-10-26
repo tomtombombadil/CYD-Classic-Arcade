@@ -45,6 +45,11 @@ void ui_task(void*)
 {
     // The SD card first, finished and its bus released before the display
     // starts: the two SPI buses mustn't be busy with DMA at the same time.
+    // Bluetooth starts on core 0 meanwhile; wait for it first, so the Mem
+    // steps below measure the SD import alone (v0.24.4's "after SD import"
+    // of -36 KB on the S3 was mostly Bluetooth starting at the same time).
+    for (int i = 0; i < 100 && !pad_bt_ready(); ++i) vTaskDelay(pdMS_TO_TICKS(50));
+    memlog::stage("Bluetooth up");
     const bool store = flash_store::open();
     const int copied = store ? sd_import::run(sd_status) : 0;
     memlog::stage("after SD import");
