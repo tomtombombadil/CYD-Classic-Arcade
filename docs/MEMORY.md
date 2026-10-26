@@ -39,7 +39,7 @@ Kong), buffers from the runner's own arithmetic. KB = 1024 bytes.
 | Pac-Man | 14.4 | - | 15.7 / 17.1 | **30.1 / 31.5** | 2.0 | 24.8 | 4 |
 | Galaxian | 14.4 | - | 14.7 / 16.1 | **29.1 / 30.5** | 2.1 | 14.0 | 2 |
 | Amidar | 17.1 | - | 14.7 / 16.1 | **31.8 / 33.2** | 2.1 | 28.0 | 4 |
-| Gyruss | 39.6 | - | 14.7 / 16.1 | **54.3 / 55.7** | 4.3 | 92.5 | 8 |
+| Gyruss | 41.6 | - | 14.7 / 16.1 | **56.3 / 57.7** | 4.3 | 92.5 | 8 |
 | 1942 | 19.6 | - | 14.7 / 16.1 | **34.3 / 35.7** | 3.1 | 209.8 | 16 |
 | Burger Time | 17.6 | - | 14.2 / 15.6 | **31.9 / 33.3** | - | 52.0 | 4 |
 | Missile Command | 18.3 | - | 14.4 / 16.0 | **32.8 / 34.3** | 15.5 | 12.0 | 2 |
@@ -99,7 +99,10 @@ the VideoState, 4,740 B. ROM 76.8 KB in 7 regions (program 32, sound CPU
 the sprite ROMs every line, from flash when they don't fit.
 Gyruss (2026-10-21, xtensa-esp32-elf-g++ `sizeof`; 2026-10-23 after the
 speed work: 40,544 bytes, + 2,064 B - the 32 output samples' sums `rows_`
-2 KB, the put-off sound writes): gyruss::Machine
+2 KB, the put-off sound writes; 2026-10-24 after the S3 work: 42,584
+bytes, + 2,040 B - the main CPU's shared RAM writes kept for the sub CPU
+1,536 B (256 x 6), the frame's sound commands 512 B (64 x 8, was 4), the
+filter steps and 1 / clocks 24 B; the Z80 stays 576 B): gyruss::Machine
 38,480 bytes, the games.cpp wrapper ~38,488: RAM 11 KB (colour / video 2 KB,
 work RAM 4 KB, shared 2 KB, sub CPU 2 KB, sound 1 KB), the sub program
 decrypted for its opcode fetches 8 KB (Konami-1), the tiles decoded by

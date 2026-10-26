@@ -1592,7 +1592,45 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   ms if its FPU never paid for denormals. Tom's 4.0" S3, v0.24.1: "46.8
   fps (game 60.6), 47 shown/s, slowest second 36 / 36, emulation 19.5 ms
   (worst 53.8), picture 9.9 (worst 25.5), sending 2.1 ms, 5.8K pixels" -
-  the ~19 ms case: the S3 gained ~11 %, not the PC's 45 %. Controls: the 8-way stick as on
+  the ~19 ms case: the S3 gained ~11 %, not the PC's 45 %. S3 speed
+  (2026-10-24), measured with `tools/xtensa_sim` (see Testing), not PC
+  times: a frame ran ~1.0M Xtensa instructions (a Z80 instruction ~61, a
+  6809 one ~73, an i8039 one ~49; mix + AYs ~25 %), but the code it runs
+  each frame is ~39 KB against the S3's 16 KB instruction cache, so every
+  frame reloads it (~1,600 simulated misses a frame) - the misses are about
+  half the time or more, and Gyruss has the most code of any game. Changes,
+  all exact (`--hash` of every frame the same over 6,000 attract, 3 x 8,000
+  played, 20,000 attract with demo sounds off, 20,000 played; the 13 other
+  Z80 games, the 6809 games and Burger Time 5,000 each; the simulator's own
+  run gives the PC's pictures, and its audio built without fused
+  multiply-adds): the sound board runs at the frame's end (the main CPU's
+  commands queued, `flush_cmds` - it only listens); the main CPU's shared
+  RAM writes are kept with their turn (`sub_log_`, 256) so the sub CPU runs
+  only at the main CPU's shared RAM reads (~1-2 a frame) and the frame's
+  end, its VBLANK (IRQ, the sprites' capture) taken where it reaches line
+  240 - ~19 runs a frame -> ~2-3; one Z80 copy for DD and FD
+  (`exec_index`: the ~18 KB function was there twice); the Z80's NMI / IRQ /
+  EI delay / HALT tests as one, no switch range checks (Z80, 6809); LDI
+  chains in one go (`ldi_run`, ~300 a frame here); emu/ built with
+  -freorder-blocks-and-partition (components/arcade_core: the rare blocks
+  to each function's end - the usual path runs without taken jumps and
+  fills fewer cache lines; Gyruss -6 % cycles outside misses, -15 %
+  misses; Elevator Action, Donkey Kong Jr. and 1942 gain too); flush_tiny
+  by a float compare, not a memcpy call (the firmware builds with
+  -fno-builtin-memcpy: 8 calls a sample); the filters' steps from a table
+  (no expf a write), 1 / clocks kept for both sample lengths (__divsf3 was
+  a library call ~20 times a frame); the rows moved only as far as
+  written; no 64-bit division a frame. Simulated, a frame: instructions
+  998K -> 866K, cycles outside misses 1.36M -> 1.09M, misses at 16 KB 1,621
+  -> 1,157 (12 KB 2,577 -> 1,792, 8 KB 4,083 -> 2,919, 4 KB 11,914 ->
+  7,842). Fitted to Tom's S3 pages: ~14-15.5 ms expected (19.5 now). A 32
+  KB instruction cache (CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB, 16 KB more
+  internal RAM for every game - not changed) would take the simulated
+  misses to 312 a frame: ~8-10 ms. Tried, no gain in the model:
+  __builtin_expect on the memory callbacks, -Os (files or the rare
+  functions), -O3, -mauto-litpools, the Z80's data accesses out of line,
+  a block-wise mix, skipping silent channels, DEC / INC without rmw().
+  PC time unchanged. Controls: the 8-way stick as on
   the cabinet (it moves the ship round the circle), A (or B) fire, Select
   coin, Start 1P, L 2P. Snapshot for core 0: the VideoState, 4.4 KB.
   Memory: machine 39.6 KB (Xtensa; 37.6 before the 2 KB of sample rows),
@@ -1926,6 +1964,17 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   running hand-assembled 6809 programs (line interrupts, video counter,
   ROM banking, CMOS, palette / video, sound command, watchdog), and the
   Defender board (banks, CMOS, its watchdog, the stick's reverse / thrust).
+- `tools/xtensa_sim/` (Claude's side, 2026-10-24): an ESP32-S3
+  instruction-set simulator with a cycle estimate - `build.sh OUT` builds
+  `xsim` and emu/ for the S3 with the firmware's flags (Espressif's GCC in
+  $XTENSA_TOOLCHAIN); `arcade_host <game> <zip> --frames N --input S --dump
+  DIR` writes the ROM regions and inputs it runs. It runs the real compiled
+  code (its pictures are the PC's, frame for frame) and counts
+  instructions, stalls, taken branches, window spills and the 16 KB
+  instruction cache's misses per function (`--prof`, `--param
+  icache_kb=8`...). Absolute times are rough (the other core isn't
+  simulated): compare versions; its header has the fit to Tom's pages.
+  Use it, not PC times, for S3 speed work.
 - Claude's container can't reach the PlatformIO registry, so firmware
   builds are checked by CI (GitHub Actions) on every push.
 - CI pins PlatformIO 6.1.18: 6.2.0 brings SCons 4.11, which breaks

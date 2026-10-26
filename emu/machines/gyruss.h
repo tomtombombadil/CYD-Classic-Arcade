@@ -165,7 +165,8 @@ private:
     static void    no_out(void*, uint16_t, uint8_t) {}
 
     void vblank();
-    void capture();
+    void capture_tiles();
+    void capture_sprites();
     void sprite_write(int offset, uint8_t v);
     uint8_t in(int port) const;
     int  now() const { return slice_start_ + cpu_.elapsed(); }
@@ -173,10 +174,12 @@ private:
     int  sound_now() const { return snd_done_ + snd_.elapsed(); }
     int  mcu_now() const { return mcu_done_ + mcu_.elapsed(); }
     void run_sub(int target);
+    void run_sub_to(int target);
     void sub_catch_up();            // the sub CPU's turns put off (see gyruss.cpp)
     void sub_behind(int due);
     // Runs the sound CPU to where the main CPU's frame cycle has reached.
     void sound_to(int main_cycle);
+    void flush_cmds();
     // Runs the i8039 to a sound-CPU cycle of this frame, then the audio.
     void sync_audio(int snd_cycle);
     void mcu_to(int snd_cycle);
@@ -213,9 +216,12 @@ private:
     bool     sub_irq_mask_ = false;
     uint8_t  latch_ = 0, latch2_ = 0;
     bool     snd_irq_ = false;      // held until the sound CPU takes it
-    // The main CPU's sound writes in the instruction it stopped after.
+    // The main CPU's sound writes this frame, in order: the sound board runs
+    // to each one's time and takes it at the frame's end (flush_cmds) - it
+    // only listens, so nothing on the main side changes. (One component at
+    // a time keeps the S3's 16 KB instruction cache from thrashing.)
     struct Cmd { int at; uint8_t command; uint8_t v; };     // command 0 = the IRQ, 1 = C100
-    static constexpr int kMaxCmds = 4;
+    static constexpr int kMaxCmds = 64;
     Cmd      cmds_[kMaxCmds] = {};
     int      cmd_n_ = 0;
     // A sound CPU write put off to the end of its instruction (defer_sound):
@@ -233,6 +239,15 @@ private:
     int      sub_done_ = 0;         // sub cycles run this frame
     int      sub_due_ = 0;          // sub cycles it must have run before the main CPU's slice
     bool     sub_lag_ = false;      // behind: the shared RAM unmapped for the main CPU
+    bool     sub_vbl_ = false;      // the main CPU is past VBLANK, the sub CPU not yet
+    static constexpr int kSubVblank = kVblankLine * kCyclesPerLine / 2;
+    // The main CPU's shared RAM writes while the sub CPU is behind, with
+    // the sub cycle from which it sees each (only a main CPU read of the
+    // shared RAM, VBLANK or the frame's end make the sub CPU catch up).
+    struct SubWrite { uint16_t due, addr; uint8_t v; };
+    static constexpr int kSubLog = 256;
+    SubWrite sub_log_[kSubLog] = {};
+    int      sub_log_n_ = 0;
     uint32_t frame_ = 0;
 
     // Sprites: each slot's value since line slot_from_ (writes while the
@@ -245,7 +260,7 @@ private:
     // Sound board time: its cycles this frame (59,062.5 on average, the
     // remainder carried), the total before this frame.
     int      snd_frame_ = 0;
-    uint64_t snd_rem_ = 0;
+    uint32_t snd_rem_ = 0;          // what the frames so far left over (in 1 / (4 x 3.072 MHz) of a sound cycle)
     int      snd_done_ = 0;
     uint64_t snd_base_ = 0;
     uint32_t snd_base10_ = 0;       // snd_base_ % 10240 (the timer's round)
@@ -271,7 +286,8 @@ private:
 
     // Audio: n samples over the frame's sound cycles.
     uint32_t audio_rate_ = 24000;
-    uint64_t audio_rem_ = 0;
+    uint32_t audio_rem_ = 0;        // the same for the samples (in 1 / 3.072 MHz of a sample)
+    uint32_t audio_q_ = 0, audio_r_ = 0;    // audio_rate_ x a frame's cycles / 3.072 MHz, and the remainder
     int16_t* audio_ = nullptr;
     int      audio_n_ = 0, audio_done_ = 0;
     int      ay_clock_[5] = {};     // each AY's sound cycle this frame
@@ -282,8 +298,10 @@ private:
     // DAC's level x sound cycles.
     static constexpr int kRows = 32;
     uint32_t rows_[kRows][16] = {};
-    uint32_t scale_clocks_ = 0;     // mix_sample(): 1 / clocks for the last clocks
-    float    scale_ = 0;
+    uint32_t scale_clocks_[2] = {}; // mix_sample(): 1 / clocks for the last two clocks
+    float    scale_[2] = {};
+    int      scale_next_ = 0;
+    float    lp_tab_[4] = {};       // a channel's filter step by its two capacitor bits
     uint8_t  filter_bits_[2] = {};
     float    lp_a_[6] = {};         // AY 1 / 2's channels: 0 = no capacitor, else the low-pass step
     float    lp_y_[6] = {};

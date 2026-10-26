@@ -113,6 +113,7 @@ private:
     uint8_t irq_vector_ = 0xff;
     bool    nmi_pending_ = false;
     bool    ei_delay_ = false;       // no interrupt right after EI
+    bool    use_iy_ = false;         // exec_index: FD (IY), else DD (IX)
     int     done_ = 0, target_ = 0;
 
     Z80_INLINE uint8_t fetch() { return rd(pc.w++); }
@@ -161,12 +162,12 @@ private:
 
     uint8_t& reg8(int z);           // B C D E H L - A (z != 6)
     int  take_irq();
-    template <int IDX> int exec(uint8_t op);    // inlined into run() (unprefixed) and the two below
-    int  exec_ix(uint8_t op);                   // after DD
-    int  exec_iy(uint8_t op);                   // after FD
+    template <int IDX> int exec(uint8_t op);    // inlined into run() (IDX 0) and exec_index (1)
+    int  exec_index(uint8_t op);                // after DD / FD (use_iy_ set for FD)
     int  exec_cb(uint8_t op);
     int  exec_index_cb(uint16_t base);
     int  exec_ed(uint8_t op, int pre);         // pre: T-states of a DD / FD prefix
+    int  ldi_run();                             // ED A0 (and the LDIs right after it)
     int  block_copy(uint8_t op, int spent);
 };
 

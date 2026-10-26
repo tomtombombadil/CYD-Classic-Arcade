@@ -452,11 +452,11 @@ void test_z80_misc()
     }
 }
 
-// LDIR / LDDR run their repeats in one go (Cpu::block_copy): the result of
-// run(n) must be what stepping one instruction at a time gives - the same
-// registers, R, memory and T-states - whatever the budget, with an
-// interrupt due, an unmapped (callback) page in the way, the copy running
-// over its own bytes, or a DD prefix.
+// LDIR / LDDR run their repeats in one go (Cpu::block_copy), LDI chains too
+// (Cpu::ldi_run): the result of run(n) must be what stepping one
+// instruction at a time gives - the same registers, R, memory and T-states
+// - whatever the budget, with an interrupt due, an unmapped (callback) page
+// in the way, the copy running over its own bytes, or a DD prefix.
 void test_z80_block_copy()
 {
     struct Case {
@@ -473,6 +473,13 @@ void test_z80_block_copy()
         {{0xed, 0xb0, 0x76}, 0x40f0, 0x00f8, 40, false, false},             // over its own bytes
         {{0xdd, 0xed, 0xb0, 0x76}, 0x4000, 0x8000, 40, false, false},       // DD prefix
         {{0xed, 0xb0, 0x76}, 0x4000, 0x8000, 0, false, false},              // BC = 0: 64 KB
+        // LDI chains (Cpu::ldi_run): the same, LDI by LDI
+        {{0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0x76}, 0x4000, 0x8000, 40, false, false},
+        {{0xfb, 0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0x76}, 0x4000, 0x8000, 40, true, false},   // IRQ due
+        {{0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0x76}, 0x43fe, 0x83fe, 40, false, true},         // callbacks
+        {{0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0xed, 0xa0, 0x76}, 0x4000, 0x0102, 40, false, false},        // over the next LDIs
+        {{0xed, 0xa0, 0xed, 0xa0, 0xed, 0xb0, 0x76}, 0x4000, 0x8000, 3, false, false},                     // then LDIR
+        {{0xdd, 0xed, 0xa0, 0xed, 0xa0, 0x76}, 0x4000, 0x8000, 40, false, false},                          // DD prefix
     };
     for (const Case& k : cases)
         for (int budget = 1; budget <= 1500; budget += (budget < 120 ? 1 : 37)) {

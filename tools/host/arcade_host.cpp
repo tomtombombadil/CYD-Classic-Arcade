@@ -73,6 +73,10 @@
 //     --hash FILE         one line per frame: CRC-32 of its picture and of
 //                         its audio (to check that a change leaves the
 //                         emulation exactly as it was)
+//     --dump DIR          for tools/xtensa_sim: writes the ROM regions
+//                         (DIR/r0.bin ...) and each frame's inputs
+//                         (DIR/inputs.bin: u16 buttons, i16 stick X, Y, 0)
+//                         for --frames frames, and stops (nothing is run)
 //
 //   arcade_host --check-table
 //     checks the game table against the firmware's limits (ROM regions)
@@ -374,7 +378,7 @@ int main(int argc, char** argv)
 
     int frames = 600, png_every = 0, dips = -1, demo_sounds = -1, verbose = 0, panel_w = 0, panel_h = 0;
     uint32_t rate = 24000;
-    std::string out_dir = ".", wav_path, script, samples_path, hash_path;
+    std::string out_dir = ".", wav_path, script, samples_path, hash_path, dump_dir;
     std::vector<std::string> paths;
     for (int a = 2; a < argc; ++a) {
         const std::string arg = argv[a];
@@ -398,6 +402,7 @@ int main(int argc, char** argv)
         else if (arg == "--samples") samples_path = value("--samples");
         else if (arg == "--verbose") verbose = 1;
         else if (arg == "--hash") hash_path = value("--hash");
+        else if (arg == "--dump") dump_dir = value("--dump");
         else if (arg == "--panel") {
             const std::string v = value("--panel");
             if (std::sscanf(v.c_str(), "%dx%d", &panel_w, &panel_h) != 2 || panel_w < 64 || panel_h < 64) {
@@ -446,6 +451,23 @@ int main(int argc, char** argv)
     const int variant = romset::pick_variant(set, sources.data(), int(sources.size()));
     if (variant > 0) std::printf("%s: all ROMs found, set %s (%zu files searched)\n", set.title, set.variants[variant - 1], files.size());
     else             std::printf("%s: all ROMs found (%zu files searched)\n", set.title, files.size());
+
+    FILE* dump_inputs = nullptr;
+    if (!dump_dir.empty()) {
+        for (int r = 0; r < set.region_count; ++r) {
+            const std::string path = dump_dir + "/r" + std::to_string(r) + ".bin";
+            FILE* o = std::fopen(path.c_str(), "wb");
+            if (!o || std::fwrite(region_ptrs[size_t(r)], 1, set.regions[r].size, o) != set.regions[r].size) {
+                std::fprintf(stderr, "can't write %s\n", path.c_str());
+                return 2;
+            }
+            std::fclose(o);
+        }
+        if (!(dump_inputs = std::fopen((dump_dir + "/inputs.bin").c_str(), "wb"))) {
+            std::fprintf(stderr, "can't write %s/inputs.bin\n", dump_dir.c_str());
+            return 2;
+        }
+    }
 
     // --- run ---
     std::unique_ptr<games::Machine> m(gi.make());
@@ -575,6 +597,11 @@ int main(int argc, char** argv)
         analog.lx = int16_t(stick);
         analog.ly = int16_t(stick_y);
         m->set_analog(analog);
+        if (dump_inputs) {
+            const int16_t rec[4] = {int16_t(held), analog.lx, analog.ly, 0};
+            std::fwrite(rec, 2, 4, dump_inputs);
+            continue;
+        }
 
         auto t0 = Clock::now();
         const int n = m->run_frame(audio, int(sizeof audio / sizeof audio[0]));
@@ -685,6 +712,11 @@ int main(int argc, char** argv)
     }
     wav.close();
     if (hash_file) std::fclose(hash_file);
+    if (dump_inputs) {
+        std::fclose(dump_inputs);
+        std::printf("dumped %d regions and %d frames of inputs to %s\n", set.region_count, frames, dump_dir.c_str());
+        return 0;
+    }
     if (panel_w) {
         const Panel& p = panel;
         std::printf("panel: %lld pictures (%lld finished, %lld cut short), %lld blocks, %.0f pixels a picture "
