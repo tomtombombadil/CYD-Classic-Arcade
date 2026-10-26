@@ -313,3 +313,9 @@ to check), 218.7 after Bluetooth (BLE), 217.4 after screen + touch,
 Gyruss used 154 of 160 KB (machine 41, ROM 92 in RAM). v0.24.4 adds
 PSRAM and the 32 / 64 KB caches (48 KB more internal RAM for cache):
 expect the area smaller and ROMs in PSRAM - to be measured.
+
+v0.24.4 on the same S3 **(board, Tom's log 2026-10-26)**: heap 272.3 KB
+internal + PSRAM; 214.6 free at app_main, 201.4 before Bluetooth, 165.7
+after the SD import (still 35.7 KB kept - to check), 158 at the menu;
+game area 111-112 KB, 39-41 KB outside; Gyruss used 62 of 110 KB (ROM in
+PSRAM). The 48 KB of bigger caches came out of internal RAM, as expected.

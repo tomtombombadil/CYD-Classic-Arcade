@@ -886,7 +886,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   then had no PSRAM, the default 16 KB instruction / 32 KB data caches
   and the default console (Tom's v0.24.3 log: "Heap: 294.9 KB internal
   in all", Gyruss "ROM 92 KB in RAM", game area 165 KB). Now committed
-  (`!sdkconfig.defaults.esp32s3`): PSRAM, 32 KB / 64 KB caches.
+  (`!sdkconfig.defaults.esp32s3`): PSRAM, 32 KB / 64 KB caches. Tom's
+  S3 on v0.24.4: heap 272.3 KB internal (+ PSRAM), game area 110-112 KB,
+  Gyruss "60.7 fps, 61 shown/s, slowest second 61 / 61, emu 9.9 ms (worst
+  16.0), picture 6.5, send 1.0" - full speed (v0.24.3: 16.6 ms); its ROM
+  in PSRAM, area used 62 of 110 KB; Download Log works.
   Tom owns the 4.0" (FNK0104S, tested since v0.14); he has no 2.8"
   (FNK0104B), so `fnk28_ili9341_cap` stays `custom_board_tested = no`.
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
