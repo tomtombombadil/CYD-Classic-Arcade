@@ -301,3 +301,15 @@ outside the area.
    2.8" has no SD card, panels differ in buffer sizes); a check of each
    game's need against the area before it starts, so the menu can say
    plainly which games a board can't hold.
+
+## 6. The S3 (4.0" FNK0104S), v0.24.3 - without its settings file
+
+Tom's log, 2026-10-26 **(board)**: heap 294.9 KB internal in all (of the
+chip's 512 KB; no PSRAM: `sdkconfig.defaults.esp32s3` wasn't in the
+builds, see CLAUDE.md), 268.9 free at app_main, 255.8 before Bluetooth,
+220.0 after the SD import (35.8 KB not given back - the SDMMC driver?
+to check), 218.7 after Bluetooth (BLE), 217.4 after screen + touch,
+211.2 after sound; game area 165 KB (160 + 5), 39 KB left outside it;
+Gyruss used 154 of 160 KB (machine 41, ROM 92 in RAM). v0.24.4 adds
+PSRAM and the 32 / 64 KB caches (48 KB more internal RAM for cache):
+expect the area smaller and ROMs in PSRAM - to be measured.

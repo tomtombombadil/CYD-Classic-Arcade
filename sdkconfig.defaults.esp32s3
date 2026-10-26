@@ -1,0 +1,27 @@
+# ESP-IDF settings added for ESP32-S3 boards (the Freenove ESP32-S3 Display
+# boards). ESP-IDF reads this after sdkconfig.defaults when the target is
+# esp32s3. Options in sdkconfig.defaults that the S3 doesn't have (the
+# classic-Bluetooth BTDM ones) are ignored: the S3 has Bluetooth LE only.
+
+# ---- 8 MB octal PSRAM (ESP32-S3R8): ROM regions go there ----
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_MALLOC=y
+# Blocks up to 128 KB try internal RAM first (the machines), bigger ones PSRAM
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=131072
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
+
+# ---- Caches as large as they go (ROMs read through them) ----
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+
+# ---- Console on UART0 only: native USB belongs to the ROM loader (which
+# copies the log there itself) ----
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# ---- Bluetooth LE controller (Bluepad32 on the S3: BLE pads only) ----
+CONFIG_BT_CTRL_BLE_MAX_ACT=6
