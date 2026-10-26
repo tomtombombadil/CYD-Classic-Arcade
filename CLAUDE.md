@@ -1592,7 +1592,12 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   ms if its FPU never paid for denormals. Tom's 4.0" S3, v0.24.1: "46.8
   fps (game 60.6), 47 shown/s, slowest second 36 / 36, emulation 19.5 ms
   (worst 53.8), picture 9.9 (worst 25.5), sending 2.1 ms, 5.8K pixels" -
-  the ~19 ms case: the S3 gained ~11 %, not the PC's 45 %. S3 speed
+  the ~19 ms case: the S3 gained ~11 %, not the PC's 45 %. Tom's 4.0" S3, v0.24.3 (the
+  Xtensa round: model said 13.9-15.6 ms): "53.8 fps (game 60.6), 54
+  shown/s, slowest second 43 / 43, emulation 16.6 ms (worst 47.1),
+  picture 9.0, sending 1.8 ms, 6.6K pixels" - still just short; next
+  step would be the S3's 32 KB instruction cache (hot code ~39 KB vs 16
+  KB; costs 16 KB internal RAM - Tom's call). S3 speed
   (2026-10-24), measured with `tools/xtensa_sim` (see Testing), not PC
   times: a frame ran ~1.0M Xtensa instructions (a Z80 instruction ~61, a
   6809 one ~73, an i8039 one ~49; mix + AYs ~25 %), but the code it runs
