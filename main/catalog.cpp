@@ -4,7 +4,9 @@
 #include "arena.h"
 #include "devlog.h"
 #include "flash_store.h"
+#include "sd_import.h"
 #include "core/scratch_layout.h"
+#include "emu/rom/zip.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -16,7 +18,7 @@ namespace catalog {
 namespace {
 
 constexpr const char* kTag = "catalog";
-constexpr int kMaxSources = rom_store::kMaxEntries;
+constexpr int kMaxSources = rom_store::kMaxEntries + 256;   // the store + the card's library
 
 bool s_available[games::kMaxGames] = {};
 char s_error[48] = "";
@@ -33,7 +35,38 @@ int sources(romset::Source* out)
         out[n].len = st.entry(i).size;
         if (out[n].data) ++n;
     }
-    return n;
+    return n + sd_import::card_sources(out + n, kMaxSources - n);
+}
+
+// The card's zips the game needs, read whole into PSRAM in place of their
+// directory images (which can't be unpacked); the card's others dropped.
+// Returns the new count; `held` gets the buffers to free after loading.
+int card_fill(const romset::Set& set, romset::Source* src, int n, uint8_t** held, int& n_held)
+{
+    const int first = n > sd_import::card_count() ? n - sd_import::card_count() : 0;
+    int k = first;
+    for (int i = first; i < n; ++i) {
+        bool needed = false;
+        zip::Reader z;
+        if (z.open(src[i].data, src[i].len)) {
+            uint32_t it = z.begin();
+            zip::Entry e;
+            while (!needed && z.next(it, e))
+                for (int r = 0; r < set.rom_count && !needed; ++r)
+                    needed = set.roms[r].crc == e.crc && set.roms[r].size == e.size;
+        }
+        if (!needed || n_held >= 32) continue;
+        uint32_t len = 0;
+        uint8_t* full = sd_import::card_read(src[i].name, &len);
+        if (!full) continue;
+        held[n_held++] = full;
+        src[k] = src[i];
+        src[k].data = full;
+        src[k].len = len;
+        ++k;
+    }
+    sd_import::card_done();
+    return k;
 }
 
 }  // namespace
@@ -262,7 +295,9 @@ bool load(const games::Info& game, Loaded& out)
     }
     if (ok) {
         flash_store::Lock lock;
-        const int n = sources(src);
+        uint8_t* held[32];
+        int n_held = 0;
+        const int n = card_fill(set, src, sources(src), held, n_held);
         want.variant = romset::pick_variant(set, src, n);
         for (int r = 0; r < set.region_count; ++r)
             if (flash[r]) out.regions[r] = const_cast<uint8_t*>(flash_store::scratch_map(int32_t(sink_ctx.base[r])));
@@ -289,6 +324,7 @@ bool load(const games::Info& game, Loaded& out)
         } else if (!want.count) {
             ok = romset::load(set, src, n, bufs, status);
         }
+        for (int i = 0; i < n_held; ++i) heap_caps_free(held[i]);
     }
     if (scratch_in_area) arena::free(scratch);
     else heap_caps_free(scratch);

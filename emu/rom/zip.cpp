@@ -22,7 +22,9 @@ uint32_t u32(const uint8_t* p) { return uint32_t(p[0] | (p[1] << 8) | (p[2] << 1
 
 bool looks_like_zip(const uint8_t* data, size_t len)
 {
-    return len >= 4 && (u32(data) == kLocalSig || u32(data) == kEndSig);
+    // A directory image (central directory + end record, offset 0 - the
+    // firmware's SD library) reads as a zip too: listing only, no members
+    return len >= 4 && (u32(data) == kLocalSig || u32(data) == kEndSig || u32(data) == kCentralSig);
 }
 
 bool Reader::open(const uint8_t* data, size_t len)

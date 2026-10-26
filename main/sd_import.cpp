@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <esp_heap_caps.h>
 #include <esp_log.h>
 
 #if BOARD_SD_USABLE
@@ -34,6 +35,10 @@ namespace sd_import {
 #if !BOARD_SD_USABLE
 
 int run(Status) { return 0; }
+int card_count() { return 0; }
+int card_sources(romset::Source*, int) { return 0; }
+uint8_t* card_read(const char*, uint32_t*) { return nullptr; }
+void card_done() {}
 
 #else
 
@@ -111,21 +116,22 @@ void unmount(sdmmc_card_t* card)
 #endif  // BOARD_SD_SDMMC
 
 // True when the zip's directory lists a ROM of a known game. Reads only the
-// end record and the central directory.
-bool holds_known_rom(FILE* f, long size)
+// end record and the central directory. With `keep`, the directory image
+// (directory + end record, its offset moved to 0 - it reads as a zip) is
+// left in PSRAM for the caller in *dir / *len.
+bool read_dir(FILE* f, long size, uint8_t** dir, uint32_t* dir_len, bool keep)
 {
     constexpr long kEnd = 22;
     if (size < kEnd) return false;
     uint8_t end[kEnd];
     if (std::fseek(f, size - kEnd, SEEK_SET) != 0 || std::fread(end, 1, kEnd, f) != size_t(kEnd)) return false;
-    auto u16 = [](const uint8_t* p) { return uint32_t(p[0] | p[1] << 8); };
     auto u32 = [](const uint8_t* p) { return uint32_t(p[0] | p[1] << 8 | p[2] << 16 | uint32_t(p[3]) << 24); };
     // MAME zips have no archive comment, so the end record is the last 22 bytes.
     if (u32(end) != 0x06054b50) return false;
     const uint32_t cd_size = u32(end + 12), cd_off = u32(end + 16);
     if (cd_size > 64 * 1024 || uint64_t(cd_off) + cd_size > uint64_t(size)) return false;
-    // The directory followed by the end record, its offset moved to 0, reads as a zip.
-    uint8_t* buf = static_cast<uint8_t*>(std::malloc(cd_size + kEnd));
+    uint8_t* buf = static_cast<uint8_t*>(keep ? heap_caps_malloc(cd_size + kEnd, MALLOC_CAP_SPIRAM)
+                                              : std::malloc(cd_size + kEnd));
     if (!buf) return false;
     bool known = false;
     if (std::fseek(f, long(cd_off), SEEK_SET) == 0 && std::fread(buf, 1, cd_size, f) == cd_size) {
@@ -143,9 +149,18 @@ bool holds_known_rom(FILE* f, long size)
                 }
         }
     }
-    std::free(buf);
+    if (known && keep) {
+        *dir = buf;
+        *dir_len = cd_size + kEnd;
+    } else if (keep) {
+        heap_caps_free(buf);
+    } else {
+        std::free(buf);
+    }
     return known;
 }
+
+bool holds_known_rom(FILE* f, long size) { return read_dir(f, size, nullptr, nullptr, false); }
 
 constexpr size_t kBuf = 4096;   // copy buffer, on the heap only while importing
 
@@ -178,6 +193,39 @@ bool copy(FILE* f, const char* name, long size, uint8_t* buf)
     return st.finish();
 }
 
+#if BOARD_SD_SDMMC
+// The card's library (see sd_import.h): directory images in PSRAM
+constexpr int kMaxCard = 256;
+struct CardZip {
+    char     name[rom_store::kNameMax + 1];
+    uint32_t size;
+    uint8_t* dir;       // central directory + end record (offset 0)
+    uint32_t dir_len;
+};
+CardZip* s_card = nullptr;
+int s_card_n = 0;
+sdmmc_card_t* s_mounted = nullptr;
+
+bool has_psram() { return heap_caps_get_total_size(MALLOC_CAP_SPIRAM) > 0; }
+
+// The zip's directory followed by its end record (offset moved to 0) in
+// PSRAM, if it lists a ROM of a known game
+bool add_card_zip(FILE* f, const char* name, long size)
+{
+    if (!s_card) s_card = static_cast<CardZip*>(heap_caps_calloc(kMaxCard, sizeof(CardZip), MALLOC_CAP_SPIRAM));
+    if (!s_card || s_card_n >= kMaxCard) return false;
+    uint8_t* dir = nullptr;
+    uint32_t len = 0;
+    if (!read_dir(f, size, &dir, &len, true)) return false;
+    CardZip& z = s_card[s_card_n++];
+    std::snprintf(z.name, sizeof z.name, "%s", name);
+    z.size = uint32_t(size);
+    z.dir = dir;
+    z.dir_len = len;
+    return true;
+}
+#endif
+
 }  // namespace
 
 int run(Status status)
@@ -202,6 +250,15 @@ int run(Status status)
             if (already_stored(name, long(stt.st_size))) continue;
             FILE* f = std::fopen(path, "rb");
             if (!f) continue;
+#if BOARD_SD_SDMMC
+            if (has_psram()) {
+                // The library stays on the card (sd_import.h)
+                if (!add_card_zip(f, name, long(stt.st_size)))
+                    devlog::add("SD: %s holds no ROM of a game here: skipped", name);
+                std::fclose(f);
+                continue;
+            }
+#endif
             if (holds_known_rom(f, long(stt.st_size))) {
                 char line[64];
                 std::snprintf(line, sizeof line, "Copying %s", name);
@@ -226,8 +283,62 @@ int run(Status status)
         devlog::add("SD: no %s folder on the card", kFolder + 8);
     }
     unmount(card);
+#if BOARD_SD_SDMMC
+    if (s_card_n) devlog::add("SD: %d zips played from the card (not copied)", s_card_n);
+#endif
     return copied;
 }
+
+#if BOARD_SD_SDMMC
+int card_count() { return s_card_n; }
+
+int card_sources(romset::Source* out, int cap)
+{
+    int n = 0;
+    for (int i = 0; i < s_card_n && n < cap; ++i, ++n) {
+        out[n].name = s_card[i].name;
+        out[n].data = s_card[i].dir;
+        out[n].len = s_card[i].dir_len;
+    }
+    return n;
+}
+
+uint8_t* card_read(const char* name, uint32_t* len)
+{
+    uint32_t size = 0;
+    for (int i = 0; i < s_card_n; ++i)
+        if (std::strcmp(s_card[i].name, name) == 0) size = s_card[i].size;
+    if (!size) return nullptr;
+    *len = size;
+    if (!s_mounted && !mount(&s_mounted)) {
+        s_mounted = nullptr;
+        return nullptr;
+    }
+    char path[300];
+    std::snprintf(path, sizeof path, "%s/%s", kFolder, name);
+    FILE* f = std::fopen(path, "rb");
+    if (!f) return nullptr;
+    uint8_t* buf = static_cast<uint8_t*>(heap_caps_malloc(size, MALLOC_CAP_SPIRAM));
+    if (buf && std::fread(buf, 1, size, f) != size) {
+        heap_caps_free(buf);
+        buf = nullptr;
+    }
+    std::fclose(f);
+    if (!buf) devlog::add("SD: couldn't read %s", name);
+    return buf;
+}
+
+void card_done()
+{
+    if (s_mounted) unmount(s_mounted);
+    s_mounted = nullptr;
+}
+#else
+int card_count() { return 0; }
+int card_sources(romset::Source*, int) { return 0; }
+uint8_t* card_read(const char*, uint32_t*) { return nullptr; }
+void card_done() {}
+#endif
 
 #endif
 

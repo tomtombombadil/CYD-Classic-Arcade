@@ -404,6 +404,21 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   KB, draw 5 -> 3, audio 3 -> 2; `memlog::kStack*`, the S3 keeps its
   sizes), and the reserve outside the area counts free controller slots
   (above).
+- SD card library on the S3 (v0.25.0; Tom, 2026-10-26: "These devices
+  have SD cards, which for our purposes represent virtually unlimited
+  storage ... I don't know why we haven't been doing this all along"):
+  on boards with SDMMC and PSRAM (`sd_import`), the card's zips aren't
+  copied into the ROM store - at start only each one's central directory
+  (+ end record, offset moved to 0) is read into PSRAM as a "directory
+  image", which `zip::looks_like_zip` / `Reader` accept for listing
+  (`catalog::refresh` tells from them which games are complete); a game's
+  start reads the card zips it needs whole into PSRAM (`card_fill`: any
+  ROM of its set listed), unpacks, frees them. Zips already in the store
+  stay there and are used from it. The ESP32 boards still copy (the
+  card's bus there is shared - the 2.8"'s touch, the 32E boards' old DMA
+  trouble - and their RAM + scratch flash bound each game anyway); a
+  board test is needed before they read the card mid-session. Not yet run
+  on the board.
 - ROMs live in flash, not RAM (Tom, 2026-10-17, asked why zips are "in
   memory all the time"): the zips are copied from the SD card / USB into
   the `roms` flash partition (storage, read in place, no RAM); only the
