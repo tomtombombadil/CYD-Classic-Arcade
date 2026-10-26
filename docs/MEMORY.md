@@ -326,3 +326,7 @@ overlapped, and the step's drop holds Bluetooth's start (its log line
 "Bluetooth started" came after it). ESP32 v0.15.7: Bluetooth 28 KB.
 v0.24.5: the ui task waits for Bluetooth first (step "Bluetooth up"), so
 "after SD import" measures the import alone.
+Measured, v0.24.5 on the S3 **(board, Tom's log 2026-10-26)**: before
+Bluetooth 201.4 KB -> Bluetooth started 168.0 (**33.4 KB: Bluetooth**, the
+BLE controller + BTstack + Bluepad32) -> after SD import 167.4 (**0.4-0.5
+KB: the SD import**). The SD code keeps nothing; the 36 KB was Bluetooth.
