@@ -1048,6 +1048,16 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   game. Not explained by reading the code; v0.26.2 checks the heap and the
   LovyanGFX row table (`screen::check()`: after Send Log and after each
   game; a wrong row is put back and logged) - next: Tom's photo and log.
+  v0.26.3 (Tom: "please fix that copy/flash"): LovyanGFX draws into a
+  hidden copy of the frame (`Panel_RgbBounce::_shadow`, 750 KB PSRAM; the
+  row table points there) with auto-display on: at the end of each
+  startWrite / endWrite batch display() copies the changed native area
+  (`_range_mod`; writeImageARGB marked too) to the panel's frame buffer
+  through an 800-pixel row buffer in internal RAM. Every `ui::` drawing
+  function is one batch (`Batch` in ui.cpp; on SPI panels that's one bus
+  transaction, on sprites nothing). Games still write the panel's frame
+  directly (`screen::push`); a LovyanGFX fill in the runner is copied at
+  its own endWrite.
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
   game draws lies in lines 16-240, and 256 scaled down to 240 would drop

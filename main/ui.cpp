@@ -6,6 +6,22 @@
 #include <cstring>
 
 namespace ui {
+
+namespace {
+// One drawing step as one batch: on the 5.0" RGB board LovyanGFX draws into
+// a hidden copy of the screen and the step's changed area reaches the
+// panel only at the batch's end, so a row is never seen half drawn (its
+// background before its text). On the SPI panels it's one bus
+// transaction; on sprites (the menu preview) nothing.
+struct Batch {
+    Gfx& g;
+    explicit Batch(Gfx& gfx) : g(gfx) { g.startWrite(); }
+    ~Batch() { g.endWrite(); }
+    Batch(const Batch&) = delete;
+    Batch& operator=(const Batch&) = delete;
+};
+}  // namespace
+
 namespace {
 
 int font_h(Gfx& g, const lgfx::IFont* f)
@@ -356,6 +372,7 @@ void fit(Gfx& g, const char* text, int max_w, char* out, int cap)
 
 void draw_row(Gfx& g, const ListPage& p, int index)
 {
+    Batch batch(g);
     const Metrics m = metrics(g);
     if (index < 0 || index >= p.count || page_of(m, index) != p.page) return;
     const Item& it = p.items[index];
@@ -394,6 +411,7 @@ void draw_row(Gfx& g, const ListPage& p, int index)
 
 void draw_footer(Gfx& g, const Footer& f)
 {
+    Batch batch(g);
     const Metrics m = metrics(g);
     const int ny = m.h - m.pads_h - m.news_h;
     g.fillRect(0, ny, m.w, m.news_h, kBg);
@@ -444,6 +462,7 @@ void draw_footer(Gfx& g, const Footer& f)
 
 void draw_list(Gfx& g, const ListPage& p, const Footer& f)
 {
+    Batch batch(g);
     const Metrics m = metrics(g);
     g.fillRect(0, m.header_h, m.w, m.h - m.header_h, kBg);
     header(g, m, p.title, p.back, p.gear);
@@ -556,6 +575,7 @@ int text_pages(Gfx& g, const TextPage& p, int* starts, int cap)
 
 void draw_text(Gfx& g, const TextPage& p, const Footer& f, const int* starts, int pages)
 {
+    Batch batch(g);
     const Metrics m = metrics(g);
     g.fillRect(0, m.header_h, m.w, m.h - m.header_h, kBg);
     header(g, m, p.title, true, false);
@@ -568,7 +588,11 @@ void draw_text(Gfx& g, const TextPage& p, const Footer& f, const int* starts, in
     draw_footer(g, f);
 }
 
-void draw_header(Gfx& g, const char* title, bool back, bool gear) { header(g, metrics(g), title, back, gear); }
+void draw_header(Gfx& g, const char* title, bool back, bool gear)
+{
+    Batch batch(g);
+    header(g, metrics(g), title, back, gear);
+}
 
 namespace {
 
@@ -597,6 +621,7 @@ int qr_room(Gfx& g, const QrPage& p)
 
 void draw_qr(Gfx& g, const QrPage& p, const Footer& f)
 {
+    Batch batch(g);
     const Metrics m = metrics(g);
     g.fillRect(0, m.header_h, m.w, m.h - m.header_h, kBg);
     header(g, m, p.title, true, false);
@@ -639,6 +664,7 @@ Target hit_text(Gfx& g, int x, int y, bool paged)
 
 void message(Gfx& g, const char* title, const char* body, uint16_t title_color)
 {
+    Batch batch(g);
     const Metrics m = metrics(g);
     const int x = m.margin * 2, w = m.w - 4 * m.margin;
     const int pad = m.z(10, 16);
@@ -661,6 +687,7 @@ void message(Gfx& g, const char* title, const char* body, uint16_t title_color)
 
 void loading(Gfx& g, const char* game, const char* note, int done, int total, bool full)
 {
+    Batch batch(g);
     const Metrics m = metrics(g);
     const int w = m.w * 3 / 4 < 280 ? m.w - 4 * m.margin : m.w * 3 / 4;
     const int x = (m.w - w) / 2;

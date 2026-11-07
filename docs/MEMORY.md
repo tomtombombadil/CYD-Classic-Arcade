@@ -339,10 +339,10 @@ code (LovyanGFX 1.2.31's sources, ours), not a log: replace with the
 board's "Mem" / "Free blocks" lines once Tom has run it.
 
 PSRAM (8 MB octal, `sdkconfig.defaults.esp32s3`):
-- Frame buffer 800 x 480 x 2 = **768,000 bytes (750 KB)**, one block
-  (Bus_RGB::init, `heap_caps_malloc(MALLOC_CAP_SPIRAM)`), for good. No
-  second buffer (LovyanGFX's RGB bus has one; the LCD streams it
-  continuously).
+- Frame buffer 800 x 480 x 2 = **768,000 bytes (750 KB)**, one block (the
+  ESP-IDF RGB driver's), for good, plus (v0.26.3) the same again for
+  LovyanGFX's hidden drawing copy (menus draw there; each finished step's
+  changed area is copied to the panel - no half-drawn rows). **1.5 MB**.
 - Then as on the 4.0" S3: ROM regions PSRAM first (Gyruss 92.5 KB, 1942
   210 KB), the SD card library's directory images (a few KB a zip) and a
   game's card zips read whole while it loads (freed after). ~7.2 MB left

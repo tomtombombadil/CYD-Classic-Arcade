@@ -29,6 +29,7 @@
 #include <LovyanGFX.hpp>
 #include <lgfx/v1/panel/Panel_FrameBufferBase.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <esp_heap_caps.h>
 #include <esp_lcd_panel_ops.h>
@@ -81,7 +82,24 @@ class Panel_RgbBounce : public lgfx::Panel_FrameBufferBase
 {
     lgfx::Bus_NULL _null_bus;   // nothing to send: no stray bus call can fault
     esp_lcd_panel_handle_t _handle = nullptr;
-    uint16_t* _fb = nullptr;
+    uint16_t* _fb = nullptr;       // the panel's frame buffer (shown)
+    uint16_t* _shadow = nullptr;   // LovyanGFX's drawing (hidden), same layout
+
+    // A rectangle in the current rotation into the changed area (native),
+    // as Panel_FrameBufferBase::display() turns one
+    void mark(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h)
+    {
+        const uint_fast8_t r = _internal_rotation;
+        if (r) {
+            if ((1u << r) & 0b10010110) y = _height - (y + h);
+            if (r & 2) x = _width - (x + w);
+            if (r & 1) { std::swap(x, y); std::swap(w, h); }
+        }
+        _range_mod.left   = std::min<int_fast16_t>(_range_mod.left, x);
+        _range_mod.right  = std::max<int_fast16_t>(_range_mod.right, x + w - 1);
+        _range_mod.top    = std::min<int_fast16_t>(_range_mod.top, y);
+        _range_mod.bottom = std::max<int_fast16_t>(_range_mod.bottom, y + h - 1);
+    }
 
 public:
     esp_lcd_rgb_panel_config_t rgb = {};   // filled in by the board
@@ -104,21 +122,49 @@ public:
         const int w = _cfg.panel_width, h = _cfg.panel_height;
         auto lines = static_cast<uint8_t**>(heap_caps_malloc(size_t(h) * sizeof(void*), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         if (!lines) return false;
-        for (int y = 0; y < h; ++y) lines[y] = reinterpret_cast<uint8_t*>(_fb + size_t(y) * w);
+        // LovyanGFX draws into the hidden copy; display() (at the end of
+        // each startWrite / endWrite batch) copies what changed to the panel
+        _shadow = static_cast<uint16_t*>(heap_caps_calloc(size_t(w) * h, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!_shadow) return false;
+        for (int y = 0; y < h; ++y) lines[y] = reinterpret_cast<uint8_t*>(_shadow + size_t(y) * w);
         _lines_buffer = lines;
+        setAutoDisplay(true);
         return true;
     }
 
     lgfx::color_depth_t setColorDepth(lgfx::color_depth_t) override { return _write_depth; }
     void writeCommand(uint32_t, uint_fast8_t) override {}
     void writeData(uint32_t, uint_fast8_t) override {}
-    // No cache write-back: the bounce buffers are filled through the cache
-    void display(uint_fast16_t, uint_fast16_t, uint_fast16_t, uint_fast16_t) override
+    // The changed area (native rows / columns) from the hidden copy to the
+    // panel's frame buffer. v0.26.1 drew straight into the shown frame: Tom
+    // saw a faint flash whenever a menu row changed (its background filled
+    // before its text). No cache write-back: the bounce buffers are filled
+    // through the cache. Copied through a buffer in internal RAM
+    // (LovyanGFX's copyRect does the same: PSRAM to PSRAM memcpy has
+    // corrupted data on some ESP32s).
+    void display(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h) override
     {
+        if (w && h) mark(x, y, w, h);
+        if (_range_mod.empty() || !_shadow || !_fb) return;
+        const int pw = _cfg.panel_width;
+        const int l = std::max<int>(0, _range_mod.left), r = std::min<int>(pw - 1, _range_mod.right);
+        const int t = std::max<int>(0, _range_mod.top), b = std::min<int>(_cfg.panel_height - 1, _range_mod.bottom);
+        uint16_t row[BOARD_NATIVE_W];
+        const size_t bytes = size_t(r - l + 1) * 2;
+        for (int yy = t; l <= r && yy <= b; ++yy) {
+            std::memcpy(row, _shadow + size_t(yy) * pw + l, bytes);
+            std::memcpy(_fb + size_t(yy) * pw + l, row, bytes);
+        }
         _range_mod.top = INT16_MAX;
         _range_mod.left = INT16_MAX;
         _range_mod.right = 0;
         _range_mod.bottom = 0;
+    }
+    // LovyanGFX's alpha-blended image path doesn't mark what it changed
+    void writeImageARGB(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h, lgfx::pixelcopy_t* param) override
+    {
+        Panel_FrameBufferBase::writeImageARGB(x, y, w, h, param);
+        mark(x, y, w, h);
     }
 
     uint16_t* frame_buffer() const { return _fb; }
@@ -129,11 +175,11 @@ public:
     // and LovyanGFX's writes for it land elsewhere)
     int repair_rows()
     {
-        if (!_lines_buffer || !_fb) return 0;
+        if (!_lines_buffer || !_shadow) return 0;
         int bad = 0;
         const int w = _cfg.panel_width, h = _cfg.panel_height;
         for (int y = 0; y < h; ++y) {
-            uint8_t* want = reinterpret_cast<uint8_t*>(_fb + size_t(y) * w);
+            uint8_t* want = reinterpret_cast<uint8_t*>(_shadow + size_t(y) * w);
             if (_lines_buffer[y] != want) { _lines_buffer[y] = want; ++bad; }
         }
         return bad;

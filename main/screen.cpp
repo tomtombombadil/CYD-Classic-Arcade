@@ -49,7 +49,9 @@ LGFX& lcd() { return s_lcd; }
 bool init()
 {
     constexpr size_t kFrame = size_t(BOARD_NATIVE_W) * BOARD_NATIVE_H * 2;
-    if (heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) < kFrame) {
+    // Two frames: the panel's and LovyanGFX's hidden drawing copy
+    if (heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) < kFrame ||
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) < 2 * kFrame + 64 * 1024) {
         static const char* const kLines[] = {
             "This firmware needs an ESP32-S3 with 8 MB",
             "octal PSRAM (N16R8).",
