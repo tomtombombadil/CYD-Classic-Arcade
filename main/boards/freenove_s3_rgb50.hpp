@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <driver/gpio.h>
 #include <esp_heap_caps.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
@@ -131,6 +132,15 @@ public:
         cb.on_bounce_empty = rgb_fill::fill;
         if (esp_lcd_rgb_panel_register_event_callbacks(_handle, &cb, nullptr) != ESP_OK) return false;
         if (esp_lcd_panel_reset(_handle) != ESP_OK || esp_lcd_panel_init(_handle) != ESP_OK) return false;
+        // The strongest drive on the bus's 20 pins (v0.26.7: the stripes came
+        // with the shown frame right and every refill on time - Tom: after
+        // the board had warmed up, even straight after a reboot; ESP-IDF
+        // leaves them at its default, level 2)
+        for (int i = 0; i < 16; ++i) gpio_set_drive_capability(gpio_num_t(rgb.data_gpio_nums[i]), GPIO_DRIVE_CAP_3);
+        gpio_set_drive_capability(gpio_num_t(rgb.pclk_gpio_num), GPIO_DRIVE_CAP_3);
+        gpio_set_drive_capability(gpio_num_t(rgb.hsync_gpio_num), GPIO_DRIVE_CAP_3);
+        gpio_set_drive_capability(gpio_num_t(rgb.vsync_gpio_num), GPIO_DRIVE_CAP_3);
+        gpio_set_drive_capability(gpio_num_t(rgb.de_gpio_num), GPIO_DRIVE_CAP_3);
         auto lines = static_cast<uint8_t**>(heap_caps_malloc(size_t(h) * sizeof(void*), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         if (!lines) return false;
         // LovyanGFX draws into the hidden copy; display() (at the end of

@@ -1091,6 +1091,17 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   at the Log page); refills next to a frame's start (the vertical blank)
   aren't counted as late. Next: if late, more slack (bigger bounce buffers
   cost internal RAM - the game area) or find what holds the interrupt off.
+  v0.26.6 on the Freenove (Tom): stripes at the Log page straight after a
+  reboot (no game played; the board was warm from playing) with "shown
+  frame = drawing" and "Screen refills: 116295, longest gap 311 us (budget
+  251), longest copy 138 us, late 0" - the frame and the refills are
+  right. Left: the signals to the panel, worse warm. v0.26.7: drive
+  strength 3 (the strongest) on the 20 RGB pins (ESP-IDF's default 2),
+  the chip temperature (temperature_sensor, esp_driver_tsens) on each
+  "Screen refills" line. Also on v0.26.6: Elevator Action locked the
+  board up (twice, power-cycled - the RTC log is lost on power-off: asked
+  Tom to press reset instead, so the next start logs the crash /
+  watchdog).
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
   game draws lies in lines 16-240, and 256 scaled down to 240 would drop

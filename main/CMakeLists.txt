@@ -8,7 +8,7 @@ else()
     # ESP32-S3 boards: I2S sound (ES8311 codec or an amp), SDMMC card slot, native USB
     # The 5.0" RGB board: esp_lcd (its no-PSRAM message), esp_mm (cache
     # write-back), esp_psram / spi_flash (the hardware report)
-    list(APPEND MAIN_REQUIRES esp_driver_i2s esp_driver_sdmmc esp_driver_usb_serial_jtag esp_lcd esp_mm esp_psram spi_flash)
+    list(APPEND MAIN_REQUIRES esp_driver_i2s esp_driver_sdmmc esp_driver_usb_serial_jtag esp_lcd esp_mm esp_psram spi_flash esp_driver_tsens)
 endif()
 idf_component_register(
     SRCS ${MAIN_SRCS}

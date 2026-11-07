@@ -11,6 +11,8 @@
 #if BOARD_RGB_PANEL
 #include "fb_push.h"
 #include "rgb_fill.h"
+
+#include <driver/temperature_sensor.h>
 #include "rgb_fallback.h"
 
 #include <driver/gpio.h>
@@ -131,10 +133,19 @@ void pushed() {}
 void check(const char* when, bool compare)
 {
 #if BOARD_RGB_PANEL
+    // The chip's own temperature (the stripes come once the board is warm)
+    static temperature_sensor_handle_t tsens = nullptr;
+    float celsius = -100.0f;
+    if (!tsens) {
+        temperature_sensor_config_t tc = TEMPERATURE_SENSOR_CONFIG_DEFAULT(10, 80);
+        if (temperature_sensor_install(&tc, &tsens) == ESP_OK) temperature_sensor_enable(tsens);
+        else tsens = nullptr;
+    }
+    if (tsens) temperature_sensor_get_celsius(tsens, &celsius);
     const rgb_fill::Stats st = rgb_fill::take();
-    devlog::add("Screen refills %s: %u, longest gap %u us (budget %u), longest copy %u us, late %u", when,
+    devlog::add("Screen refills %s: %u, longest gap %u us (budget %u), longest copy %u us, late %u; chip %d C", when,
                 unsigned(st.fills), unsigned(st.gap_us_max), unsigned(st.budget_us), unsigned(st.copy_us_max),
-                unsigned(st.late));
+                unsigned(st.late), int(celsius + 0.5f));
     const int bad = s_lcd.repair_rows();
     if (bad) devlog::add("Screen: %d row pointers were wrong %s (put back)", bad, when);
     int first = -1, c0 = 0, c1 = 0;
