@@ -330,3 +330,43 @@ Measured, v0.24.5 on the S3 **(board, Tom's log 2026-10-26)**: before
 Bluetooth 201.4 KB -> Bluetooth started 168.0 (**33.4 KB: Bluetooth**, the
 BLE controller + BTstack + Bluepad32) -> after SD import 167.4 (**0.4-0.5
 KB: the SD import**). The SD code keeps nothing; the 36 KB was Bluetooth.
+
+
+## 7. The 5.0" RGB board (FNK0115Q / Hoysond 5", ESP32-S3 N16R8) - not yet measured
+
+Built 2026-11-07, not run on a board yet. Everything here is from the
+code (LovyanGFX 1.2.31's sources, ours), not a log: replace with the
+board's "Mem" / "Free blocks" lines once Tom has run it.
+
+PSRAM (8 MB octal, `sdkconfig.defaults.esp32s3`):
+- Frame buffer 800 x 480 x 2 = **768,000 bytes (750 KB)**, one block
+  (Bus_RGB::init, `heap_caps_malloc(MALLOC_CAP_SPIRAM)`), for good. No
+  second buffer (LovyanGFX's RGB bus has one; the LCD streams it
+  continuously).
+- Then as on the 4.0" S3: ROM regions PSRAM first (Gyruss 92.5 KB, 1942
+  210 KB), the SD card library's directory images (a few KB a zip) and a
+  game's card zips read whole while it loads (freed after). ~7.2 MB left
+  for those - nothing near the limit.
+
+Internal RAM, on top of the 4.0" S3's budget (section 6):
+- LovyanGFX's RGB panel: the row pointer table 480 x 4 = 1.9 KB (DMA-
+  capable heap) and the DMA descriptors 768,000 / 4,032 = 191 x 12 bytes =
+  2.3 KB; its interrupt. **~4.2 KB**, kept.
+- No SPI display bus, no ES8311 setup; the I2S driver as on the 4.0"
+  (4 DMA buffers of 256 frames).
+- `fb_push::Frame` 24 bytes. The board report: 7 x 64 bytes of text
+  (static, 0.5 KB).
+- Game runner strips: the picture is 480 wide (portrait, 2.14x) or 617
+  (landscape): 480 x 8 x 2 = 7.5 KB / 617 x 8 x 2 = 9.6 KB, from the game
+  area (was 5 KB at 320 wide). x_map 1.0 / 1.2 KB. The segment hashes
+  depend on the game's lines, not the panel (unchanged).
+- Without PSRAM (an N8R2 board): the message's 1-bit picture 800 x 200 /
+  8 = 20 KB and ESP-IDF's two bounce buffers 2 x 800 x 10 x 2 = 32 KB, and
+  nothing else starts (no menu, no game area).
+
+PSRAM bandwidth (the risk, CLAUDE.md): the LCD's DMA reads the whole frame
+buffer every refresh - 816 x 496 clocks at 13 MHz = 32.1 Hz, 750 KB a
+refresh = **~24.6 MB/s, without pause**. Octal PSRAM at 80 MHz moves 16
+bits a clock (DDR), ~160 MB/s at most, shared with the CPUs' cache misses
+(ROM regions, frame buffer write-backs: a write-back of a whole portrait
+picture is up to 750 KB more) and with flash (same memory bus).

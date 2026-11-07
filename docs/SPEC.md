@@ -87,7 +87,8 @@ ESP32-S3 boards (Freenove ESP32-S3 Display, v0.11.0): no DAC on the S3, so
 (MCLK 256 x, codec in slave mode, its DAC volume at 0 dB - our volume
 setting scales the samples, same scale as the DAC path), then its own amp
 (enable GPIO1, low = on, switched off after 0.2 s of silence as on the
-ESP32-32E boards).
+ESP32-32E boards). The 5.0" RGB board (FNK0115Q) has no codec: the same
+I2S stream goes straight into its NS4168 amplifier (no MCLK).
 
 ## 4. Controls
 
@@ -112,6 +113,10 @@ whole 224x288 frame buffer (129 KB) doesn't fit beside Bluetooth. Portrait
 games fill the width of a 240x320 panel with an 8-pixel border; the
 320x480 panels scale up. Landscape games (Asteroids, Defender, Stargate,
 Tempest, Missile Command, Battlezone) turn the panel at game start.
+The 5.0" RGB board (800x480, no panel RAM) keeps a 750 KB frame buffer in
+PSRAM that the S3's LCD peripheral streams out; the runner writes its
+strips straight into it (turned: the panel is landscape, the menus and
+portrait games portrait 480x800) and games scale 2.14x.
 
 ## 6. ROM storage
 

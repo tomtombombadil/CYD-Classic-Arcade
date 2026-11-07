@@ -7,8 +7,8 @@
 // content, then two small lines at the bottom - news (gold) and which
 // controllers are connected. Rows and keys are big enough for a finger or a
 // stylus; nothing scrolls by dragging: long lists have < > page keys.
-// Layout comes from the panel size only, so nothing is clipped on 240x320
-// or 320x480.
+// Layout comes from the panel size only, so nothing is clipped on 240x320,
+// 320x480 or 480x800.
 #pragma once
 
 #define LGFX_USE_V1
@@ -40,10 +40,14 @@ struct Rect {
     bool contains(int px, int py) const { return px >= x && px < x + w && py >= y && py < y + h; }
 };
 
-// Sizes for this panel (240 or 320 wide, portrait)
+// Sizes for this panel (240, 320 or 480 wide, portrait)
 struct Metrics {
     int w, h;
-    bool big;           // 320-wide panels
+    bool big;           // 320 or more wide
+    bool huge;          // 480-wide panels (5.0" 480x800)
+    // A size for this panel: `small` on 240-wide panels, `big` on 320, and
+    // big x 1.5 on 480
+    int z(int small, int big_) const { return huge ? big_ * 3 / 2 : big ? big_ : small; }
     int margin;         // left / right of rows
     int header_h;
     int pager_h;

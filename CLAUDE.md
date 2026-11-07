@@ -908,6 +908,115 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   in PSRAM, area used 62 of 110 KB; Download Log works.
   Tom owns the 4.0" (FNK0104S, tested since v0.14); he has no 2.8"
   (FNK0104B), so `fnk28_ili9341_cap` stays `custom_board_tested = no`.
+- Freenove 5.0" ESP32-S3 IPS display (FNK0115Q; Tom, 2026-11-07, on branch
+  `work/fnk0115`): env `fnk50_rgb_cap`, file
+  `TTB-CYD-CA_5.0in_RGB_Capacitive` (the panel IC isn't named anywhere -
+  "RGB" is its bus), `main/boards/freenove_s3_rgb50.hpp`,
+  `custom_board_tested = no`. Facts from Freenove's schematic
+  "5.0inch_ESP32-S3_IPS.pdf" and example headers (CC BY-NC-SA: facts only):
+  800x480 IPS on a 16-bit RGB565 parallel bus - DE 40, VSYNC 41, HSYNC 39,
+  PCLK 42, R0-R4 45 48 47 21 14, G0-G5 5 6 7 15 16 4, B0-B4 8 3 46 9 1;
+  the "Q" timing PCLK 13 MHz, data on PCLK's falling edge, H / V sync
+  polarity 0, front porch 4, pulse 4, back porch 8 (816 x 496 clocks a
+  frame = 32 Hz refresh); backlight GPIO 2 (LEDC PWM, our brightness);
+  GT911 touch on I2C SDA 19 / SCL 20, INT 18, RST 38, 800x480; NS4168 I2S
+  amp BCLK 0, LRCLK 18, DATA 17, CTRL on +5 V; SD on SPI CS 10, MOSI 11,
+  SCK 12, MISO 13; CH340C on UART0 (so `BOARD_USB_SERIAL_JTAG` 0: the USB
+  loader and log on UART0 as on the ESP32 boards). The same pins as the
+  "ESP32-8048S050" 5" boards (LovyanGFX ships a Sunton 8048S050 setup with
+  them and `pclk_idle_high = 1`). Module: Freenove's schematic says
+  ESP32-S3-WROOM-1 **N8R2** (8 MB flash, 2 MB quad PSRAM); Tom's module
+  is marked **MCN16R8** (16 MB flash, 8 MB octal PSRAM) - built for N16R8
+  (Tom, 2026-11-07), to be confirmed by the board report's "HW Flash" /
+  "HW PSRAM" lines. The Hoysond 5" 800x480 IPS capacitive ESP32-S3 board
+  (Tom, 2026-11-07): module also marked MCN16R8, the back identical but
+  for the bundled speaker - one env for both; its hint says "Also sold as
+  Hoysond ... (same board, untested)"; the board report shows any
+  difference in panel timing / I2C devices / touch chip. So: the shared `sdkconfig.defaults.esp32s3` (octal PSRAM,
+  32 / 64 KB caches, UART console) plus its own `sdkconfig.defaults.fnk50`
+  (16 MB flash, `partitions_16mb.csv`): the root CMakeLists.txt sets
+  SDKCONFIG_DEFAULTS when the env passes `-DCYD_SDKCONFIG_EXTRA=<file>`
+  (`board_build.cmake_extra_args`; pioarduino hands board build.
+  cmake_extra_args to CMake); ESP-IDF reads sdkconfig.defaults,
+  .esp32s3, then the board's file. `.gitignore` lets it in
+  (`!sdkconfig.defaults.fnk50` - the v0.24.4 trap); CI's build cache key
+  hashes `sdkconfig.defaults*` and now `partitions*.csv`; CI merges with
+  each env's `custom_flash_size` (16MB here, 4MB default). Flash: app
+  2.25 MB as on the other boards, an **8 MB** `roms` store (the store is
+  mapped whole at start; 8 MB keeps app + PSRAM + store well inside the
+  S3's 32 MB of mapped space - the last 7.7 MB of the chip are unused).
+  An N8R2 board (or the Hoysond if it differs) gets no PSRAM with this
+  build: the screen shows "No PSRAM found - This firmware needs an
+  ESP32-S3 with 8 MB octal PSRAM (N16R8)" through ESP-IDF's own RGB
+  driver with no frame buffer (bounce buffers filled from a 1-bit picture
+  by its interrupt, `main/rgb_fallback.*` - LovyanGFX's RGB bus can't run
+  without a 750 KB frame buffer), the board report goes to the log and
+  the USB link runs so the Load ROMs page's Download Log fetches it.
+  Panel: LovyanGFX 1.2.31 `Panel_RGB` + `Bus_RGB` - the frame buffer
+  (800x480x2 = 750 KB) in PSRAM, streamed by GDMA straight from PSRAM (no
+  bounce buffers; its VSYNC interrupt restarts the DMA every frame, so a
+  missed fetch shifts the picture until the next frame at most). Bus_RGB
+  sizes the frame and the timing from the panel's ROTATED width / height
+  at init, so the panel's `offset_rotation` must stay 0: rotation is
+  turned in our code instead (`BOARD_ROTATION_OFFSET` 1, screen.cpp:
+  menus / portrait games at rotation 1 or 3 = portrait 480x800,
+  landscape games 0 or 2 = native); which end is up on the real board is
+  unknown (Rotate Screen 180 flips it). Touch: LovyanGFX `Touch_GT911`,
+  polled (INT not read: it is the amp's LRCLK), raw 800x480 rotated with
+  the panel; INT held low through the reset (address 0x5D, LovyanGFX tries
+  0x14 too), released 10 ms after, a second try 100 ms later if the GT911
+  didn't answer. GPIO 19 / 20 are the S3's USB pins: screen.cpp clears the
+  USB-Serial-JTAG pad enable and D+ pull-up so they work as I2C. Drawing:
+  LovyanGFX's rotated pushImage on a frame buffer
+  (Panel_FrameBufferBase::writeImage) copies through its general affine
+  pixel copy (~12 instructions a pixel: an index computed, a transparency
+  compare, a colour conversion); `screen::push()` writes the runner's
+  strips straight into the frame buffer instead (`main/fb_push.h`, host-
+  tested at all 4 rotations against LovyanGFX's own mapping in
+  `fb_push_tests`): a strip of 8 rows = 8 pixels into each of up to 480
+  native rows. Cache: the CPU writes PSRAM through its data cache, the
+  LCD's DMA reads PSRAM - LovyanGFX writes back the rows it drew at each
+  endWrite (Panel_FrameBufferBase::display); our direct writes are written
+  back by `screen::pushed()` once a picture (one `esp_cache_msync` over the
+  rows' span, as LovyanGFX does), else stale lines would show until
+  evicted. Games scale to fill the width (224 -> 480: 2.14x; a 224x288
+  game shows 480x617, a 288x224 landscape one 617x480). Menus: a third
+  layout size (`ui::Metrics::huge`, 480 wide: the 320 sizes x 1.5 via
+  `m.z(small, big)`, FreeSansBold 18 pt / DejaVu 18 / 24) - 7 rows of 86 px
+  a page; the menu preview renders 480x800 too (checked, nothing clips).
+  Sound: I2S Philips 16-bit mono at 24 kHz into the NS4168
+  (`BOARD_I2S_CODEC` 0: no MCLK, no codec setup). SD: the v0.25.0 card
+  library (`BOARD_SD_LIBRARY`, was SDMMC-only) on this board's own SPI bus
+  (SPI3; nothing shares it - the reason the ESP32 boards still copy). ROM
+  regions PSRAM first as on the 4.0" S3. Bluetooth LE only (S3).
+  Board report (`main/board_report.*`, `BOARD_REPORT` 1; Tom: to tell a
+  Hoysond 5" 800x480 IPS capacitive ESP32-S3 board of unknown make-up
+  apart): at every start, log lines "HW ..." and About's Hardware section -
+  chip (esp_chip_info: model, revision, cores, PSRAM / flash in the
+  package), the panel timing in use, flash (detected size + JEDEC ID, and the size built for),
+  PSRAM (size, octal / quad as built, free; or "none found"), every
+  address answering a 1-byte read on SDA 19 / SCL 20, and a GT911's
+  product ID (0x8140), firmware (0x8144), config version (0x8047) and
+  resolution (0x8048-0x804B). Risks for Tom to test (not run on a board):
+  (1) PSRAM bandwidth: the LCD DMA reads 750 KB a frame, ~24.6 MB/s at 13
+  MHz, continuously; octal PSRAM at 80 MHz (DDR) gives ~5x that, shared
+  with frame buffer writes (write-allocate: a line read and written back)
+  and ROM regions in PSRAM; flash and PSRAM share the S3's memory bus, so
+  flash writes (USB Transfer, scratch ROMs at a game's start, NVS) stall
+  the LCD's fetches - expect a jump or shimmer of the picture then (it
+  recovers at the next frame). Look for rows shifting sideways, flicker or
+  colour noise in scrolling games (1942, Rally-X, Zaxxon change most of
+  the screen every picture) and while ROMs load. If it is bad: a lower
+  PCLK (fewer refreshes), or ESP-IDF's RGB driver with bounce buffers in
+  internal RAM under our own thin panel class. (2) Colours / edge: if
+  pixels shimmer or columns sit one off, the clock edge
+  (`pclk_idle_high`) is the first thing to flip; swapped colours = the data
+  pin order. (3) Touch: GT911 INT and the amp's LRCLK are one net - sound
+  may click while the screen is touched (the GT911 pulses INT on a touch);
+  the touch may not start (the log says "GT911 touch didn't answer").
+  (4) The cache write-back over a whole portrait picture's span (up to 750
+  KB walked a picture) - see "picture" on Last Game Speed. (5) The no-PSRAM
+  screen (only an N8R2 board shows it).
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
   game draws lies in lines 16-240, and 256 scaled down to 240 would drop

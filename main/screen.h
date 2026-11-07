@@ -15,9 +15,21 @@ constexpr uint16_t kKey = 0x10A8;    // navy
 constexpr uint16_t kRed = 0xF8A2;
 
 LGFX& lcd();
-void init();
+// False when there's no screen to draw on: the 5.0" RGB board without
+// PSRAM (a message is up by other means; nothing more can be drawn).
+bool init();
+
+// A block of the game runner's pixels (RGB565, byte-swapped as the SPI
+// panels take them) at x, y in the current rotation, between startWrite()
+// and endWrite(). SPI panels: LovyanGFX's pushImage. The RGB panel: written
+// straight into its frame buffer (main/fb_push.h).
+void push(int x, int y, int w, int h, const uint16_t* px);
+// After a picture's last push(): what was written is made visible (the
+// RGB panel: written back from the CPU's cache to PSRAM, where the LCD's
+// DMA reads it). Nothing on SPI panels.
+void pushed();
 // Portrait: rotation 2 (the USB port at the top on most boards), or 0 with
-// Rotate Screen 180 on.
+// Rotate Screen 180 on (+ BOARD_ROTATION_OFFSET: landscape-native panels).
 void apply_rotation();
 // Landscape for a landscape game: the board turned a quarter clockwise from
 // the menu's portrait. apply_rotation() goes back.

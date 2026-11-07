@@ -31,7 +31,11 @@ The same boards as [CYD Classic Games](https://github.com/tomtombombadil/CYD-Cla
 ST7796 (ESP32-32E display boards), all resistive touch - all tested.
 
 Also the Freenove ESP32-S3 Display boards (2.8" ILI9341 FNK0104B and 4.0"
-ST7796 FNK0104S, capacitive touch, 8 MB PSRAM) - not yet tested. The
+ST7796 FNK0104S, capacitive touch, 8 MB PSRAM; the 4.0" is tested), and
+the Freenove 5.0" ESP32-S3 IPS display (FNK0115Q: 800x480 RGB panel,
+capacitive touch; built for the ESP32-S3-WROOM-1 N16R8 module - 16 MB
+flash, 8 MB octal PSRAM; also sold as Hoysond 5" ESP32-S3 800x480) - not
+yet tested. The
 ESP32-S3 has Bluetooth LE only: Xbox Wireless and other BLE controllers
 pair; classic-Bluetooth ones (PlayStation, Switch Pro, many 8BitDo modes)
 don't. ROM zips go in over USB from the web page (with the board's Settings > USB

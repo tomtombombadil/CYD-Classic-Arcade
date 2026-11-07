@@ -128,7 +128,7 @@ void render(int w, int h)
     const char* about_lines[16];
     menu_model::AboutInfo a;
     a.version = "v0.13.0";
-    a.board = w >= 320 ? "4.0\" ST7796 Resistive" : "2.8\" ST7789 Resistive";
+    a.board = w >= 480 ? "5.0\" RGB Capacitive" : w >= 320 ? "4.0\" ST7796 Resistive" : "2.8\" ST7789 Resistive";
     a.ram_free_kb = 141;
     a.ram_block_kb = 107;
     a.rom_free_kb = 412;
@@ -263,5 +263,6 @@ int main(int argc, char** argv)
     if (argc > 1) g_out = argv[1];
     render(240, 320);
     render(320, 480);
+    render(480, 800);
     return 0;
 }

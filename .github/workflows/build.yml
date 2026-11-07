@@ -25,7 +25,8 @@ jobs:
           c = configparser.ConfigParser(interpolation=None, strict=False)
           c.read("platformio.ini", encoding="utf-8")
           inc = [{"env": s[4:], "name": c[s]["custom_firmware_name"],
-                  "chip": c[s].get("custom_chip", "esp32").strip()}
+                  "chip": c[s].get("custom_chip", "esp32").strip(),
+                  "flash": c[s].get("custom_flash_size", "4MB").strip()}
                  for s in c.sections()
                  if s.startswith("env:") and c[s].get("custom_firmware_name")]
           print("matrix=" + json.dumps({"include": inc}))
@@ -81,8 +82,8 @@ jobs:
           path: |
             .pio/build/${{ matrix.env }}
             sdkconfig.${{ matrix.env }}
-          key: build-${{ matrix.env }}-${{ hashFiles('sdkconfig.defaults*', 'platformio.ini', '**/CMakeLists.txt', 'tools/fetch_deps.py') }}-${{ github.sha }}
-          restore-keys: build-${{ matrix.env }}-${{ hashFiles('sdkconfig.defaults*', 'platformio.ini', '**/CMakeLists.txt', 'tools/fetch_deps.py') }}-
+          key: build-${{ matrix.env }}-${{ hashFiles('sdkconfig.defaults*', 'partitions*.csv', 'platformio.ini', '**/CMakeLists.txt', 'tools/fetch_deps.py') }}-${{ github.sha }}
+          restore-keys: build-${{ matrix.env }}-${{ hashFiles('sdkconfig.defaults*', 'partitions*.csv', 'platformio.ini', '**/CMakeLists.txt', 'tools/fetch_deps.py') }}-
 
       - uses: actions/setup-python@v5
         with:
@@ -129,7 +130,7 @@ jobs:
           esptool.py --chip ${{ matrix.chip }} image_info --version 2 $B/bootloader.bin | grep -a -i "flash" || true
           esptool.py --chip ${{ matrix.chip }} image_info --version 2 $B/firmware.bin | grep -a -i "flash" || true
           esptool.py --chip ${{ matrix.chip }} merge_bin -o "out/${{ matrix.name }}.bin" \
-            --flash_mode keep --flash_freq keep --flash_size 4MB \
+            --flash_mode keep --flash_freq keep --flash_size ${{ matrix.flash }} \
             $BOOT $B/bootloader.bin 0x8000 $B/partitions.bin 0x10000 $B/firmware.bin
 
       - uses: actions/upload-artifact@v4

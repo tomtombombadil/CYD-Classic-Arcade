@@ -1,7 +1,8 @@
 // ROM zips from the SD card (boards with a usable slot). ESP32 boards: at
 // start, every zip in /CYD-Classic-Arcade/ on the card that holds a ROM of a
 // known game is copied into the ROM store, unless the same file is already
-// there. Boards with SDMMC and PSRAM (the S3): the zips stay on the card -
+// there. Boards with PSRAM and a card bus of their own (BOARD_SD_LIBRARY:
+// the S3 boards - SDMMC on the 4.0", SPI on the 5.0"): the zips stay on the card -
 // at start only their directories are read (kept in PSRAM, a few KB each),
 // and a game's zips are read whole into PSRAM when it starts.
 #pragma once

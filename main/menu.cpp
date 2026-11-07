@@ -10,6 +10,7 @@
 
 #include "arena.h"
 #include "audio_out.h"
+#include "board_report.h"
 #include "catalog.h"
 #include "crash_note.h"
 #include "devlog.h"
@@ -306,7 +307,7 @@ struct Menu {
 
     void open_about()
     {
-        static char buf[16][64];
+        static char buf[24][64];
         menu_model::AboutInfo a;
         a.version = CYD_ARCADE_VERSION;
         a.board = BOARD_NAME;
@@ -322,8 +323,9 @@ struct Menu {
         a.games_ready = catalog::available_count();
         a.games_total = games::kGameCount;
         a.paired = pad_paired_count();
-        const int n = menu_model::build_about(a, buf, text_lines, 16);
-        open_text("About", text_lines, n, Page::Settings);
+        a.hardware_n = board_report::lines(&a.hardware);
+        const int n = menu_model::build_about(a, buf, text_lines, 24);
+        open_text("About", text_lines, n, Page::Settings, a.hardware_n > 0);   // paged: the hardware report makes it long
     }
 
     // Settings > USB Transfer: the ROM loader runs only while this page is

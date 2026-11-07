@@ -64,6 +64,8 @@ struct AboutInfo {
     unsigned rom_free_kb = 0;
     int games_ready = 0, games_total = 0;
     int paired = -1;    // controllers paired (-1 = not known: BLE-only chips)
+    const char* const* hardware = nullptr;      // the board report's lines (board_report.h)
+    int hardware_n = 0;
 };
 int build_about(const AboutInfo& a, char (*buf)[64], const char** lines, int cap);
 

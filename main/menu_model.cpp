@@ -161,6 +161,11 @@ int build_about(const AboutInfo& a, char (*buf)[64], const char** lines, int cap
     line("Game area: %u KB (most used %u KB)", a.area_kb, a.area_peak_kb);
     line("RAM outside it: %u KB free, block %u KB", a.ram_free_kb, a.ram_block_kb);
     if (a.psram_kb) line("PSRAM: %u KB free", a.psram_kb);
+    if (a.hardware_n > 0) {
+        line("%s", "");
+        line("%s", "#Hardware");
+        for (int i = 0; i < a.hardware_n; ++i) line("%s", a.hardware[i]);
+    }
     return n;
 }
 

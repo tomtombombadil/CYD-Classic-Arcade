@@ -193,7 +193,7 @@ bool copy(FILE* f, const char* name, long size, uint8_t* buf)
     return st.finish();
 }
 
-#if BOARD_SD_SDMMC
+#if BOARD_SD_LIBRARY
 // The card's library (see sd_import.h): directory images in PSRAM
 constexpr int kMaxCard = 256;
 struct CardZip {
@@ -250,7 +250,7 @@ int run(Status status)
             if (already_stored(name, long(stt.st_size))) continue;
             FILE* f = std::fopen(path, "rb");
             if (!f) continue;
-#if BOARD_SD_SDMMC
+#if BOARD_SD_LIBRARY
             if (has_psram()) {
                 // The library stays on the card (sd_import.h)
                 if (!add_card_zip(f, name, long(stt.st_size)))
@@ -283,13 +283,13 @@ int run(Status status)
         devlog::add("SD: no %s folder on the card", kFolder + 8);
     }
     unmount(card);
-#if BOARD_SD_SDMMC
+#if BOARD_SD_LIBRARY
     if (s_card_n) devlog::add("SD: %d zips played from the card (not copied)", s_card_n);
 #endif
     return copied;
 }
 
-#if BOARD_SD_SDMMC
+#if BOARD_SD_LIBRARY
 int card_count() { return s_card_n; }
 
 int card_sources(romset::Source* out, int cap)

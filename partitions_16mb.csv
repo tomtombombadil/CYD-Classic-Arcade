@@ -1,0 +1,11 @@
+# Name,   Type, SubType, Offset,   Size
+# 16 MB flash (the 5.0" RGB board, ESP32-S3-WROOM-1 N16R8): the app as on
+# the 4 MB boards (2.25 MB), then an 8 MB ROM store - room for every game's
+# zips several times over. Read in place through the cache (mapped whole at
+# start: 8 MB of the S3's 32 MB of mapped space, beside the app and the
+# 8 MB of PSRAM); the last 7.7 MB of the chip are left unused for that
+# reason. No OTA - the web flasher is the update path.
+nvs,      data, nvs,     0x9000,   0x6000
+phy_init, data, phy,     0xf000,   0x1000
+factory,  app,  factory, 0x10000,  0x240000
+roms,     data, 0x40,    0x250000, 0x800000

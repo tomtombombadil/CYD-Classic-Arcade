@@ -5,8 +5,10 @@ if(IDF_TARGET STREQUAL "esp32")
     # The built-in DAC (CYD boards)
     list(APPEND MAIN_REQUIRES esp_driver_dac)
 else()
-    # ESP32-S3 boards: ES8311 codec (I2S + I2C), SDMMC card slot, native USB
-    list(APPEND MAIN_REQUIRES esp_driver_i2s esp_driver_sdmmc esp_driver_usb_serial_jtag)
+    # ESP32-S3 boards: I2S sound (ES8311 codec or an amp), SDMMC card slot, native USB
+    # The 5.0" RGB board: esp_lcd (its no-PSRAM message), esp_mm (cache
+    # write-back), esp_psram / spi_flash (the hardware report)
+    list(APPEND MAIN_REQUIRES esp_driver_i2s esp_driver_sdmmc esp_driver_usb_serial_jtag esp_lcd esp_mm esp_psram spi_flash)
 endif()
 idf_component_register(
     SRCS ${MAIN_SRCS}
