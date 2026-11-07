@@ -193,6 +193,50 @@ struct Menu {
     void open_log()
     {
         arena::reset();
+        constexpr size_t kLine = devlog::kLineMax;
+        const int want = devlog::count();
+        int n = 0;
+        const char** lines = static_cast<const char**>(arena::alloc(sizeof(char*) * size_t(want > 0 ? want : 1)));
+        char* buf = static_cast<char*>(arena::alloc(kLine * size_t(want > 0 ? want : 1)));
+        if (lines && buf)
+            for (int i = 0; i < want; ++i)
+                if (devlog::line(i, buf + kLine * size_t(n), kLine)) {
+                    lines[n] = buf + kLine * size_t(n);
+                    ++n;
+                }
+        if (!lines || !buf || n == 0) {
+            static const char* const kEmpty[] = {"The log is empty."};
+            open_text("Log", kEmpty, 1, Page::Settings);
+            return;
+        }
+        open_text("Log", lines, n, Page::Settings, true);
+    }
+
+    // Settings > Send Log (Tom, 2026-10-20: "we need a better way to
+    // transfer the logs"): as CYD Classic Games does - the newest lines that
+    // fit, behind a header, packed (core/log_pack.*) after the address of
+    // the site's log page (web/l/) into one QR code: a phone's camera opens
+    // the page, which offers to email it to the developer. Everything is
+    // in the game area while the page is open (the deflate tables are 16
+    // KB), like the Log page's lines; the next game empties it.
+    static bool qr_dark(const void* ctx, int x, int y)
+    {
+        return qrcodegen_getModule(static_cast<const uint8_t*>(ctx), x, y);
+    }
+
+    void open_send_log()
+    {
+        static const char* const kNone[] = {""};
+        open_text("Send Log", kNone, 0, Page::Settings);
+        qr_open = true;
+        qr = ui::QrPage{};
+        qr.title = "Send Log";
+        qr.caption = "Point your phone's camera at the code to get a link that sends the log to the developer.";
+        qr.note = "Newest 000 of 000 lines";    // its height counts for the room
+        int maxv = (ui::qr_room(g(), qr) / 2 - 4 - 17) / 4;     // modules at least 2 pixels
+        if (maxv > qrcodegen_VERSION_MAX) maxv = qrcodegen_VERSION_MAX;
+
+        arena::reset();
         // Buffers sized from the log's own length (v0.26.0 took kLineMax =
         // 256 bytes for every line in each of them: ~120 KB for a full log,
         // more than the area - "no QR code" on Tom's 5.0" boards)
