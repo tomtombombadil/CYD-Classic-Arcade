@@ -12,14 +12,17 @@
 //   BOARD_TOUCH_RESISTIVE                   1 = XPT2046
 //   BOARD_PIN_BOOT_BTN                      the BOOT button
 //   BOARD_SD_USABLE                         1 = SD slot works (needs BOARD_PIN_SD_*)
-//   BOARD_PORTRAIT_W                        panel width in portrait: 240 or 320
+//   BOARD_PORTRAIT_W                        panel width in portrait: 240, 320 or 480
 //   BOARD_PIN_SPEAKER                       DAC pin feeding the speaker amp
 //     - or BOARD_AUDIO_I2S 1 with BOARD_PIN_I2S_* / BOARD_PIN_I2C_* and
 //       BOARD_I2C_CODEC_ADDR (an ES8311 codec, ESP32-S3 boards)
 // Optional: BOARD_PIN_LED_*, BOARD_LED_ACTIVE_LOW, BOARD_PIN_LDR,
 //           BOARD_PIN_SD_CS/SCK/MISO/MOSI (SPI slot), or BOARD_SD_SDMMC 1 with
 //           BOARD_PIN_SD_CLK/CMD/D0-D3, BOARD_PIN_AUDIO_EN, BOARD_PIN_BATTERY_ADC,
-//           BOARD_USB_SERIAL_JTAG 1 (native USB instead of UART0 for the ROM loader)
+//           BOARD_USB_SERIAL_JTAG 1 (native USB instead of UART0 for the ROM loader),
+//           BOARD_I2S_CODEC 0 (I2S straight into an amp), BOARD_SD_LIBRARY,
+//           BOARD_RGB_PANEL 1 + BOARD_NATIVE_W/H + BOARD_ROTATION_OFFSET
+//           (an RGB frame buffer panel), BOARD_REPORT 1 (hardware report)
 #pragma once
 
 // Display SPI clock: 40 MHz unless a board says more (set before its board
@@ -77,6 +80,13 @@
   #define BOARD_PORTRAIT_W 320
   class LGFX : public LGFX_FreenoveS3<lgfx::Panel_ST7796, 320, 480, 80000000, -1> {};
 
+// ---- Freenove 5.0" ESP32-S3 IPS display (FNK0115Q), RGB panel, GT911 -------
+#elif defined(CYD_BOARD_FNK50_RGB_CAP)
+  #include "freenove_s3_rgb50.hpp"
+  #define BOARD_NAME "5.0\" RGB Capacitive"
+  #define BOARD_PORTRAIT_W 480
+  class LGFX : public LGFX_FreenoveRgb50 {};
+
 #else
   #error "No CYD_BOARD_* flag set. Build one of the [env:...] targets in platformio.ini."
 #endif
@@ -90,4 +100,26 @@
 #endif
 #ifndef BOARD_USB_SERIAL_JTAG
   #define BOARD_USB_SERIAL_JTAG 0
+#endif
+// I2S into a codec that needs setting up over I2C (the FNK0104's ES8311);
+// 0 = straight into an amplifier
+#ifndef BOARD_I2S_CODEC
+  #define BOARD_I2S_CODEC BOARD_AUDIO_I2S
+#endif
+// The SD card's zips played from the card (read into PSRAM at a game's
+// start) instead of copied into the ROM store: boards with PSRAM whose card
+// has a bus of its own
+#ifndef BOARD_SD_LIBRARY
+  #define BOARD_SD_LIBRARY BOARD_SD_SDMMC
+#endif
+// A frame buffer panel (RGB bus): screen::push writes the frame buffer
+#ifndef BOARD_RGB_PANEL
+  #define BOARD_RGB_PANEL 0
+#endif
+// Added to every rotation (landscape-native panels: 1)
+#ifndef BOARD_ROTATION_OFFSET
+  #define BOARD_ROTATION_OFFSET 0
+#endif
+#ifndef BOARD_REPORT
+  #define BOARD_REPORT 0
 #endif

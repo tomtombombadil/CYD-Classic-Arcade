@@ -28,6 +28,9 @@
 // Burger Time, Invaders) are drawn between frames on core 1 as before.
 // Touch shares the display's bus on the ESP32-32E boards: the screen and
 // the touch read are kept apart by a mutex.
+// The 5.0" RGB board has no panel bus: screen::push() writes its frame
+// buffer in PSRAM (turned for portrait games), screen::pushed() writes the
+// CPU's cache back so the LCD's DMA sees it.
 // Plain blocking writes, no DMA: on the ESP32-32E boards the display's DMA
 // stopped working once the SD card's bus had been used (v0.2.0: no picture
 // in games, then none in the menu either), and Tom's other CYD projects
@@ -134,13 +137,13 @@ void draw_task(void*)
         j.drawer->frame([&](int y, uint16_t* line) { j.m->render_snapshot_line(y, line); },
                         [&](int x, int y, int w, int h, const uint16_t* px) {
                             const int64_t s0 = esp_timer_get_time();
-                            j.lcd->pushImage(j.x0 + x, j.y0 + y, w, h,
-                                             reinterpret_cast<const lgfx::swap565_t*>(px));
+                            screen::push(j.x0 + x, j.y0 + y, w, h, px);
                             j.send_us = j.send_us + (esp_timer_get_time() - s0);
                             j.pixels = j.pixels + uint64_t(w * h);
                             j.lines_sent = j.lines_sent + uint32_t(h);
                         },
                         []() { return false; });
+        screen::pushed();
         j.lcd->endWrite();
         xSemaphoreGive(s_bus);
         const int64_t took = esp_timer_get_time() - t0;
@@ -450,12 +453,13 @@ void run(int index, AudioRing& ring)
                 [&](int y, uint16_t* line) { m->render_line(y, line); },
                 [&](int x, int y, int w, int h, const uint16_t* px) {
                     const int64_t s0 = esp_timer_get_time();
-                    lcd.pushImage(x0 + x, y0 + y, w, h, reinterpret_cast<const lgfx::swap565_t*>(px));
+                    screen::push(x0 + x, y0 + y, w, h, px);
                     all_send_us += esp_timer_get_time() - s0;
                     all_pixels += uint32_t(w * h);
                     lines_sent += uint32_t(h);
                 },
                 [&]() { return ring.count() < frame_samples; });
+            screen::pushed();
             lcd.endWrite();
             const int64_t took_us = esp_timer_get_time() - t1;
             draw_us += took_us;

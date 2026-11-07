@@ -19,7 +19,10 @@
 //
 // Boards with an audio codec (BOARD_AUDIO_I2S: the Freenove ESP32-S3
 // boards' ES8311) get 16-bit samples by I2S at the game rate instead; the
-// codec does the rest. No DAC / PWM choice there.
+// codec does the rest. No DAC / PWM choice there. The 5.0" (FNK0115) has
+// no codec: I2S goes straight into an NS4168 amplifier (BOARD_I2S_CODEC 0:
+// no MCLK, nothing to set up; the same mono 16-bit Philips stream in both
+// slots, the amp plays one of them).
 #include "audio_out.h"
 
 #include "board_select.h"
@@ -84,6 +87,7 @@ void amp(bool on) {
 // at 256 x the sample rate, I2S 16-bit in, DAC and output stage powered.
 i2s_chan_handle_t s_tx = nullptr;
 
+#if BOARD_I2S_CODEC
 bool codec_init() {
     // The touch controller shares this bus: LovyanGFX's I2C driver owns it
     // (the display started first), so the codec is written through it too
@@ -121,6 +125,7 @@ bool codec_init() {
     if (!ok) ESP_LOGE(kTag, "ES8311 codec not set up (no answer on I2C)");
     return ok;
 }
+#endif
 
 bool start_i2s() {
     i2s_chan_config_t cc = {};
@@ -147,7 +152,11 @@ bool start_i2s() {
         sc.slot_cfg.big_endian = false;
         sc.slot_cfg.bit_order_lsb = false;
 #endif
+#if BOARD_I2S_CODEC
         sc.gpio_cfg.mclk = gpio_num_t(BOARD_PIN_I2S_MCLK);
+#else
+        sc.gpio_cfg.mclk = I2S_GPIO_UNUSED;   // an amp (NS4168): no master clock
+#endif
         sc.gpio_cfg.bclk = gpio_num_t(BOARD_PIN_I2S_BCLK);
         sc.gpio_cfg.ws = gpio_num_t(BOARD_PIN_I2S_WS);
         sc.gpio_cfg.dout = gpio_num_t(BOARD_PIN_I2S_DOUT);
@@ -159,7 +168,11 @@ bool start_i2s() {
         ESP_LOGE(kTag, "I2S start failed: %s", esp_err_to_name(err));
         return false;
     }
+#if BOARD_I2S_CODEC
     return codec_init();
+#else
+    return true;
+#endif
 }
 
 void i2s_out(const int16_t* pcm, int g) {

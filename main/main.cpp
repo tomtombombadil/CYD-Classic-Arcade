@@ -15,6 +15,7 @@
 
 #include "audio_out.h"
 #include "audio_ring.h"
+#include "board_report.h"
 #include "board_select.h"
 #include "catalog.h"
 #include "crash_note.h"
@@ -26,6 +27,7 @@
 #include "pad.h"
 #include "screen.h"
 #include "sd_import.h"
+#include "serial_link.h"
 #include "settings.h"
 #include "touch.h"
 #include "ui.h"
@@ -54,7 +56,15 @@ void ui_task(void*)
     const int copied = store ? sd_import::run(sd_status) : 0;
     memlog::stage("after SD import");
 
-    screen::init();
+    if (!screen::init()) {
+        // The 5.0" RGB board without PSRAM: a message is up (no frame
+        // buffer for anything else). The board report goes to the log, and
+        // the USB link runs so the web page's Download Log can fetch it.
+        board_report::run();
+        serial_link::start();
+        for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    board_report::run();
     // Touch first: a resistive panel is calibrated once (first start)
     touch::init();
     memlog::stage("after screen + touch");

@@ -62,8 +62,9 @@ int measure_frame_push()
         for (int y = 0; y < kH; y += kStrip) {
             uint16_t* s = strips[(y / kStrip) & 1];
             for (int i = 0; i < kW * kStrip; i++) s[i] = uint16_t((i + y + f * 8) * 37);
-            l.pushImage(x0, y0 + y, kW, kStrip, reinterpret_cast<const lgfx::swap565_t*>(s));
+            screen::push(x0, y0 + y, kW, kStrip, s);
         }
+        screen::pushed();
     }
     const int64_t t1 = esp_timer_get_time();
     l.endWrite();
@@ -121,8 +122,9 @@ void run(AudioRing& ring)
     const int ms10 = measure_frame_push();
     ui::draw_header(l, "Controller Test", true, false);
     const int top = ui::metrics(l).header_h + 4;
-    l.setFont(l.width() >= 320 ? static_cast<const lgfx::IFont*>(&fonts::Font2)
-                               : static_cast<const lgfx::IFont*>(&fonts::Font0));
+    l.setFont(l.width() >= 480   ? static_cast<const lgfx::IFont*>(&fonts::Font4)
+              : l.width() >= 320 ? static_cast<const lgfx::IFont*>(&fonts::Font2)
+                                 : static_cast<const lgfx::IFont*>(&fonts::Font0));
     l.setTextDatum(textdatum_t::top_left);
     const int h = lh();
     char buf[64];

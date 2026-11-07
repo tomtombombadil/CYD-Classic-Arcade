@@ -148,6 +148,12 @@ g++ $FLAGS $SAN -o "$OUT/core_tests_san" "$ROOT/tools/host_tests/core_tests.cpp"
 "$OUT/core_tests"
 "$OUT/core_tests_san"
 
+echo "== frame buffer writes, every rotation (main/fb_push.h)"
+g++ $FLAGS -O2 -I"$ROOT/main" -o "$OUT/fb_push_tests" "$ROOT/tools/host_tests/fb_push_tests.cpp"
+g++ $FLAGS $SAN -I"$ROOT/main" -o "$OUT/fb_push_tests_san" "$ROOT/tools/host_tests/fb_push_tests.cpp"
+"$OUT/fb_push_tests"
+"$OUT/fb_push_tests_san"
+
 echo "== unit tests"
 python3 "$ROOT/tools/host_tests/make_fixtures.py" "$OUT/fixtures"
 "$OUT/unit_tests" "$OUT/fixtures"

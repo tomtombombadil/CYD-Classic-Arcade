@@ -1,0 +1,9 @@
+# ESP-IDF settings for the 5.0" RGB board (Freenove FNK0115Q) only, read
+# after sdkconfig.defaults and sdkconfig.defaults.esp32s3 (root
+# CMakeLists.txt; the env passes -DCYD_SDKCONFIG_EXTRA). The S3 file's 8 MB
+# octal PSRAM, caches and console apply as they are: Tom's module reads
+# ESP32-S3-WROOM-1 N16R8 (16 MB flash, 8 MB octal PSRAM).
+
+# ---- 16 MB flash: a bigger ROM store (partitions_16mb.csv) ----
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16mb.csv"

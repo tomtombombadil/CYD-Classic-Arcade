@@ -159,23 +159,23 @@ struct WidgetBox {
 WidgetBox widget_box(const Metrics& m, const Rect& r, Widget w)
 {
     WidgetBox b;
-    const int pad = m.big ? 12 : 8;
+    const int pad = m.z(8, 12);
     switch (w) {
     case Widget::Chevron:
-        b.w = m.big ? 28 : 22;
+        b.w = m.z(22, 28);
         break;
     case Widget::Switch:
-        b.w = (m.big ? 56 : 44) + pad;
+        b.w = (m.z(44, 56)) + pad;
         break;
     case Widget::Sideways:
-        b.w = m.big ? 34 : 26;
+        b.w = m.z(26, 34);
         break;
     case Widget::Value:
-        b.w = (m.big ? 70 : 54) + pad;
+        b.w = (m.z(54, 70)) + pad;
         break;
     case Widget::Stepper: {
-        const int k = r.h - (m.big ? 16 : 12);
-        const int vw = m.big ? 62 : 48;
+        const int k = r.h - (m.z(12, 16));
+        const int vw = m.z(48, 62);
         b.w = 2 * k + vw + pad;
         b.plus = {r.x + r.w - pad - k, r.y + (r.h - k) / 2, k, k};
         b.minus = {b.plus.x - vw - k, b.plus.y, k, k};
@@ -189,17 +189,17 @@ WidgetBox widget_box(const Metrics& m, const Rect& r, Widget w)
 
 void draw_widget(Gfx& g, const Metrics& m, const Rect& r, const Item& it, const WidgetBox& b, uint16_t row_bg)
 {
-    const int pad = m.big ? 12 : 8;
+    const int pad = m.z(8, 12);
     const int cy = r.y + r.h / 2;
     switch (it.widget) {
     case Widget::Chevron:
-        icon_chevron(g, r.x + r.w - pad - (m.big ? 6 : 4), cy, m.big ? 7 : 5, it.muted ? kMuted : kSub);
+        icon_chevron(g, r.x + r.w - pad - (m.z(4, 6)), cy, m.z(5, 7), it.muted ? kMuted : kSub);
         break;
     case Widget::Sideways:
-        icon_sideways(g, r.x + r.w - pad - (m.big ? 10 : 8), cy, m.big ? 14 : 10, it.muted ? kMuted : kSub);
+        icon_sideways(g, r.x + r.w - pad - (m.z(8, 10)), cy, m.z(10, 14), it.muted ? kMuted : kSub);
         break;
     case Widget::Switch: {
-        const int sw = m.big ? 56 : 44, sh = m.big ? 30 : 24;
+        const int sw = m.z(44, 56), sh = m.z(24, 30);
         const int x = r.x + r.w - pad - sw, y = cy - sh / 2;
         g.fillRoundRect(x, y, sw, sh, sh / 2, it.on ? kTeal : kOff);
         const int kr = sh / 2 - 3;
@@ -240,13 +240,13 @@ void header(Gfx& g, const Metrics& m, const char* title, bool back, bool gear)
     int x = m.margin + 4;
     if (back) {
         const Rect b = back_rect(m);
-        icon_back(g, b.x + b.w / 2 - 2, m.header_h / 2, m.big ? 9 : 7, kText);
+        icon_back(g, b.x + b.w / 2 - 2, m.header_h / 2, m.z(7, 9), kText);
         x = b.x + b.w;
     }
     int right = m.w - m.margin;
     if (gear) {
         const Rect r = gear_rect(m);
-        icon_gear(g, r.x + r.w / 2, m.header_h / 2, m.big ? 13 : 10, kSub, kBar);
+        icon_gear(g, r.x + r.w / 2, m.header_h / 2, m.z(10, 13), kSub, kBar);
         right = r.x;
     }
     g.setFont(m.title);
@@ -287,7 +287,22 @@ Metrics metrics(Gfx& g)
     m.w = g.width();
     m.h = g.height();
     m.big = m.w >= 320;
-    if (m.big) {
+    m.huge = m.w >= 480;
+    if (m.huge) {
+        // 480x800 (the 5.0" RGB panel): the 320-wide sizes x 1.5, fonts a
+        // size up - rows and keys the same share of the screen
+        m.margin = 14;
+        m.header_h = 64;
+        m.pager_h = 66;
+        m.news_h = 28;
+        m.pads_h = 32;
+        m.gap = 8;
+        m.title = &fonts::FreeSansBold18pt7b;
+        m.body = &fonts::FreeSansBold18pt7b;
+        m.sub = &fonts::DejaVu18;
+        m.tiny = &fonts::DejaVu18;
+        m.text = &fonts::DejaVu24;
+    } else if (m.big) {
         m.margin = 10;
         m.header_h = 44;
         m.pager_h = 46;
@@ -315,7 +330,7 @@ Metrics metrics(Gfx& g)
     m.list_y = m.header_h + m.gap / 2;
     m.list_h = m.h - m.list_y - m.pager_h - m.news_h - m.pads_h;
     // Two lines of text and some air
-    const int min_row = font_h(g, m.body) + font_h(g, m.sub) + (m.big ? 14 : 10) + m.gap;
+    const int min_row = font_h(g, m.body) + font_h(g, m.sub) + (m.z(10, 14)) + m.gap;
     m.rows = m.list_h / min_row;
     if (m.rows < 1) m.rows = 1;
     m.row_h = m.list_h / m.rows;
@@ -349,7 +364,7 @@ void draw_row(Gfx& g, const ListPage& p, int index)
     const bool pressed = index == p.pressed;
     const bool focus = index == p.focus;
     const uint16_t fill = pressed ? kCardHi : kCard;
-    const int rad = m.big ? 10 : 7;
+    const int rad = m.z(7, 10);
     g.fillRoundRect(r.x, r.y, r.w, r.h, rad, fill);
     if (focus) {
         g.drawRoundRect(r.x, r.y, r.w, r.h, rad, kGold);
@@ -357,12 +372,12 @@ void draw_row(Gfx& g, const ListPage& p, int index)
     }
     const WidgetBox b = widget_box(m, r, it.widget);
     draw_widget(g, m, r, it, b, fill);
-    const int tx = r.x + (m.big ? 14 : 10);
+    const int tx = r.x + (m.z(10, 14));
     const int tw = r.w - (tx - r.x) - b.w - 6;
     char buf[64];
     const int th = font_h(g, m.body);
     const int sh = it.sub[0] ? font_h(g, m.sub) : 0;
-    const int space = it.sub[0] ? (m.big ? 4 : 2) : 0;
+    const int space = it.sub[0] ? (m.z(2, 4)) : 0;
     const int ty = r.y + (r.h - th - sh - space) / 2;
     g.setFont(m.body);
     fit(g, it.title, tw, buf, sizeof buf);
@@ -392,7 +407,7 @@ void draw_footer(Gfx& g, const Footer& f)
     }
     const int py = m.h - m.pads_h;
     g.fillRect(0, py, m.w, m.pads_h, kBar);
-    const int ih = m.big ? 13 : 10, iw = ih * 2;
+    const int ih = m.z(10, 13), iw = ih * 2;
     const int cy = py + m.pads_h / 2;
     g.setTextDatum(textdatum_t::middle_left);
     const int n = f.pads[0].connected + f.pads[1].connected;
@@ -495,7 +510,7 @@ TextBox text_box(const Metrics& m, bool paged)
     TextBox b;
     b.x = m.margin + 6;
     b.w = m.w - 2 * b.x;
-    b.y0 = m.list_y + (m.big ? 10 : 6);
+    b.y0 = m.list_y + (m.z(6, 10));
     b.y_end = paged ? m.list_y + m.list_h : m.h - m.pads_h - m.news_h;
     return b;
 }
@@ -626,14 +641,14 @@ void message(Gfx& g, const char* title, const char* body, uint16_t title_color)
 {
     const Metrics m = metrics(g);
     const int x = m.margin * 2, w = m.w - 4 * m.margin;
-    const int pad = m.big ? 16 : 10;
+    const int pad = m.z(10, 16);
     g.setFont(m.text);
     const int bh = wrap(g, body, 0, 0, w - 2 * pad, kText, false);
     const int th = font_h(g, m.body);
     const int h = pad + th + (body[0] ? pad / 2 + bh : 0) + pad;
     const int y = (m.h - h) / 2;
-    g.fillRoundRect(x, y, w, h, m.big ? 12 : 8, kCard);
-    g.drawRoundRect(x, y, w, h, m.big ? 12 : 8, title_color);
+    g.fillRoundRect(x, y, w, h, m.z(8, 12), kCard);
+    g.drawRoundRect(x, y, w, h, m.z(8, 12), title_color);
     g.setFont(m.body);
     g.setTextDatum(textdatum_t::top_center);
     g.setTextColor(title_color);
@@ -649,16 +664,16 @@ void loading(Gfx& g, const char* game, const char* note, int done, int total, bo
     const Metrics m = metrics(g);
     const int w = m.w * 3 / 4 < 280 ? m.w - 4 * m.margin : m.w * 3 / 4;
     const int x = (m.w - w) / 2;
-    const int pad = m.big ? 16 : 10;
+    const int pad = m.z(10, 16);
     const int th = font_h(g, m.sub), gh = font_h(g, m.body), nh = note[0] ? font_h(g, m.sub) + pad / 2 : 0;
-    const int bar_h = m.big ? 12 : 8;
+    const int bar_h = m.z(8, 12);
     const int h = pad + th + 4 + gh + pad + bar_h + nh + pad;
     const int y = (m.h - h) / 2;
     const int bar_y = y + pad + th + 4 + gh + pad;
     const int bar_x = x + pad, bar_w = w - 2 * pad;
     if (full) {
         g.fillScreen(kBg);
-        g.fillRoundRect(x, y, w, h, m.big ? 12 : 8, kCard);
+        g.fillRoundRect(x, y, w, h, m.z(8, 12), kCard);
         g.setTextDatum(textdatum_t::top_center);
         g.setFont(m.sub);
         g.setTextColor(kSub);
