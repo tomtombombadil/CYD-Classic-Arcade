@@ -31,7 +31,9 @@ void pushed();
 // header after Send Log that stayed): the heap's integrity and, on the RGB
 // panel, LovyanGFX's row table (wrong rows put back). Logs what it finds;
 // `when` completes the line ("after Send Log").
-void check(const char* when);
+// `compare`: also check that the shown frame equals LovyanGFX's drawing
+// (the RGB panel; not right after a game - it drew the shown frame itself).
+void check(const char* when, bool compare = true);
 // Portrait: rotation 2 (the USB port at the top on most boards), or 0 with
 // Rotate Screen 180 on (+ BOARD_ROTATION_OFFSET: landscape-native panels).
 void apply_rotation();

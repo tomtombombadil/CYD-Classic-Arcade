@@ -127,12 +127,19 @@ void pushed() {}
 
 #endif
 
-void check(const char* when)
+void check(const char* when, bool compare)
 {
 #if BOARD_RGB_PANEL
     const int bad = s_lcd.repair_rows();
     if (bad) devlog::add("Screen: %d row pointers were wrong %s (put back)", bad, when);
+    int first = -1, c0 = 0, c1 = 0;
+    const int diff = compare ? s_lcd.differing_rows(&first, &c0, &c1) : -1;
+    if (diff == 0) devlog::add("Screen: shown frame = drawing %s", when);
+    else if (diff > 0)
+        devlog::add("Screen: shown frame differs from the drawing in %d native rows %s (first row %d, columns %d-%d)",
+                    diff, when, first, c0, c1);
 #endif
+    (void)compare;
     if (!heap_caps_check_integrity_all(true)) devlog::add("Heap damaged %s", when);
 }
 

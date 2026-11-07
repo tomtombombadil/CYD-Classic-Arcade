@@ -1066,6 +1066,17 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   characters, more than the largest code holds). Both times after a game
   (Galaga / Elevator Action) and Send Log: cause still open - v0.26.2's
   check logs whether the row table or the heap was damaged.
+  v0.26.4 (Tom): the Hosyond striped again after Galaga + Send Log and
+  kept it after leaving; the Freenove didn't this time. No "row pointers"
+  or "Heap damaged" line: the row table and the heap were fine. v0.26.5
+  also compares the shown frame with the hidden drawing (they must match
+  once a page is drawn): after Send Log and at the Log page, "Screen:
+  shown frame = drawing" or "... differs ... in N native rows (first row,
+  columns)" - equal = the frame is right and the fault is in sending it
+  out (bounce refills late, the panel); different = something writes the
+  shown frame. Asked Tom: does Rotate Screen 180 move the stripes with the
+  header (our data) or leave them on the same place on the glass (the
+  panel)?
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
   game draws lies in lines 16-240, and 256 scaled down to 240 would drop

@@ -173,6 +173,31 @@ public:
     // but their own place in the frame buffer are put back and counted (a
     // check for memory damage: a wrong row keeps its old pixels on screen
     // and LovyanGFX's writes for it land elsewhere)
+    // Native rows where the panel's frame differs from the hidden drawing
+    // (right after a page is drawn they must match: display() copied it).
+    // Tells damage to the shown frame from a fault in sending it out.
+    int differing_rows(int* first, int* col0, int* col1)
+    {
+        if (!_shadow || !_fb) return -1;
+        const int w = _cfg.panel_width, h = _cfg.panel_height;
+        int bad = 0;
+        *first = -1;
+        for (int y = 0; y < h; ++y) {
+            const uint16_t* a = _shadow + size_t(y) * w;
+            const uint16_t* b = _fb + size_t(y) * w;
+            if (std::memcmp(a, b, size_t(w) * 2) == 0) continue;
+            if (bad++ == 0) {
+                *first = y;
+                int l = 0, r = w - 1;
+                while (a[l] == b[l]) ++l;
+                while (a[r] == b[r]) --r;
+                *col0 = l;
+                *col1 = r;
+            }
+        }
+        return bad;
+    }
+
     int repair_rows()
     {
         if (!_lines_buffer || !_shadow) return 0;
@@ -276,4 +301,5 @@ public:
     // as the SPI panels take it), nullptr before init / without PSRAM
     uint16_t* frame_buffer() { return _panel.frame_buffer(); }
     int repair_rows() { return _panel.repair_rows(); }
+    int differing_rows(int* first, int* col0, int* col1) { return _panel.differing_rows(first, col0, col1); }
 };

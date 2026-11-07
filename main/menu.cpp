@@ -197,6 +197,7 @@ struct Menu {
     // next game empties it), so the menu keeps no buffer for them.
     void open_log()
     {
+        screen::check("at the Log page");
         arena::reset();
         constexpr size_t kLine = devlog::kLineMax;
         const int want = devlog::count();
