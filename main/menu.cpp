@@ -31,6 +31,7 @@
 #include "emu/games.h"
 #include "qrcodegen.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <esp_heap_caps.h>
@@ -259,7 +260,12 @@ struct Menu {
         uint16_t* at = static_cast<uint16_t*>(arena::alloc(sizeof(uint16_t) * size_t(total > 0 ? total : 1)));
         char* report = static_cast<char*>(arena::alloc(cap));
         uint8_t* work = static_cast<uint8_t*>(arena::alloc(cap + 64));
-        const size_t b43_cap = (cap + 64) * 3 / 2 + 4;
+        // No more text than the biggest code holds (version 40-L: 4,296
+        // alphanumeric characters): qrcodegen sizes a segment buffer for at
+        // most 32,767 bits (~5,950 characters) and answers SIZE_MAX above
+        // that - Tom's Freenove, v0.26.1, a full 4 KB log: "out of memory".
+        // pack() fails when its text doesn't fit; the search drops lines.
+        const size_t b43_cap = std::min<size_t>((cap + 64) * 3 / 2 + 4, 4400);
         char* b43 = static_cast<char*>(arena::alloc(b43_cap));
         void* tables = arena::alloc(logpack::kTablesBytes);
         uint8_t* ub = static_cast<uint8_t*>(arena::alloc(qrcodegen_calcSegmentBufferSize(qrcodegen_Mode_BYTE, url_n)));

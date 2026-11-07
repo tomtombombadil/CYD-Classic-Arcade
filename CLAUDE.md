@@ -1058,6 +1058,14 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   transaction, on sprites nothing). Games still write the panel's frame
   directly (`screen::push`); a LovyanGFX fill in the runner is copied at
   its own endWrite.
+  Freenove, v0.26.1 (Tom's photo, 2026-11-07): the same striped header
+  ("<" and "Log" ghosted) - so not a Hosyond-only fault; there it came
+  after a failed Send Log, which writes nothing (its "out of memory" was
+  qrcodegen_calcSegmentBufferSize answering SIZE_MAX for more than 32,767
+  bits - a full 4 KB log's base43; v0.26.4 caps that buffer at 4,400
+  characters, more than the largest code holds). Both times after a game
+  (Galaga / Elevator Action) and Send Log: cause still open - v0.26.2's
+  check logs whether the row table or the heap was damaged.
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
   game draws lies in lines 16-240, and 256 scaled down to 240 would drop
