@@ -1,7 +1,10 @@
 // Panel + text helpers (see screen.h).
 #include "screen.h"
 
+#include "devlog.h"
 #include "settings.h"
+
+#include <esp_heap_caps.h>
 
 #include <cstring>
 
@@ -121,6 +124,15 @@ void push(int x, int y, int w, int h, const uint16_t* px)
 void pushed() {}
 
 #endif
+
+void check(const char* when)
+{
+#if BOARD_RGB_PANEL
+    const int bad = s_lcd.repair_rows();
+    if (bad) devlog::add("Screen: %d row pointers were wrong %s (put back)", bad, when);
+#endif
+    if (!heap_caps_check_integrity_all(true)) devlog::add("Heap damaged %s", when);
+}
 
 void apply_rotation() { set_rotation(settings::get().rotate180 ? 0 : 2); }
 void landscape() { set_rotation(settings::get().rotate180 ? 1 : 3); }

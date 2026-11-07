@@ -27,6 +27,11 @@ void push(int x, int y, int w, int h, const uint16_t* px);
 // After a picture's last push(). Nothing to do on any panel today (the RGB
 // panel's bounce buffers read the frame buffer through the CPU's cache).
 void pushed();
+// A check for memory damage (Tom's Hosyond 5", v0.26.1: stripes through the
+// header after Send Log that stayed): the heap's integrity and, on the RGB
+// panel, LovyanGFX's row table (wrong rows put back). Logs what it finds;
+// `when` completes the line ("after Send Log").
+void check(const char* when);
 // Portrait: rotation 2 (the USB port at the top on most boards), or 0 with
 // Rotate Screen 180 on (+ BOARD_ROTATION_OFFSET: landscape-native panels).
 void apply_rotation();

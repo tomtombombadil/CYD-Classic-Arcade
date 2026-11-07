@@ -122,6 +122,22 @@ public:
     }
 
     uint16_t* frame_buffer() const { return _fb; }
+
+    // The row table LovyanGFX draws through: rows found pointing anywhere
+    // but their own place in the frame buffer are put back and counted (a
+    // check for memory damage: a wrong row keeps its old pixels on screen
+    // and LovyanGFX's writes for it land elsewhere)
+    int repair_rows()
+    {
+        if (!_lines_buffer || !_fb) return 0;
+        int bad = 0;
+        const int w = _cfg.panel_width, h = _cfg.panel_height;
+        for (int y = 0; y < h; ++y) {
+            uint8_t* want = reinterpret_cast<uint8_t*>(_fb + size_t(y) * w);
+            if (_lines_buffer[y] != want) { _lines_buffer[y] = want; ++bad; }
+        }
+        return bad;
+    }
 };
 
 class LGFX_FreenoveRgb50 : public lgfx::LGFX_Device
@@ -213,4 +229,5 @@ public:
     // The frame buffer (BOARD_NATIVE_W x BOARD_NATIVE_H, byte-swapped RGB565
     // as the SPI panels take it), nullptr before init / without PSRAM
     uint16_t* frame_buffer() { return _panel.frame_buffer(); }
+    int repair_rows() { return _panel.repair_rows(); }
 };

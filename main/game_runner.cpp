@@ -545,6 +545,7 @@ void run(int index, AudioRing& ring)
     catalog::unload(roms);
     arena::reset();     // the game area is empty again for the next game
     memlog::stacks();
+    screen::check("after a game");
     crash_note::clear();
     screen::apply_rotation();
     lcd.fillScreen(screen::kBg);

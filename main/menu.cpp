@@ -159,6 +159,10 @@ struct Menu {
 
     void open(Page p)
     {
+        if (qr_open) {
+            qr_open = false;
+            screen::check("after Send Log");
+        }
         page = p;
         if (p == Page::Settings) build_settings();
         draw();

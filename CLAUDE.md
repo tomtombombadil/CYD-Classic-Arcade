@@ -1033,6 +1033,21 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   and its cache preloads evicting game data - see "emu" on Last Game
   Speed against the 4.0" S3. (5) The no-PSRAM
   screen (only an N8R2 board shows it).
+  v0.26.1 on both boards (Tom, 2026-11-07): the slipping picture "99 %
+  gone" - a faint flash when a menu row changes (LovyanGFX draws straight
+  into the one frame buffer the panel shows at 32 Hz: a row's background
+  fill can be seen before its text), none in games; Send Log works (36
+  lines in a 125 x 125 code). Speeds (Galaga 60.6 fps, 57 pictures, emu
+  5.5-6.1 ms; Pac-Man 60 / 60): the bounce interrupt costs no visible
+  speed. Both boards' HW lines identical (chip rev 0.2, flash 16 MB ID
+  464018, PSRAM 8 MB octal, only 0x5D on the I2C bus, GT911 "911" fw 1060
+  with config v00 and 0 x 0 - its config was never written; touch works
+  anyway): no difference found between the Freenove and the Hosyond. On
+  the Hosyond only: after Send Log, stripes (vertical in portrait = native
+  rows) through the header's "Send Log", staying through other pages and a
+  game. Not explained by reading the code; v0.26.2 checks the heap and the
+  LovyanGFX row table (`screen::check()`: after Send Log and after each
+  game; a wrong row is put back and logged) - next: Tom's photo and log.
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
   game draws lies in lines 16-240, and 256 scaled down to 240 would drop
