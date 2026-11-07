@@ -105,6 +105,8 @@ bool show(const char* title, const char* const* lines, int count)
     cfg.timings.vsync_pulse_width = 4;
     cfg.timings.vsync_back_porch = 8;
     cfg.timings.vsync_front_porch = 4;
+    cfg.timings.flags.hsync_idle_low = 1;   // as the main panel setup
+    cfg.timings.flags.vsync_idle_low = 1;
     cfg.timings.flags.pclk_active_neg = 1;
     cfg.data_width = 16;
     cfg.bits_per_pixel = 16;

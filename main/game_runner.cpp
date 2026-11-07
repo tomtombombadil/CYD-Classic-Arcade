@@ -29,8 +29,8 @@
 // Touch shares the display's bus on the ESP32-32E boards: the screen and
 // the touch read are kept apart by a mutex.
 // The 5.0" RGB board has no panel bus: screen::push() writes its frame
-// buffer in PSRAM (turned for portrait games), screen::pushed() writes the
-// CPU's cache back so the LCD's DMA sees it.
+// buffer in PSRAM (turned for portrait games); the panel driver's bounce
+// buffers read it through the cache, so nothing is written back.
 // Plain blocking writes, no DMA: on the ESP32-32E boards the display's DMA
 // stopped working once the SD card's bus had been used (v0.2.0: no picture
 // in games, then none in the menu either), and Tom's other CYD projects

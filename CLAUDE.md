@@ -952,12 +952,26 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   by its interrupt, `main/rgb_fallback.*` - LovyanGFX's RGB bus can't run
   without a 750 KB frame buffer), the board report goes to the log and
   the USB link runs so the Load ROMs page's Download Log fetches it.
-  Panel: LovyanGFX 1.2.31 `Panel_RGB` + `Bus_RGB` - the frame buffer
-  (800x480x2 = 750 KB) in PSRAM, streamed by GDMA straight from PSRAM (no
-  bounce buffers; its VSYNC interrupt restarts the DMA every frame, so a
-  missed fetch shifts the picture until the next frame at most). Bus_RGB
-  sizes the frame and the timing from the panel's ROTATED width / height
-  at init, so the panel's `offset_rotation` must stay 0: rotation is
+  Panel (v0.26.1): ESP-IDF's RGB driver WITH BOUNCE BUFFERS under our own
+  LovyanGFX panel class (`Panel_RgbBounce` in the board file, on
+  Panel_FrameBufferBase + Bus_NULL): the frame buffer (800x480x2 = 750 KB,
+  byte-swapped RGB565 as LovyanGFX draws it - data line i on LCD signal
+  i ^ 8, as LovyanGFX's bus wired it) in PSRAM; the DMA reads two bounce
+  buffers of `BOARD_RGB_BOUNCE_LINES` 4 lines (2 x 6.25 KB internal RAM)
+  that the driver's interrupt (core 1, every 250 us) refills from the
+  frame buffer through the data cache, with a cache preload of the next
+  piece; `CONFIG_LCD_RGB_RESTART_IN_VSYNC` (sdkconfig.defaults.fnk50)
+  restarts a frame that fell behind. v0.26.0 used LovyanGFX 1.2.31's
+  `Panel_RGB` + `Bus_RGB`, whose DMA read PSRAM itself: Tom, both boards,
+  menus and games - "a significant screen glitch every time the screen
+  updated ... the left half of the screen would drop down a few pixels
+  before correcting" (worse on the Freenove): every redraw's PSRAM writes
+  starved the LCD's FIFO (no bounce buffers), the picture slipped until
+  the next VSYNC restart. Never go back to a DMA that reads PSRAM. Flash
+  writes (NVS, USB Transfer, scratch ROMs) still hold the interrupt off
+  (not IRAM-safe, no XIP from PSRAM): expect a frame's glitch then. The
+  panel's `offset_rotation` stays 0 (kept from Bus_RGB, which sized the
+  frame and timing from the panel's ROTATED size at init): rotation is
   turned in our code instead (`BOARD_ROTATION_OFFSET` 1, screen.cpp:
   menus / portrait games at rotation 1 or 3 = portrait 480x800,
   landscape games 0 or 2 = native); which end is up on the real board is
@@ -974,11 +988,11 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   strips straight into the frame buffer instead (`main/fb_push.h`, host-
   tested at all 4 rotations against LovyanGFX's own mapping in
   `fb_push_tests`): a strip of 8 rows = 8 pixels into each of up to 480
-  native rows. Cache: the CPU writes PSRAM through its data cache, the
-  LCD's DMA reads PSRAM - LovyanGFX writes back the rows it drew at each
-  endWrite (Panel_FrameBufferBase::display); our direct writes are written
-  back by `screen::pushed()` once a picture (one `esp_cache_msync` over the
-  rows' span, as LovyanGFX does), else stale lines would show until
+  native rows. Cache: the CPU writes PSRAM through its data cache and the
+  bounce-buffer interrupt reads it through the same cache, so nothing is
+  written back (`screen::pushed()` and the panel's display() do nothing;
+  v0.26.0 wrote the rows back for a DMA reading PSRAM, else stale lines
+  would have shown until
   evicted. Games scale to fill the width (224 -> 480: 2.14x; a 224x288
   game shows 480x617, a 288x224 landscape one 617x480). Menus: a third
   layout size (`ui::Metrics::huge`, 480 wide: the 320 sizes x 1.5 via
@@ -998,7 +1012,8 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   address answering a 1-byte read on SDA 19 / SCL 20, and a GT911's
   product ID (0x8140), firmware (0x8144), config version (0x8047) and
   resolution (0x8048-0x804B). Risks for Tom to test (not run on a board):
-  (1) PSRAM bandwidth: the LCD DMA reads 750 KB a frame, ~24.6 MB/s at 13
+  (1) PSRAM bandwidth (v0.26.0 failed it - see Panel above; now bounce
+  buffers): the LCD DMA reads 750 KB a frame, ~24.6 MB/s at 13
   MHz, continuously; octal PSRAM at 80 MHz (DDR) gives ~5x that, shared
   with frame buffer writes (write-allocate: a line read and written back)
   and ROM regions in PSRAM; flash and PSRAM share the S3's memory bus, so
@@ -1014,8 +1029,9 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   pin order. (3) Touch: GT911 INT and the amp's LRCLK are one net - sound
   may click while the screen is touched (the GT911 pulses INT on a touch);
   the touch may not start (the log says "GT911 touch didn't answer").
-  (4) The cache write-back over a whole portrait picture's span (up to 750
-  KB walked a picture) - see "picture" on Last Game Speed. (5) The no-PSRAM
+  (4) The bounce interrupt's cost on core 1 (a 6.4 KB copy every 250 us)
+  and its cache preloads evicting game data - see "emu" on Last Game
+  Speed against the 4.0" S3. (5) The no-PSRAM
   screen (only an N8R2 board shows it).
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the

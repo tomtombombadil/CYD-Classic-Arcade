@@ -27,8 +27,12 @@
 
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
-#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
-#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
+#include <lgfx/v1/panel/Panel_FrameBufferBase.hpp>
+
+#include <cstring>
+#include <esp_heap_caps.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_rgb.h>
 
 #define BOARD_TOUCH_RESISTIVE   0    // capacitive: no calibration
 #define BOARD_PIN_BOOT_BTN      0    // (also the amp's BCLK after start-up)
@@ -52,6 +56,9 @@
 #define BOARD_NATIVE_W          800  // the panel's own (landscape) size
 #define BOARD_NATIVE_H          480
 #define BOARD_RGB_PCLK_HZ       13000000   // Freenove's IPS ("Q") timing
+// Bounce buffers: 2 x 4 lines in internal RAM (12.5 KB), refilled every 4
+// lines (250 us at 13 MHz) by the driver's interrupt on core 1
+#define BOARD_RGB_BOUNCE_LINES  4
 // The panel is landscape; the menus are portrait: every rotation is turned
 // a quarter more than on the portrait-native CYD panels (screen.cpp). Not
 // LovyanGFX's offset_rotation: its RGB bus sizes the frame and its timing
@@ -59,10 +66,67 @@
 #define BOARD_ROTATION_OFFSET   1
 #define BOARD_REPORT            1    // chip / flash / PSRAM / I2C report in the log at every start
 
+// The panel through ESP-IDF's own RGB driver with BOUNCE BUFFERS. v0.26.0
+// used LovyanGFX's Bus_RGB, whose DMA reads the frame straight from PSRAM:
+// every redraw (the CPU writing PSRAM) starved it and the picture's left
+// half dropped a few lines until the next frame (Tom, both boards, menus and
+// games). Now the DMA reads two small buffers in internal RAM that the
+// driver's interrupt refills from the frame buffer (through the data cache:
+// what the CPU just wrote is seen without a write-back), so PSRAM traffic
+// only has to keep up on average. The frame buffer is still one 800x480
+// RGB565 block in PSRAM, in LovyanGFX's byte order (the data pins are
+// wired with their bytes swapped, as LovyanGFX's bus did), so LovyanGFX
+// draws into it as before and screen::push() writes it directly.
+class Panel_RgbBounce : public lgfx::Panel_FrameBufferBase
+{
+    lgfx::Bus_NULL _null_bus;   // nothing to send: no stray bus call can fault
+    esp_lcd_panel_handle_t _handle = nullptr;
+    uint16_t* _fb = nullptr;
+
+public:
+    esp_lcd_rgb_panel_config_t rgb = {};   // filled in by the board
+
+    Panel_RgbBounce()
+    {
+        _write_depth = lgfx::color_depth_t::rgb565_2Byte;
+        _read_depth = lgfx::color_depth_t::rgb565_2Byte;
+        setBus(&_null_bus);
+    }
+
+    bool init(bool use_reset) override
+    {
+        if (!Panel_FrameBufferBase::init(use_reset)) return false;   // light, rotation
+        if (esp_lcd_new_rgb_panel(&rgb, &_handle) != ESP_OK) return false;
+        if (esp_lcd_panel_reset(_handle) != ESP_OK || esp_lcd_panel_init(_handle) != ESP_OK) return false;
+        void* fb = nullptr;
+        if (esp_lcd_rgb_panel_get_frame_buffer(_handle, 1, &fb) != ESP_OK || !fb) return false;
+        _fb = static_cast<uint16_t*>(fb);
+        const int w = _cfg.panel_width, h = _cfg.panel_height;
+        auto lines = static_cast<uint8_t**>(heap_caps_malloc(size_t(h) * sizeof(void*), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        if (!lines) return false;
+        for (int y = 0; y < h; ++y) lines[y] = reinterpret_cast<uint8_t*>(_fb + size_t(y) * w);
+        _lines_buffer = lines;
+        return true;
+    }
+
+    lgfx::color_depth_t setColorDepth(lgfx::color_depth_t) override { return _write_depth; }
+    void writeCommand(uint32_t, uint_fast8_t) override {}
+    void writeData(uint32_t, uint_fast8_t) override {}
+    // No cache write-back: the bounce buffers are filled through the cache
+    void display(uint_fast16_t, uint_fast16_t, uint_fast16_t, uint_fast16_t) override
+    {
+        _range_mod.top = INT16_MAX;
+        _range_mod.left = INT16_MAX;
+        _range_mod.right = 0;
+        _range_mod.bottom = 0;
+    }
+
+    uint16_t* frame_buffer() const { return _fb; }
+};
+
 class LGFX_FreenoveRgb50 : public lgfx::LGFX_Device
 {
-    lgfx::Panel_RGB   _panel;
-    lgfx::Bus_RGB     _bus;
+    Panel_RgbBounce   _panel;
     lgfx::Light_PWM   _light;
     lgfx::Touch_GT911 _touch;
 
@@ -77,51 +141,43 @@ public:
             cfg.panel_height  = BOARD_NATIVE_H;
             cfg.offset_x = 0;
             cfg.offset_y = 0;
-            cfg.offset_rotation = 0;   // must stay 0 (see BOARD_ROTATION_OFFSET)
+            cfg.offset_rotation = 0;   // rotation is turned in screen.cpp (BOARD_ROTATION_OFFSET)
             _panel.config(cfg);
         }
         {
-            auto cfg = _bus.config();
-            cfg.panel = &_panel;
-            cfg.pin_d0  = 8;    // B0
-            cfg.pin_d1  = 3;    // B1
-            cfg.pin_d2  = 46;   // B2
-            cfg.pin_d3  = 9;    // B3
-            cfg.pin_d4  = 1;    // B4
-            cfg.pin_d5  = 5;    // G0
-            cfg.pin_d6  = 6;    // G1
-            cfg.pin_d7  = 7;    // G2
-            cfg.pin_d8  = 15;   // G3
-            cfg.pin_d9  = 16;   // G4
-            cfg.pin_d10 = 4;    // G5
-            cfg.pin_d11 = 45;   // R0
-            cfg.pin_d12 = 48;   // R1
-            cfg.pin_d13 = 47;   // R2
-            cfg.pin_d14 = 21;   // R3
-            cfg.pin_d15 = 14;   // R4
-            cfg.pin_henable = 40;
-            cfg.pin_vsync   = 41;
-            cfg.pin_hsync   = 39;
-            cfg.pin_pclk    = 42;
-            cfg.freq_write  = BOARD_RGB_PCLK_HZ;
-            cfg.hsync_polarity    = 0;
-            cfg.hsync_front_porch = 4;
-            cfg.hsync_pulse_width = 4;
-            cfg.hsync_back_porch  = 8;
-            cfg.vsync_polarity    = 0;
-            cfg.vsync_front_porch = 4;
-            cfg.vsync_pulse_width = 4;
-            cfg.vsync_back_porch  = 8;
-            // Data clocked out on PCLK's falling edge (Freenove). LovyanGFX
-            // 1.2.31's Bus_RGB ignores pclk_active_neg and sets the LCD's
-            // "out edge" bit from pclk_idle_high (ESP-IDF's own RGB driver
-            // sets that bit from pclk_active_neg), so both are set.
-            cfg.pclk_active_neg = 1;
-            cfg.pclk_idle_high  = 1;
-            cfg.de_idle_high    = 0;
-            _bus.config(cfg);
+            esp_lcd_rgb_panel_config_t& c = _panel.rgb;
+            c.clk_src = LCD_CLK_SRC_DEFAULT;
+            c.timings.pclk_hz = BOARD_RGB_PCLK_HZ;
+            c.timings.h_res = BOARD_NATIVE_W;
+            c.timings.v_res = BOARD_NATIVE_H;
+            c.timings.hsync_pulse_width = 4;
+            c.timings.hsync_back_porch = 8;
+            c.timings.hsync_front_porch = 4;
+            c.timings.vsync_pulse_width = 4;
+            c.timings.vsync_back_porch = 8;
+            c.timings.vsync_front_porch = 4;
+            // As v0.26.0's LovyanGFX setup, which showed a correct picture:
+            // H / V sync idle low, data out on PCLK's falling edge, PCLK
+            // idle low, DE idle low
+            c.timings.flags.hsync_idle_low = 1;
+            c.timings.flags.vsync_idle_low = 1;
+            c.timings.flags.pclk_active_neg = 1;
+            c.data_width = 16;
+            c.bits_per_pixel = 16;
+            c.num_fbs = 1;
+            c.bounce_buffer_size_px = BOARD_NATIVE_W * BOARD_RGB_BOUNCE_LINES;
+            c.dma_burst_size = 64;
+            c.hsync_gpio_num = 39;
+            c.vsync_gpio_num = 41;
+            c.de_gpio_num = 40;
+            c.pclk_gpio_num = 42;
+            c.disp_gpio_num = -1;
+            // B0-B4, G0-G5, R0-R4; data line i on signal i ^ 8 - the frame
+            // buffer holds RGB565 byte-swapped (LovyanGFX's order)
+            static const int kData[16] = {8, 3, 46, 9, 1, 5, 6, 7, 15, 16, 4, 45, 48, 47, 21, 14};
+            for (int i = 0; i < 16; ++i) c.data_gpio_nums[i ^ 8] = kData[i];
+            c.flags.fb_in_psram = 1;
         }
-        _panel.setBus(&_bus);
         {
             auto cfg = _light.config();
             cfg.pin_bl      = 2;
@@ -156,5 +212,5 @@ public:
 
     // The frame buffer (BOARD_NATIVE_W x BOARD_NATIVE_H, byte-swapped RGB565
     // as the SPI panels take it), nullptr before init / without PSRAM
-    uint16_t* frame_buffer() { return reinterpret_cast<uint16_t*>(_bus.getDMABuffer(0)); }
+    uint16_t* frame_buffer() { return _panel.frame_buffer(); }
 };

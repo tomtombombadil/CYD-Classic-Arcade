@@ -193,56 +193,22 @@ struct Menu {
     void open_log()
     {
         arena::reset();
-        constexpr size_t kLine = devlog::kLineMax;
-        const int want = devlog::count();
-        int n = 0;
-        const char** lines = static_cast<const char**>(arena::alloc(sizeof(char*) * size_t(want > 0 ? want : 1)));
-        char* buf = static_cast<char*>(arena::alloc(kLine * size_t(want > 0 ? want : 1)));
-        if (lines && buf)
-            for (int i = 0; i < want; ++i)
-                if (devlog::line(i, buf + kLine * size_t(n), kLine)) {
-                    lines[n] = buf + kLine * size_t(n);
-                    ++n;
-                }
-        if (!lines || !buf || n == 0) {
-            static const char* const kEmpty[] = {"The log is empty."};
-            open_text("Log", kEmpty, 1, Page::Settings);
-            return;
-        }
-        open_text("Log", lines, n, Page::Settings, true);
-    }
-
-    // Settings > Send Log (Tom, 2026-10-20: "we need a better way to
-    // transfer the logs"): as CYD Classic Games does - the newest lines that
-    // fit, behind a header, packed (core/log_pack.*) after the address of
-    // the site's log page (web/l/) into one QR code: a phone's camera opens
-    // the page, which offers to email it to the developer. Everything is
-    // in the game area while the page is open (the deflate tables are 16
-    // KB), like the Log page's lines; the next game empties it.
-    static bool qr_dark(const void* ctx, int x, int y)
-    {
-        return qrcodegen_getModule(static_cast<const uint8_t*>(ctx), x, y);
-    }
-
-    void open_send_log()
-    {
-        static const char* const kNone[] = {""};
-        open_text("Send Log", kNone, 0, Page::Settings);
-        qr_open = true;
-        qr = ui::QrPage{};
-        qr.title = "Send Log";
-        qr.caption = "Point your phone's camera at the code to get a link that sends the log to the developer.";
-        qr.note = "Newest 000 of 000 lines";    // its height counts for the room
-        int maxv = (ui::qr_room(g(), qr) / 2 - 4 - 17) / 4;     // modules at least 2 pixels
-        if (maxv > qrcodegen_VERSION_MAX) maxv = qrcodegen_VERSION_MAX;
-
-        arena::reset();
+        // Buffers sized from the log's own length (v0.26.0 took kLineMax =
+        // 256 bytes for every line in each of them: ~120 KB for a full log,
+        // more than the area - "no QR code" on Tom's 5.0" boards)
         constexpr size_t kLine = devlog::kLineMax;
         const int total = devlog::count();
-        const size_t cap = 256 + kLine * size_t(total > 0 ? total : 1);
+        size_t text = 0;
+        {
+            char one[kLine];
+            for (int i = 0; i < total; ++i)
+                if (devlog::line(i, one, sizeof one)) text += std::strlen(one) + 1;
+        }
+        const size_t cap = 256 + text + 2 * size_t(total);
         const size_t url_n = std::strlen(logpack::kUrl);
         const size_t qlen = maxv >= 1 ? qrcodegen_BUFFER_LEN_FOR_VERSION(maxv) : 0;
-        char* lines = static_cast<char*>(arena::alloc(kLine * size_t(total > 0 ? total : 1)));
+        char* lines = static_cast<char*>(arena::alloc(text + 1));
+        uint16_t* at = static_cast<uint16_t*>(arena::alloc(sizeof(uint16_t) * size_t(total > 0 ? total : 1)));
         char* report = static_cast<char*>(arena::alloc(cap));
         uint8_t* work = static_cast<uint8_t*>(arena::alloc(cap + 64));
         const size_t b43_cap = (cap + 64) * 3 / 2 + 4;
@@ -254,9 +220,18 @@ struct Menu {
         uint8_t* code = qlen ? static_cast<uint8_t*>(arena::alloc(qlen)) : nullptr;
         uint8_t* tmp = qlen ? static_cast<uint8_t*>(arena::alloc(qlen)) : nullptr;
         int n = 0;
-        if (lines)
-            for (int i = 0; i < total; ++i)
-                if (devlog::line(i, lines + kLine * size_t(n), kLine)) ++n;
+        if (lines && at) {
+            size_t used = 0;
+            char one[kLine];
+            for (int i = 0; i < total; ++i) {
+                if (!devlog::line(i, one, sizeof one)) continue;
+                const size_t len = std::strlen(one) + 1;
+                if (used + len > text) break;     // a line added meanwhile
+                std::memcpy(lines + used, one, len);
+                at[n++] = uint16_t(used);
+                used += len;
+            }
+        }
 
         // The report with the newest `k` lines, oldest first
         const auto build = [&](int k) -> size_t {
@@ -265,7 +240,7 @@ struct Menu {
                                     CYD_ARCADE_BUILD[0] ? ")" : "", k, n);
             if (len < 0 || size_t(len) >= cap) return 0;
             for (int i = k - 1; i >= 0; --i) {
-                const int w = std::snprintf(report + len, cap - size_t(len), "%s\n", lines + kLine * size_t(i));
+                const int w = std::snprintf(report + len, cap - size_t(len), "%s\n", lines + at[i]);
                 if (w < 0 || size_t(len + w) >= cap) return 0;
                 len += w;
             }
@@ -281,7 +256,7 @@ struct Menu {
                                                     final ? qrcodegen_Mask_AUTO : qrcodegen_Mask_0, final, tmp, code);
         };
         int best = -1;
-        if (lines && report && work && b43 && tables && ub && ab && code && tmp) {
+        if (lines && at && report && work && b43 && tables && ub && ab && code && tmp) {
             int lo = 0, hi = n;     // as many of the newest lines as fit
             while (lo <= hi) {
                 const int mid = (lo + hi) / 2;
@@ -299,7 +274,8 @@ struct Menu {
         } else {
             std::snprintf(qr_note, sizeof qr_note, "%s", "The log didn't fit a QR code.");
             qr.caption = "";
-            devlog::add("Send Log: no QR code (game area %u KB)", unsigned(arena::size() / 1024));
+            devlog::add("Send Log: no QR code (game area %u KB, log %u bytes in %d lines, %s)", unsigned(arena::size() / 1024),
+                        unsigned(text), total, (lines && at && report && work && b43 && tables && ub && ab && code && tmp) ? "too big" : "out of memory");
         }
         qr.note = qr_note;
         draw();

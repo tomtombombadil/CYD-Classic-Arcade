@@ -10,7 +10,6 @@
 #include "rgb_fallback.h"
 
 #include <driver/gpio.h>
-#include <esp_cache.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
@@ -92,20 +91,14 @@ bool init()
 
 void push(int x, int y, int w, int h, const uint16_t* px) { fb_push::write(s_frame, x, y, w, h, px); }
 
-// The CPU writes the frame buffer through its data cache; the LCD's DMA
-// reads PSRAM. Lines still in the cache would show old pixels until
-// evicted, so the rows written go back to PSRAM now (one write-back over
-// the rows' span, as LovyanGFX's own display() does at endWrite: the cache
-// walks the span in hardware).
+// Nothing to flush: the panel's DMA reads bounce buffers that its
+// interrupt fills from the frame buffer through the data cache, so what the
+// CPU wrote is seen as it is (v0.26.0 wrote the rows back to PSRAM here for
+// a DMA that read PSRAM itself)
 void pushed()
 {
-    fb_push::Frame& f = s_frame;
-    if (f.row1 < f.row0) return;
-    const uintptr_t a = reinterpret_cast<uintptr_t>(f.fb + size_t(f.row0) * f.stride) & ~uintptr_t(127);
-    const uintptr_t b = (reinterpret_cast<uintptr_t>(f.fb + size_t(f.row1 + 1) * f.stride) + 127) & ~uintptr_t(127);
-    esp_cache_msync(reinterpret_cast<void*>(a), b - a, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_TYPE_DATA);
-    f.row0 = 1 << 30;
-    f.row1 = -1;
+    s_frame.row0 = 1 << 30;
+    s_frame.row1 = -1;
 }
 
 #else

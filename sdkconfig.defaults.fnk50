@@ -7,3 +7,9 @@
 # ---- 16 MB flash: a bigger ROM store (partitions_16mb.csv) ----
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16mb.csv"
+
+# ---- RGB panel (ESP-IDF's driver, bounce buffers) ----
+# Restart the panel's DMA at every VSYNC if a frame fell behind (an
+# interrupt held off - e.g. while flash is written - would otherwise leave
+# the picture shifted)
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=y

@@ -24,9 +24,8 @@ bool init();
 // and endWrite(). SPI panels: LovyanGFX's pushImage. The RGB panel: written
 // straight into its frame buffer (main/fb_push.h).
 void push(int x, int y, int w, int h, const uint16_t* px);
-// After a picture's last push(): what was written is made visible (the
-// RGB panel: written back from the CPU's cache to PSRAM, where the LCD's
-// DMA reads it). Nothing on SPI panels.
+// After a picture's last push(). Nothing to do on any panel today (the RGB
+// panel's bounce buffers read the frame buffer through the CPU's cache).
 void pushed();
 // Portrait: rotation 2 (the USB port at the top on most boards), or 0 with
 // Rotate Screen 180 on (+ BOARD_ROTATION_OFFSET: landscape-native panels).

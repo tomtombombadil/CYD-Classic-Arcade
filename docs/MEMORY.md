@@ -349,9 +349,12 @@ PSRAM (8 MB octal, `sdkconfig.defaults.esp32s3`):
   for those - nothing near the limit.
 
 Internal RAM, on top of the 4.0" S3's budget (section 6):
-- LovyanGFX's RGB panel: the row pointer table 480 x 4 = 1.9 KB (DMA-
-  capable heap) and the DMA descriptors 768,000 / 4,032 = 191 x 12 bytes =
-  2.3 KB; its interrupt. **~4.2 KB**, kept.
+- The RGB panel (v0.26.1, ESP-IDF's driver): two bounce buffers 2 x 800 x
+  4 x 2 = **12.5 KB** (internal, DMA), the row pointer table 480 x 4 = 1.9
+  KB, the driver's state and DMA nodes (< 1 KB). **~15 KB**, kept. (v0.26.0,
+  LovyanGFX's bus, no bounce buffers: ~4.2 KB - and a picture that slipped
+  at every redraw.) Tom's v0.26.0 log: "Mem after screen + touch" 150.2 KB,
+  game area 97-99 KB; expect ~11 KB less of both.
 - No SPI display bus, no ES8311 setup; the I2S driver as on the 4.0"
   (4 DMA buffers of 256 frames).
 - `fb_push::Frame` 24 bytes. The board report: 7 x 64 bytes of text
@@ -368,5 +371,8 @@ PSRAM bandwidth (the risk, CLAUDE.md): the LCD's DMA reads the whole frame
 buffer every refresh - 816 x 496 clocks at 13 MHz = 32.1 Hz, 750 KB a
 refresh = **~24.6 MB/s, without pause**. Octal PSRAM at 80 MHz moves 16
 bits a clock (DDR), ~160 MB/s at most, shared with the CPUs' cache misses
-(ROM regions, frame buffer write-backs: a write-back of a whole portrait
-picture is up to 750 KB more) and with flash (same memory bus).
+(ROM regions, frame buffer writes) and with flash (same memory bus).
+v0.26.0 on both boards: short bursts of CPU writes starved the DMA's tiny
+FIFO and the picture slipped at every redraw - the average was never the
+problem. v0.26.1: the DMA reads internal bounce buffers; the interrupt's
+copies through the cache only have to keep up over 4 lines (250 us).

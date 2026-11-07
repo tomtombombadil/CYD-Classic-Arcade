@@ -207,6 +207,7 @@ void render(int w, int h)
         q.caption = "Point your phone's camera at the code to get a link that sends the log to the developer.";
         int v = (ui::qr_room(s, q) / 2 - 4 - 17) / 4;
         if (v > 40) v = 40;
+        std::printf("%dx%d send log: room %d, max version %d\n", s.width(), s.height(), ui::qr_room(s, q), v);
         q.n = 17 + 4 * v;
         q.ctx = &q.n;
         q.dark = [](const void* ctx, int x, int y) {
