@@ -35,6 +35,8 @@
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
 
+#include "rgb_fill.h"
+
 #define BOARD_TOUCH_RESISTIVE   0    // capacitive: no calibration
 #define BOARD_PIN_BOOT_BTN      0    // (also the amp's BCLK after start-up)
 #define BOARD_SD_USABLE         1
@@ -114,12 +116,21 @@ public:
     bool init(bool use_reset) override
     {
         if (!Panel_FrameBufferBase::init(use_reset)) return false;   // light, rotation
-        if (esp_lcd_new_rgb_panel(&rgb, &_handle) != ESP_OK) return false;
-        if (esp_lcd_panel_reset(_handle) != ESP_OK || esp_lcd_panel_init(_handle) != ESP_OK) return false;
-        void* fb = nullptr;
-        if (esp_lcd_rgb_panel_get_frame_buffer(_handle, 1, &fb) != ESP_OK || !fb) return false;
-        _fb = static_cast<uint16_t*>(fb);
         const int w = _cfg.panel_width, h = _cfg.panel_height;
+        // Our own frame buffer: the driver runs without one ("no_fb") and
+        // calls rgb_fill::fill() to refill its bounce buffers from it - the
+        // same copy + cache preload as its own fill, but timed (v0.26.6:
+        // Tom's stripes stay on one place of the glass through Rotate 180,
+        // so the question is whether the refills come late)
+        const size_t bytes = size_t(w) * h * 2;
+        _fb = static_cast<uint16_t*>(heap_caps_aligned_calloc(64, 1, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (!_fb) return false;
+        rgb_fill::set_frame(_fb, bytes);
+        if (esp_lcd_new_rgb_panel(&rgb, &_handle) != ESP_OK) return false;
+        esp_lcd_rgb_panel_event_callbacks_t cb = {};
+        cb.on_bounce_empty = rgb_fill::fill;
+        if (esp_lcd_rgb_panel_register_event_callbacks(_handle, &cb, nullptr) != ESP_OK) return false;
+        if (esp_lcd_panel_reset(_handle) != ESP_OK || esp_lcd_panel_init(_handle) != ESP_OK) return false;
         auto lines = static_cast<uint8_t**>(heap_caps_malloc(size_t(h) * sizeof(void*), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         if (!lines) return false;
         // LovyanGFX draws into the hidden copy; display() (at the end of
@@ -251,7 +262,7 @@ public:
             c.timings.flags.pclk_active_neg = 1;
             c.data_width = 16;
             c.bits_per_pixel = 16;
-            c.num_fbs = 1;
+            c.num_fbs = 0;          // no_fb: the frame buffer is ours (rgb_fill)
             c.bounce_buffer_size_px = BOARD_NATIVE_W * BOARD_RGB_BOUNCE_LINES;
             c.dma_burst_size = 64;
             c.hsync_gpio_num = 39;
@@ -263,7 +274,7 @@ public:
             // buffer holds RGB565 byte-swapped (LovyanGFX's order)
             static const int kData[16] = {8, 3, 46, 9, 1, 5, 6, 7, 15, 16, 4, 45, 48, 47, 21, 14};
             for (int i = 0; i < 16; ++i) c.data_gpio_nums[i ^ 8] = kData[i];
-            c.flags.fb_in_psram = 1;
+            c.flags.no_fb = 1;
         }
         {
             auto cfg = _light.config();

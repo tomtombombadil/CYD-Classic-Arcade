@@ -10,6 +10,7 @@
 
 #if BOARD_RGB_PANEL
 #include "fb_push.h"
+#include "rgb_fill.h"
 #include "rgb_fallback.h"
 
 #include <driver/gpio.h>
@@ -130,6 +131,10 @@ void pushed() {}
 void check(const char* when, bool compare)
 {
 #if BOARD_RGB_PANEL
+    const rgb_fill::Stats st = rgb_fill::take();
+    devlog::add("Screen refills %s: %u, longest gap %u us (budget %u), longest copy %u us, late %u", when,
+                unsigned(st.fills), unsigned(st.gap_us_max), unsigned(st.budget_us), unsigned(st.copy_us_max),
+                unsigned(st.late));
     const int bad = s_lcd.repair_rows();
     if (bad) devlog::add("Screen: %d row pointers were wrong %s (put back)", bad, when);
     int first = -1, c0 = 0, c1 = 0;

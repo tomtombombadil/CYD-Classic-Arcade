@@ -1077,6 +1077,20 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   shown frame. Asked Tom: does Rotate Screen 180 move the stripes with the
   header (our data) or leave them on the same place on the glass (the
   panel)?
+  Tom (v0.26.4, Freenove after longer play, then the Hosyond): with
+  Rotate Screen 180 the header was right and the FOOTER (now on that part
+  of the glass) striped - the stripes belong to a place in the panel's
+  scan, not to the picture. Likely: a bounce refill finishing late (a 4-
+  line buffer shows 8-row-old data - ghost copies offset sideways, slats).
+  v0.26.6 measures it: the driver runs in "no_fb" mode and our own
+  `rgb_fill::fill()` (main/rgb_fill.*, IRAM; the same memcpy + DCache
+  preload as the driver's own fill) refills the bounce buffers from our
+  frame buffer (`heap_caps_aligned_calloc` in PSRAM) and times each refill:
+  the log's "Screen refills <when>: N, longest gap G us (budget B),
+  longest copy C us, late L" at each check (after a game, after Send Log,
+  at the Log page); refills next to a frame's start (the vertical blank)
+  aren't counted as late. Next: if late, more slack (bigger bounce buffers
+  cost internal RAM - the game area) or find what holds the interrupt off.
 - Qix (`emu/machines/qix.*`, set `qix` = Rev 2; portrait 240x256 =
   the CRTC's lines 8-247 shown as columns (MAME's ROT270; everything the
   game draws lies in lines 16-240, and 256 scaled down to 240 would drop
