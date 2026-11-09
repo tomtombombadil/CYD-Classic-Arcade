@@ -64,7 +64,8 @@ bool s_running = false;
 bool s_pwm = false;     // the Sound Output setting (DAC boards)
 
 // The ESP32-32E boards can switch their amp off (BOARD_PIN_AUDIO_EN, low =
-// on). It's off after ~0.2 s with nothing to play, as in CYD Classic Games:
+// on; the 2.8" ILI9341 too, GPIO 4, kept on - BOARD_AUDIO_EN_ALWAYS_ON).
+// It's off after ~0.2 s with nothing to play, as in CYD Classic Games:
 // left on, it picked up a faint low crackle at idle (Tom's 3.5").
 constexpr int kQuiet = 64;            // |sample| below this counts as silence
 constexpr int kAmpOffChunks = 20;     // ~0.2 s
@@ -288,8 +289,12 @@ void audio_task(void*) {
         bool quiet = true;
         for (int i = 0; i < kChunk && quiet; i++) quiet = pcm[i] > -kQuiet && pcm[i] < kQuiet;
         quiet_chunks = quiet ? quiet_chunks + 1 : 0;
+#if defined(BOARD_AUDIO_EN_ALWAYS_ON)
+        amp(true);   // the 2.8" ILI9341: on for good (~100 ms to wake)
+#else
         if (!quiet) amp(true);
         else if (quiet_chunks >= kAmpOffChunks) amp(false);
+#endif
         const int g = s_gain;
 #if BOARD_AUDIO_I2S
         i2s_out(pcm, g);

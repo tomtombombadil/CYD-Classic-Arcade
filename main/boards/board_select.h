@@ -32,6 +32,14 @@
 
 // ---- 2.8" ESP32-2432S028 (the original CYD layout) ---------------------------
 #if defined(CYD_BOARD_28_ILI9341_RES)
+  // The ILI9341 board's amplifier waits for GPIO 4 low (the red LED's pin,
+  // so the LED glows while it's on); the ST7789 board's doesn't - never in
+  // the shared header (Tom, 2026-11-09, from CYD-GoldBoxGameEngine
+  // v0.179.2; witnessmenow/ESP32-Cheap-Yellow-Display issue #372). Kept on
+  // once sound starts: it takes ~100 ms to wake, so switching it on with
+  // each sound would cut sounds' starts.
+  #define BOARD_PIN_AUDIO_EN 4
+  #define BOARD_AUDIO_EN_ALWAYS_ON 1
   #include "esp32_2432s028.hpp"
   #define BOARD_NAME "2.8\" ILI9341 Resistive"
   #define BOARD_PORTRAIT_W 240

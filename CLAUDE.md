@@ -528,7 +528,16 @@ Started 2026-10-14. Design: `docs/SPEC.md`; ROM sets: `docs/ROMS.md`.
   Classic Games' tones leave it). Tom, 2026-10-15: his 2.8" ILI9341
   has no sound in ANY firmware (his PoolRad too) - the board's own fault
   (he had no speaker for it before). Don't chase it further; the PWM
-  setting stays for boards that need it.
+  setting stays for boards that need it. Fixed v0.26.8 (Tom, 2026-11-09,
+  from CYD-GoldBoxGameEngine v0.179.2; witnessmenow/ESP32-Cheap-Yellow-
+  Display issue #372): the ILI9341 board's amplifier is on only while
+  GPIO 4 (the red LED's pin, active low) is LOW - `BOARD_PIN_AUDIO_EN 4`
+  in its own branch of board_select.h (NEVER in the shared
+  esp32_2432s028.hpp: the ST7789 board's sound already works), with
+  `BOARD_AUDIO_EN_ALWAYS_ON`: on from the first audio chunk and never
+  off (the amp takes ~100 ms to wake; the 32E boards' off-after-0.2 s
+  would cut sounds' starts). The red LED glows meanwhile - expected.
+  Not yet heard on the board.
 - 4-way games (Pac-Man, Donkey Kong; `games::Info::four_way`): a d-pad
   diagonal counts as the direction pressed last (Tom found Pac-Man hard
   to steer).
